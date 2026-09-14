@@ -1,2 +1,2 @@
-# hack-spain-2026
+# HackSpain 2026
 Repo for the Hack Spain hackathon
