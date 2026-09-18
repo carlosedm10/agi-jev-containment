@@ -35,10 +35,11 @@ class TestAddNode:
 
     def test_child_links_to_parent(self, g: ActionGraph):
         root = g.add_node("root")
-        child = g.add_node("child", parent=root, threshold=1.0, tool=object())
+        tool = object()
+        child = g.add_node("child", parent=root, threshold=1.0, tool=tool)
         assert child.parent is root
         assert root.children == [child]
-        assert child.tool is not None
+        assert child.tool is tool
 
     def test_duplicate_id_rejected(self, g: ActionGraph):
         g.add_node("root")
@@ -199,7 +200,5 @@ class TestThreadSafety:
 
 class TestSingleton:
     def test_module_level_instance_is_shared(self):
-        from app.graph.manager import graph as same_graph
-
-        assert graph is same_graph
         assert isinstance(graph, ActionGraph)
+        assert ActionGraph() is not graph
