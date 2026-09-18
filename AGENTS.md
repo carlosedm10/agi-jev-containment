@@ -1,16 +1,16 @@
 # HackSpain 2026 — Agent Instructions
 
-Repo del hackathon HackSpain 2026. No contiene el código del CLI; la documentación de participantes vive aquí.
+Repo for the HackSpain 2026 hackathon. It does not contain the CLI code; participant documentation lives here.
 
 Read before changing anything:
 
-1. [docs/README.md](docs/README.md) — cliente `hackspain`: instalación, comandos, códigos de salida y convenciones (`--json`).
+1. [docs/README.md](docs/README.md) — `hackspain` client: installation, commands, exit codes, and conventions (`--json`).
 
 ## Non-negotiable rules
 
-- **Fuente del CLI** — Los comandos y flags se mantienen alineados con [hackspain.app/cli](https://hackspain.app/cli); no inventar subcomandos en este repo.
-- **Docs ride the PR** — Si cambia la interfaz pública del CLI en la web oficial, actualizar `docs/README.md` en el mismo cambio.
+- **Source of truth for the CLI** — Commands and flags must stay aligned with [hackspain.app/cli](https://hackspain.app/cli); do not invent subcommands in this repo.
+- **Docs ride the PR** — If the CLI's public interface changes on the official website, update `docs/README.md` in the same change.
 
 ## Local verification
 
-- No hay build ni tests en este repo; revisar enlaces relativos y que cada comando listado siga apareciendo en la página oficial del CLI.
+- There is no build or tests in this repo; check relative links and that every listed command still appears on the official CLI page.
