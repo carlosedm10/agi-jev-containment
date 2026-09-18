@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# When piped via `curl | bash`, BASH_SOURCE[0] is unset / not a real file.
+# Download the repo tarball to a temp dir and re-run from there.
+if [[ -z "${BASH_SOURCE[0]:-}" ]] || [[ ! -f "${BASH_SOURCE[0]:-}" ]]; then
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  echo "Downloading skills repo..."
+  curl -fsSL "https://github.com/carlosedm10/skills/archive/refs/heads/main.tar.gz" \
+    | tar -xz -C "$TMP" --strip-components=1
+  bash "$TMP/install" "$@"
+  exit $?
+fi
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+UTILS="${ROOT}/lib/utils.sh"
+# shellcheck source=lib/utils.sh
+source "${UTILS}"
+
+usage() {
+  sed -n '1,120p' <<'USAGE'
+Usage:
+  install                     Interactive installer
+  install new <name>          Copy skill-template/ → skills/<name>/
+  install [options]           Non-interactive install
+
+Options:
+  -y, --yes              Assume yes for prompts
+  --platforms LIST       Comma-separated: cursor,claude-code,codex,opencode,pi,agents
+  --skills LIST          Comma-separated skill folder names, or "all"
+  --mode MODE            copy | symlink
+
+Environment:
+  CODEX_HOME             Override Codex config dir (default: ~/.codex)
+USAGE
+}
+
+cmd_new() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    error "Usage: install new <skill-name>"
+    exit 1
+  fi
+  if [[ ! "$name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+    error "Skill name must be kebab-case (lowercase letters, digits, hyphens)."
+    exit 1
+  fi
+  local dest="${ROOT}/skills/${name}"
+  if [[ -e "$dest" ]]; then
+    error "Already exists: ${dest}"
+    exit 1
+  fi
+  mkdir -p "$dest"
+  cp "${ROOT}/skill-template/SKILL.md" "${dest}/SKILL.md"
+  if sed --version >/dev/null 2>&1; then
+    sed -i "s/skill-template/${name}/g" "${dest}/SKILL.md"
+  else
+    sed -i '' "s/skill-template/${name}/g" "${dest}/SKILL.md"
+  fi
+  success "Created ${dest}/SKILL.md — edit name/description to get started."
+}
+
+INTERACTIVE="1"
+ASSUME_YES="0"
+MODE=""
+PLATFORMS_CSV=""
+SKILLS_CSV=""
+
+SUBCOMMAND=""
+if [[ "${1:-}" == "new" ]]; then
+  SUBCOMMAND="new"
+  shift
+  cmd_new "${1:-}"
+  exit 0
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -y|--yes)
+      ASSUME_YES="1"
+      INTERACTIVE="0"
+      shift
+      ;;
+    --platforms)
+      PLATFORMS_CSV="$2"
+      INTERACTIVE="0"
+      shift 2
+      ;;
+    --skills)
+      SKILLS_CSV="$2"
+      INTERACTIVE="0"
+      shift 2
+      ;;
+    --mode)
+      MODE="$2"
+      INTERACTIVE="0"
+      shift 2
+      ;;
+    install|"")
+      shift || true
+      ;;
+    *)
+      printf 'Unknown option: %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+SKILLS_DIR="${ROOT}/skills"
+mkdir -p "${SKILLS_DIR}"
+
+ALL_SKILLS=()
+while IFS= read -r line; do
+  [[ -n "${line}" ]] && ALL_SKILLS+=("${line}")
+done <<< "$(list_skill_names "${SKILLS_DIR}")"
+
+if [[ "$INTERACTIVE" == "1" ]]; then
+  if ! ensure_gum; then
+    warn "gum not installed — using plain prompts (brew install gum for a richer UI)."
+  fi
+
+  gum_banner \
+    "Agent Skills — by Carlos Eduardo" \
+    "Select platforms and skills to install." \
+    "https://carloseduardo.es/en"
+
+  platforms_raw="$(choose_platforms_interactive)" || true
+  SELECTED_PLATFORMS=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && SELECTED_PLATFORMS+=("${line}")
+  done <<< "${platforms_raw}"
+  if [[ ${#SELECTED_PLATFORMS[@]} -eq 0 || -z "${SELECTED_PLATFORMS[0]:-}" ]]; then
+    error "No platforms selected."
+    exit 1
+  fi
+
+  skills_raw="$(choose_skills_interactive "${ALL_SKILLS[@]}")" || true
+  SELECTED_SKILLS=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && SELECTED_SKILLS+=("${line}")
+  done <<< "${skills_raw}"
+  if [[ ${#SELECTED_SKILLS[@]} -eq 0 || -z "${SELECTED_SKILLS[0]:-}" ]]; then
+    error "No skills selected."
+    exit 1
+  fi
+
+  MODE="$(choose_mode_interactive)"
+  MODE="$(echo "$MODE" | xargs)"
+  [[ "$MODE" == "symlink" || "$MODE" == "copy" ]] || MODE="copy"
+
+  PLATFORMS_CSV="$(IFS=,; echo "${SELECTED_PLATFORMS[*]}")"
+  SKILLS_CSV="$(IFS=,; echo "${SELECTED_SKILLS[*]}")"
+fi
+
+[[ -n "$MODE" ]] || MODE="copy"
+
+if [[ "$SKILLS_CSV" == "all" || -z "$SKILLS_CSV" ]]; then
+  if [[ ${#ALL_SKILLS[@]} -eq 0 ]]; then
+    error "No skills found under ${SKILLS_DIR}"
+    exit 1
+  fi
+  SKILLS_CSV="$(IFS=,; echo "${ALL_SKILLS[*]}")"
+fi
+
+if [[ -z "$PLATFORMS_CSV" ]]; then
+  error "No platforms specified (use interactive mode or --platforms)."
+  exit 1
+fi
+
+if [[ "$INTERACTIVE" != "1" && "$ASSUME_YES" != "1" ]]; then
+  gum_confirm "Install ${SKILLS_CSV} → ${PLATFORMS_CSV} (mode: ${MODE})?" || exit 0
+fi
+
+chmod +x "${ROOT}/lib/batch-install.sh" 2>/dev/null || true
+
+bash "${ROOT}/lib/batch-install.sh" \
+  --mode "${MODE}" \
+  --skills-dir "${SKILLS_DIR}" \
+  --skills "${SKILLS_CSV}" \
+  --platforms "${PLATFORMS_CSV}"
+
+success "All skills installed."
