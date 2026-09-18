@@ -1,6 +1,6 @@
 # HackSpain 2026 — The One Doc
 
-This repo is the local **hackspain** product stack for the 2026 hackathon: a FastAPI API, a React SPA (Vite, not initialized yet), and Postgres. The participant **hackspain** CLI is a separate binary; its command surface lives in [docs/cli.md](cli.md) and must stay aligned with [hackspain.app/cli](https://hackspain.app/cli).
+This repo is the local **hackspain** product stack for the 2026 hackathon: a FastAPI API, a React SPA (Vite), and Postgres. The participant **hackspain** CLI is a separate binary; its command surface lives in [docs/cli.md](cli.md) and must stay aligned with [hackspain.app/cli](https://hackspain.app/cli).
 
 ## The layers
 
@@ -9,7 +9,7 @@ browser :3000  →  frontend-hackspain (Vite :5173)  →  backend-hackspain :800
                                                       →  postgres-hackspain :5432
 ```
 
-- **frontend/** — React/Vite UI, host port 3000. **Empty until `bun create vite`.** Compose still expects `frontend/package.json`.
+- **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`.
 - **backend/** — FastAPI app (`app.main:app`), uv, SQLAlchemy, Alembic. **CORS allows only `http://localhost:3000`.**
 - **postgres-hackspain** — Postgres 16. Backend waits on a healthy `pg_isready`. Named volume `postgres_data_hackspain`.
 
@@ -58,7 +58,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 ### One example, end to end
 
 1. Copy `.env_template` → `.env` and `direnv allow` (or export the same keys).
-2. `make build` starts Postgres, then uvicorn on `:8000`, then the frontend container on `:3000` (fails today: no `frontend/package.json`).
+2. `make build` starts Postgres, then uvicorn on `:8000`, then the frontend container on `:3000`.
 3. Browser or `curl` `GET http://localhost:8000/health` → `{"status":"ok"}`.
 4. `GET http://localhost:8000/api/items/` → `[]` (session opened, table unused).
 5. OpenAPI UI is at `http://localhost:8000/docs`.

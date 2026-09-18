@@ -13,8 +13,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 COPY backend/pyproject.toml backend/uv.lock* ./
 
-RUN uv sync --frozen --no-install-project --no-dev \
-    || (uv lock && uv sync --no-install-project --no-dev)
+RUN uv sync --frozen --no-install-project \
+    || (uv lock && uv sync --no-install-project)
 
 COPY backend/ .
 
