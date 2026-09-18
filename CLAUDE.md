@@ -1,1 +1,1 @@
-@./AGENTS.md
+/home/fer/Projects/HackSpain/AGENTS.md

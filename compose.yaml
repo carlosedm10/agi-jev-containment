@@ -22,7 +22,7 @@ services:
 
   postgres-hackspain:
     container_name: hackspain_db
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     build:
       context: .
       dockerfile: docker/postgresql.Dockerfile
