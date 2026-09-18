@@ -7,8 +7,6 @@ app.evals.happyrobot_cases``.
 
 from __future__ import annotations
 
-import json
-
 from app.evals.models import (
     LEVEL_ACTION,
     AgentEvent,
