@@ -1,126 +1,77 @@
-# hackspain CLI — The One Doc
+# HackSpain 2026 — The One Doc
 
-Cliente de terminal para participantes: misma cuenta y mismos datos que el dashboard (equipos, retos, entrega, feed y watcher). Documentación canónica en la web: [hackspain.app/cli](https://hackspain.app/cli).
+This repo is the local **hackspain** product stack for the 2026 hackathon: a FastAPI API, a React SPA (Vite, not initialized yet), and Postgres. The participant **hackspain** CLI is a separate binary; its command surface lives in [docs/cli.md](cli.md) and must stay aligned with [hackspain.app/cli](https://hackspain.app/cli).
+
+## The layers
 
 ```
-Participante → hackspain (local) → API HackSpain → dashboard hackspain.app
+browser :3000  →  frontend-hackspain (Vite :5173)  →  backend-hackspain :8000
+                                                      →  postgres-hackspain :5432
 ```
+
+- **frontend/** — React/Vite UI, host port 3000. **Empty until `bun create vite`.** Compose still expects `frontend/package.json`.
+- **backend/** — FastAPI app (`app.main:app`), uv, SQLAlchemy, Alembic. **CORS allows only `http://localhost:3000`.**
+- **postgres-hackspain** — Postgres 16. Backend waits on a healthy `pg_isready`. Named volume `postgres_data_hackspain`.
+
+Compose network is `appnet_hackspain`. Services are named `backend-hackspain`, `frontend-hackspain`, `postgres-hackspain`.
 
 ## The taxonomy
 
-| Área | Qué cubre en terminal |
-|---|---|
-| **auth** | Sesión, login por navegador o código de 8 dígitos |
-| **profile** | Datos de participante y enlaces GitHub/X |
-| **team** | Equipo, invitación, repo, stack |
-| **track / project / submit** | Retos, proyecto y entrega |
-| **perk / milestone** | Beneficios (catálogo) e hitos del equipo |
-| **feed / post** | Feed social y publicaciones |
-| **watch / telemetry** | Watcher de harnesses de IA y estadísticas locales |
+These names repeat in compose, Makefile targets, and env vars.
 
-## Instalación
+| Name | Covers | Where it lives |
+|---|---|---|
+| **Item** | Placeholder domain (list endpoint, no real persistence yet) | `backend/app/items/` |
+| **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
+| **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
 
-macOS y Linux: binario autocontenido.
+## How it's built
 
-```bash
-curl -fsSL https://hackspain.com/install.sh | sh
-hackspain update   # más adelante, para la última versión
+One path for local work:
+
+```
+make build/up → compose → uvicorn (reload) + bun dev + postgres
+              → Alembic uses DATABASE_URL on the compose hostname
 ```
 
-Windows: descarga `hackspain-windows-x64.exe` desde la página de releases y renómbralo a `hackspain.exe`.
+GitHub Actions copies `.env_template` to `.env`, then only `make build`, `make up`, `make lint`, `make test`, `make down`.
 
-## Primeros pasos
+### The principles that matter
 
-Misma cuenta que el dashboard. El login abre el navegador para aprobar el dispositivo; también vale el código de 8 dígitos. Después puede pedir nombre, teléfono o GitHub.
+- **Make is the public interface** — CI and humans run the same verbs (`lint`, `test`, `migrate`). Do not duplicate tool commands in workflow YAML.
+- **Secrets stay in gitignored `.env`** — `.envrc` only loads; new keys are documented in `.env_template`.
+- **Backend venv lives outside the bind mount** — `UV_PROJECT_ENVIRONMENT=/opt/venv` so `./backend:/app` does not wipe dependencies on the host.
+- **CLI commands are not invented here** — the binary is unpublished in this tree; [docs/cli.md](cli.md) tracks the official surface.
 
-| Comando | Descripción |
-|---|---|
-| `hackspain` | Dónde estás y qué toca hacer; en terminal interactiva, menú para moverte |
-| `hackspain auth login [--email …] [--code …]` | Por defecto abre `/cli-auth` para aprobar este dispositivo. Con `--email`/`--code`, código de 8 dígitos por correo, como en la web |
-| `hackspain open [feed\|teams\|perks\|…]` | Abre el dashboard en el navegador con sesión ya iniciada |
-| `hackspain auth status` | Comprueba tu sesión |
-| `hackspain auth logout` | Cierra sesión |
+## How data flows
 
-## Perfil
+Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environment. Compose injects `DATABASE_URL` with host `postgres-hackspain` (not `localhost`). Pydantic settings also accept a `.env` next to the process cwd (`/app` in the container), and ignore extra keys such as `POSTGRES_*`.
 
-La foto y la ficha completa se hacen en el dashboard.
+- **Reads**: `GET /health` hits no database. `GET /api/items/` opens a SQLAlchemy session via `get_db` and currently returns `[]` without querying.
+- **Writes**: none shipped. `Item` is mapped (`items` table: id, name) and Alembic imports it in `alembic/env.py`, but `alembic/versions/` has no revisions, so `make migrate` is a no-op until the first autogenerate.
+- **Sync / background**: none.
 
-| Comando | Descripción |
-|---|---|
-| `hackspain profile` | Nombre, dieta, viaje, teléfono, avisos, GitHub y X |
-| `hackspain profile edit [--name …] [--diet …] [--diet-details …] [--from …]` | Edita datos del perfil |
-| `hackspain profile notify on\|off` | Activa o desactiva avisos |
-| `hackspain profile phone [+34…]` | Guarda teléfono de contacto |
-| `hackspain profile github [--unlink]` | Enlace para autorizar GitHub en el navegador |
-| `hackspain profile x [@usuario] [--clear]` | Guarda usuario de X |
+### Entities
 
-## Equipo
+- **Item**: scaffold entity for the first feature package (router, schema, model, colocated tests).
 
-Para unirte, el dueño comparte su código de invitación de 8 caracteres.
+### One example, end to end
 
-| Comando | Descripción |
-|---|---|
-| `hackspain team create <name> [-m github:x -m a@b.c]` | Crea el equipo; añade gente por GitHub, X o email |
-| `hackspain team join <code>` | Únete con el código del dueño |
-| `hackspain team show \| list` | Tu equipo, o todos los equipos |
-| `hackspain team code [--regenerate]` | Muestra o regenera el código de invitación |
-| `hackspain team repo [url…] [--clear]` | Vincula repositorio(s) público(s) de GitHub; actividad en el feed. Hazlo público antes de vincular |
-| `hackspain team leave` | Sal del equipo |
-| `hackspain team transfer [member]` | El dueño cede el equipo a otro miembro |
-| `hackspain team dissolve` | El dueño borra un equipo sin otros miembros |
-| `hackspain stack set nextjs convex claude-code` | Declara el stack tecnológico del equipo |
+1. Copy `.env_template` → `.env` and `direnv allow` (or export the same keys).
+2. `make build` starts Postgres, then uvicorn on `:8000`, then the frontend container on `:3000` (fails today: no `frontend/package.json`).
+3. Browser or `curl` `GET http://localhost:8000/health` → `{"status":"ok"}`.
+4. `GET http://localhost:8000/api/items/` → `[]` (session opened, table unused).
+5. OpenAPI UI is at `http://localhost:8000/docs`.
 
-## Retos y entrega
+## Key decisions and caveats (why it is this way)
 
-Un proyecto por equipo, tantos retos como quieras. La entrega congela todo; los borradores se pueden guardar antes.
+- **Compose hostname in `DATABASE_URL`**: the API talks to `postgres-hackspain`, not `localhost`. Host-side tools that are not on `appnet_hackspain` must use `localhost:5432` instead.
+- **CORS pinned to the Vite origin**: `http://localhost:3000` only — other origins are rejected on purpose until a real frontend origin exists.
+- **Feature packages own their tests**: pytest `testpaths = ["app"]`; tests sit under `app/<feature>/tests/`, not a top-level `backend/tests/`.
+- **`make lint` / `make test` exec into running containers**: they are not `run --rm`. The stack must already be up (CI does `make up` first).
 
-| Comando | Descripción |
-|---|---|
-| `hackspain track list` | Retos disponibles |
-| `hackspain track register <slug…> \| unregister <slug…>` | Apúntate o bórrate de retos |
-| `hackspain track move <from> <to>` | Cámbiate de reto |
-| `hackspain submit [--draft]` | Formulario interactivo de entrega; flags para scripts |
-| `hackspain project show \| list` | Tu proyecto, o todos los proyectos |
+## Where the details live
 
-## Perks y milestones
-
-| Comando | Descripción |
-|---|---|
-| `hackspain perk list` | Catálogo de beneficios de partners (reclamar en el dashboard) |
-| `hackspain milestone add firstCommit\|firstBuild\|firstDemo\|custom [--label …] [--at ISO]` | Registra un hito del equipo |
-| `hackspain milestone list [--all]` | Hitos registrados |
-
-## Feed
-
-Mismo feed que la página Feed del dashboard: mensajes y actividad GitHub de repos de equipo.
-
-| Comando | Descripción |
-|---|---|
-| `hackspain feed [-n 20] [--no-images] [--before …]` | Últimas publicaciones y actividad, paginado. En kitty, Ghostty, WezTerm, iTerm2 o terminal de VS Code las fotos en terminal; en el resto, enlace |
-| `hackspain post "texto" [--image foto.jpg]` | Publica (≤500 caracteres; jpeg/png/webp/gif ≤5 MB) |
-
-## Watcher
-
-Pensado para una terminal abierta todo el fin de semana: detecta harnesses de IA (Claude Code, Codex, Gemini CLI, Qwen Code, OpenCode, Kilo Code, Cline), muestra feed y avisos de la organización, y reporta uso. No envía prompts ni rutas completas de tu máquina.
-
-| Comando | Descripción |
-|---|---|
-| `hackspain watch [--interval 30] [--no-upload] [--no-images] [--once]` | Arranca el watcher; reporta uso de IA en la ventana de la hackathon (también cuando estaba cerrado). `q` sale, `p` pausa, `↑`/`↓` recorren el feed, `g` vuelve al directo |
-| `hackspain telemetry stats` | Lo que el watcher ha registrado en esta máquina |
-
-### Key decisions
-
-- **`--json` en scripts** — Cualquier comando con `--json` imprime un solo objeto JSON en stdout y desactiva prompts; el resto va a stderr (p. ej. `hackspain --json team show`, `hackspain --json feed -n 5`).
-- **Fallos rápidos** — Comandos que requieren equipo, solicitud aceptada u onboarding completo fallan con el siguiente paso indicado. Fuera de la ventana de la hackathon siguen funcionando `hackspain profile`, `hackspain perk list` y `hackspain open participantes`.
-
-## Códigos de salida
-
-| Código | Significado |
-|---|---|
-| `0` | Todo bien |
-| `1` | Error del servidor o genérico |
-| `2` | Error de uso (flags mal puestos, falta input en modo no interactivo) |
-| `3` | Sin sesión o sesión caducada |
-| `4` | Aún no elegible (sin solicitud, sin aceptar, onboarding incompleto o hackathon no en marcha) |
-| `5` | No se pudo alcanzar el backend |
-| `130` | Interrumpido (Ctrl+C) |
+- [docs/cli.md](cli.md) — participant CLI commands, flags, exit codes.
+- The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
+- Known gaps vs this doc: [INCONSISTENCIES.md](../INCONSISTENCIES.md).

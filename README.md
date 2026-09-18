@@ -1,17 +1,20 @@
 # HackSpain 2026
 
-Repo del hackathon HackSpain 2026.
+Local product stack for the HackSpain 2026 hackathon: FastAPI, React/Vite, and Postgres. The participant CLI is a separate binary.
 
-Stack local: **FastAPI** (`backend/`) + **React / Vite** (`frontend/`) + **Postgres** (Docker). Tras el init humano: `cp .env_template .env`, `make build`, `make up`.
+- **How the system is built:** [docs/README.md](docs/README.md)
+- **CLI commands:** [docs/cli.md](docs/cli.md) · official page [hackspain.app/cli](https://hackspain.app/cli)
+- **Agent rules:** [AGENTS.md](AGENTS.md)
 
-## Participantes: CLI
+```bash
+cp .env_template .env
+make build
+make up
+```
 
-El cliente de terminal comparte cuenta y datos con [hackspain.app](https://hackspain.app): equipos, retos, entrega, feed y watcher.
+API: http://localhost:8000/ · OpenAPI: http://localhost:8000/docs · UI: http://localhost:3000/
 
-- **Referencia completa de comandos:** [docs/README.md](docs/README.md)
-- **Página oficial:** [hackspain.app/cli](https://hackspain.app/cli)
-
-Instalación rápida (macOS/Linux):
+CLI install (macOS/Linux):
 
 ```bash
 curl -fsSL https://hackspain.com/install.sh | sh
