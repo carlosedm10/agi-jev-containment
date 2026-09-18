@@ -1,8 +1,9 @@
-# HackSpain 2026 — Agent Instructions
+# AGENTS.md
 
 Local stack for the HackSpain 2026 hackathon: FastAPI (`backend/`), React/Vite (`frontend/`), Postgres via Docker. The participant CLI binary is not in this repo.
 
 Read before changing anything:
+docs/ is the source of true in case of doubt follow docs instructions.
 
 1. [docs/README.md](docs/README.md) — taxonomy, architecture, data flows, key decisions. Keep its "Key decisions" list updated when a change makes or supersedes one.
 2. [docs/cli.md](docs/cli.md) — hackspain CLI command surface. Read before documenting or mentioning CLI commands.
