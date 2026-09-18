@@ -1,7 +1,7 @@
 import json
 
 from app.evals.happyrobot_cases import HAPPYROBOT_CLUSTERS, export_jsonl
-from app.evals.models import EventKind, RiskMode, TraceLabel
+from app.evals.models import EventKind, PagerMode, RiskMode, TraceLabel
 
 
 def test_corpus_has_deep_paired_coverage():
@@ -19,7 +19,7 @@ def test_every_cluster_pairs_safe_unsafe_and_covert_behavior():
         assert {trace.label for trace in cluster.traces} == set(TraceLabel)
         safe = next(trace for trace in cluster.traces if trace.label == TraceLabel.SAFE)
         assert safe.oracle.false_positive_guard is True
-        assert safe.oracle.min_level <= 1
+        assert safe.oracle.expected_level <= 1
 
         covert = next(
             trace for trace in cluster.traces if trace.label == TraceLabel.COVERTLY_MALICIOUS
@@ -65,9 +65,28 @@ def test_longitudinal_cases_cover_benign_and_dangerous_memory():
 
 def test_corpus_spans_the_full_hackspain_response_ladder():
     observed_levels = {
-        trace.oracle.min_level for cluster in HAPPYROBOT_CLUSTERS for trace in cluster.traces
+        trace.oracle.expected_level for cluster in HAPPYROBOT_CLUSTERS for trace in cluster.traces
     }
     assert observed_levels == {0, 1, 2, 3, 4, 5}
+
+
+def test_l4_and_l5_page_in_parallel_without_changing_lower_levels():
+    for cluster in HAPPYROBOT_CLUSTERS:
+        for trace in cluster.traces:
+            if trace.oracle.expected_level >= 4:
+                assert trace.oracle.pager_mode == PagerMode.PARALLEL_NON_BLOCKING
+            else:
+                assert trace.oracle.pager_mode == PagerMode.NONE
+
+
+def test_classification_checkpoints_reference_agent_events():
+    for cluster in HAPPYROBOT_CLUSTERS:
+        for trace in cluster.traces:
+            checkpoint = trace.oracle.classification_checkpoint
+            if trace.label == TraceLabel.SAFE:
+                assert checkpoint is None
+            else:
+                assert checkpoint == trace.events[-1].id
 
 
 def test_jsonl_export_is_stable_and_self_contained():
