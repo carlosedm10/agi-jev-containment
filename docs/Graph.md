@@ -9,6 +9,8 @@ A dynamic graph for tracing events.
 * Safety: Thread-safe operations to prevent concurrent access issues.
 * Constraint: threshold must be a float between 0.0 and 1.0 (inclusive).
 
+Implemented in `backend/app/graph/`: `Node` lives in `models.py`, the `ActionGraph` manager and module-level `graph` singleton in `manager.py`, colocated tests under `tests/`.
+
 ### Example
 
 ```python

@@ -22,6 +22,7 @@ These names repeat in compose, Makefile targets, and env vars.
 | Name | Covers | Where it lives |
 |---|---|---|
 | **Item** | Placeholder domain (list endpoint, no real persistence yet) | `backend/app/items/` |
+| **Graph** | Action graph for tracing events: thread-safe node tree, JSON snapshot persistence | `backend/app/graph/` |
 | **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
 | **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
 
@@ -75,5 +76,6 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 ## Where the details live
 
 - [docs/cli.md](cli.md) — participant CLI commands, flags, exit codes.
+- [docs/Graph.md](Graph.md) — action graph spec (nodes, thresholds, save/load).
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
 - Known gaps vs this doc: [INCONSISTENCIES.md](../INCONSISTENCIES.md).
