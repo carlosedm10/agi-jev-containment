@@ -22,8 +22,12 @@ These names repeat in compose, Makefile targets, and env vars.
 | Name | Covers | Where it lives |
 |---|---|---|
 | **Item** | Placeholder domain (list endpoint, no real persistence yet) | `backend/app/items/` |
+| **Action Graph** | Sparse L1+ event chain; `jev` scores short-term burst ∥ long-term history | `backend/app/graph/` · [docs/Graph.md](Graph.md) |
 | **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
 | **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
+| **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
+| **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) |
+| **jev** | Classifier: event type + chain intent + discrete level | Called from the monitoring host, not the sandbox |
 
 ## How it's built
 
@@ -50,6 +54,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **Reads**: `GET /health` hits no database. `GET /api/items/` opens a SQLAlchemy session via `get_db` and currently returns `[]` without querying.
 - **Writes**: none shipped. `Item` is mapped (`items` table: id, name) and Alembic imports it in `alembic/env.py`, but `alembic/versions/` has no revisions, so `make migrate` is a no-op until the first autogenerate.
 - **Sync / background**: none.
+- **Agent run (product path, not shipped yet)**: sandbox JSONL (complete) → `jev` scores short-term burst ∥ long-term key-node history → graph materializes only level ≥ 1 → dispatcher runs the [actions playbook](Actions.md) (tag / Helmcode supervisor / `docker pause` + token revoke / cut egress / kill swarm). L4–L5 also page Guli Moreno via HappyRobot, in parallel with the cut.
 
 ### Entities
 
@@ -71,9 +76,16 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **`make lint` / `make test` run inside already-up containers**: the stack must be up first. `make build` builds AND starts it (`docker compose up --build -d`), so CI only needs `make build` — no separate `make up` step.
 - **Postgres data volume mounts at `/var/lib/postgresql`, not `/var/lib/postgresql/data`**: postgres 18+ images store data in `/var/lib/postgresql/<major>/docker` and the entrypoint hard-fails on any mount at the old `/data` path — even an empty volume. Bumping the major version still needs a dump-and-restore or volume reset (`docker compose down -v`).
 - **Compose build cache is env-injected**: `cache_from`/`cache_to` interpolate `CACHE_FROM`/`CACHE_TO`; CI sets them to the GitHub Actions cache (`type=gha`), local builds default to throwaway `/tmp` dirs. Only one CI workflow exists (`ci.yml`) — it covers push and PRs to `main`, with in-progress runs cancelled on new commits.
+- **`jev` sets the level; playbooks execute it**: criticality is intent of the *chain*, not of one event. L3–L5 are prewritten host-side scripts (`contain` / `cut-egress` / `kill-swarm`), never an LLM choosing the cut. The L2 Helmcode supervisor may only request a re-score.
+- **Graph is sparse; context is short ∥ long**: only level ≥ 1 becomes a node (JSONL keeps everything). On every event, `jev` gets the recent burst and the key-node history in parallel — a streak of bad nodes is dangerous; a mild node after earlier problems still counts for more. How those are mixed is `jev`'s job.
+- **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
+- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra.
 
 ## Where the details live
 
 - [docs/cli.md](cli.md) — participant CLI commands, flags, exit codes.
+- [docs/Graph.md](Graph.md) — action graph spec (sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
+- [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
+- [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
 - Known gaps vs this doc: [INCONSISTENCIES.md](../INCONSISTENCIES.md).

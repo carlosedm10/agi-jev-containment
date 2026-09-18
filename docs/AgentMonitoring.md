@@ -21,4 +21,4 @@ Each agent runs inside an isolated environment (sandbox — one Docker container
 
 ### Classification
 
-Every captured action is passed through `jev`, our classifier, which labels each event (e.g. tool execution, file edit, network request, reasoning step) so runs can be filtered, compared, and scored.
+Every captured action is passed through `jev`, our classifier. `jev` labels the event type (tool execution, file edit, network request, reasoning step) **and** scores the *intent of the current action chain* as criticality 1–5, using short-term burst and long-term key-node history in parallel. Only level ≥ 1 becomes a graph node; JSONL stays complete. The dispatcher then runs a prewritten playbook — tag, supervise, pause, cut egress, or kill the swarm. See [Actions.md](Actions.md) and [Graph.md](Graph.md).
