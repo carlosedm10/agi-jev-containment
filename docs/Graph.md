@@ -1,10 +1,10 @@
-# Action Tree
+# Action Graph
 
-A dynamic graph-based tree for tracing events.
+A dynamic graph for tracing events.
 
 * Dynamic: Starts empty and supports adding nodes at runtime.
 * Node: Each node has exactly one parent (except the root), zero or more children, a threshold, and an optional associated tool (default: `None`).
-* Singleton: A single shared instance manages the entire tree.
+* Singleton: A single shared instance manages the entire graph.
 * Persistence: Supports efficient `save()` and `load()` operations.
 * Safety: Thread-safe operations to prevent concurrent access issues.
 * Constraint: threshold must be a float between 0.0 and 1.0 (inclusive).

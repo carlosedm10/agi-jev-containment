@@ -3,8 +3,26 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same branch/PR — saves runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Buildx layer cache in GitHub Actions cache (compose reads these; local
+  # builds fall back to a local cache dir configured in compose.yaml).
+  CACHE_FROM: type=gha
+  CACHE_TO: type=gha,mode=max
 
 jobs:
   ci:
@@ -20,18 +38,13 @@ jobs:
       - name: Create .env from template
         run: cp .env_template .env
 
-      - name: Build
+      # `make build` = `docker compose up --build -d --force-recreate`,
+      # i.e. it builds AND starts the stack — no separate `up` needed.
+      - name: Build and start stack
         run: make build
-
-      - name: Up
-        run: make up
 
       - name: Lint
         run: make lint
 
       - name: Test
         run: make test
-
-      - name: Down
-        if: always()
-        run: make down

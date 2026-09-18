@@ -4,6 +4,10 @@ services:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
+      # CI exports/imports buildx layers via CACHE_FROM/CACHE_TO (env vars set
+      # in ci.yml); local builds default to a throwaway local cache dir.
+      cache_from: ["${CACHE_FROM:-type=local,src=/tmp/hackspain-cache-backend}"]
+      cache_to: ["${CACHE_TO:-type=local,dest=/tmp/hackspain-cache-backend,mode=max}"]
     env_file:
       - .env
     environment:
@@ -37,9 +41,11 @@ services:
       - appnet_hackspain
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      # pg_isready answers instantly — poll fast so the backend starts sooner.
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
 
   frontend-hackspain:
     container_name: hackspain_frontend
@@ -47,6 +53,8 @@ services:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
+      cache_from: ["${CACHE_FROM:-type=local,src=/tmp/hackspain-cache-frontend}"]
+      cache_to: ["${CACHE_TO:-type=local,dest=/tmp/hackspain-cache-frontend,mode=max}"]
     command: bun run dev -- --host 0.0.0.0
     volumes:
       - ./frontend:/code
