@@ -1,8 +1,6 @@
-# HackSpain 2026 — Agent Instructions
+# AGENTS.md
 
-Repo for the HackSpain 2026 hackathon. It does not contain the CLI code; participant documentation lives here.
-
-Read before changing anything:
+docs/ is the source of true in case of doubt follow docs instructions.
 
 1. [docs/README.md](docs/README.md) — `hackspain` client: commands, exit codes, and conventions (`--json`).
 
