@@ -1,15 +1,15 @@
 # HackSpain 2026
 
-Repo del hackathon HackSpain 2026.
+Repo for the HackSpain 2026 hackathon.
 
-## Participantes: CLI
+## Participants: CLI
 
-El cliente de terminal comparte cuenta y datos con [hackspain.app](https://hackspain.app): equipos, retos, entrega, feed y watcher.
+The terminal client shares its account and data with [hackspain.app](https://hackspain.app): teams, tracks, submission, feed, and watcher.
 
-- **Referencia completa de comandos:** [docs/README.md](docs/README.md)
-- **Página oficial:** [hackspain.app/cli](https://hackspain.app/cli)
+- **Full command reference:** [docs/README.md](docs/README.md)
+- **Official page:** [hackspain.app/cli](https://hackspain.app/cli)
 
-Instalación rápida (macOS/Linux):
+Quick install (macOS/Linux):
 
 ```bash
 curl -fsSL https://hackspain.com/install.sh | sh
