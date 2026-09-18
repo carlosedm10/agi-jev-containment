@@ -9,7 +9,7 @@ Participant → hackspain (local) → HackSpain API → hackspain.app dashboard
 ## The taxonomy
 
 | Area | What it covers in the terminal |
-|---|---|
+| --- | --- |
 | **auth** | Session, login via browser or 8-digit code |
 | **profile** | Participant details and GitHub/X links |
 | **team** | Team, invitations, repo, stack |
@@ -18,23 +18,10 @@ Participant → hackspain (local) → HackSpain API → hackspain.app dashboard
 | **feed / post** | Social feed and posts |
 | **watch / telemetry** | Watcher for AI harnesses and local stats |
 
-## Installation
-
-macOS and Linux: self-contained binary.
-
-```bash
-curl -fsSL https://hackspain.com/install.sh | sh
-hackspain update   # later on, for the latest version
-```
-
-Windows: download `hackspain-windows-x64.exe` from the releases page and rename it to `hackspain.exe`.
-
 ## Getting started
 
-Same account as the dashboard. Login opens the browser to approve the device; the 8-digit code also works. Afterwards it may ask for your name, phone, or GitHub.
-
 | Command | Description |
-|---|---|
+| --- | --- |
 | `hackspain` | Where you are and what to do next; in an interactive terminal, a menu to navigate |
 | `hackspain auth login [--email …] [--code …]` | By default opens `/cli-auth` to approve this device. With `--email`/`--code`, 8-digit code by email, as on the web |
 | `hackspain open [feed\|teams\|perks\|…]` | Opens the dashboard in the browser, already signed in |
@@ -46,7 +33,7 @@ Same account as the dashboard. Login opens the browser to approve the device; th
 The photo and full profile are done in the dashboard.
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `hackspain profile` | Name, diet, travel, phone, notifications, GitHub, and X |
 | `hackspain profile edit [--name …] [--diet …] [--diet-details …] [--from …]` | Edits profile data |
 | `hackspain profile notify on\|off` | Enables or disables notifications |
@@ -59,7 +46,7 @@ The photo and full profile are done in the dashboard.
 To join, the owner shares their 8-character invitation code.
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `hackspain team create <name> [-m github:x -m a@b.c]` | Creates the team; adds people by GitHub, X, or email |
 | `hackspain team join <code>` | Joins with the owner's code |
 | `hackspain team show \| list` | Your team, or all teams |
@@ -75,7 +62,7 @@ To join, the owner shares their 8-character invitation code.
 One project per team, as many tracks as you want. Submitting freezes everything; drafts can be saved beforehand.
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `hackspain track list` | Available tracks |
 | `hackspain track register <slug…> \| unregister <slug…>` | Join or leave tracks |
 | `hackspain track move <from> <to>` | Switch tracks |
@@ -85,7 +72,7 @@ One project per team, as many tracks as you want. Submitting freezes everything;
 ## Perks and milestones
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `hackspain perk list` | Partner perks catalog (claim in the dashboard) |
 | `hackspain milestone add firstCommit\|firstBuild\|firstDemo\|custom [--label …] [--at ISO]` | Records a team milestone |
 | `hackspain milestone list [--all]` | Recorded milestones |
@@ -95,7 +82,7 @@ One project per team, as many tracks as you want. Submitting freezes everything;
 Same feed as the dashboard's Feed page: messages and GitHub activity from team repos.
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `hackspain feed [-n 20] [--no-images] [--before …]` | Latest posts and activity, paginated. In kitty, Ghostty, WezTerm, iTerm2, or the VS Code terminal, photos render in the terminal; elsewhere, a link |
 | `hackspain post "text" [--image photo.jpg]` | Posts (≤500 characters; jpeg/png/webp/gif ≤5 MB) |
 
@@ -104,7 +91,7 @@ Same feed as the dashboard's Feed page: messages and GitHub activity from team r
 Meant for a terminal left open all weekend: detects AI harnesses (Claude Code, Codex, Gemini CLI, Qwen Code, OpenCode, Kilo Code, Cline), shows the org feed and notifications, and reports usage. It does not send prompts or full paths from your machine.
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `hackspain watch [--interval 30] [--no-upload] [--no-images] [--once]` | Starts the watcher; reports AI usage during the hackathon window (including while it was closed). `q` quits, `p` pauses, `↑`/`↓` scroll the feed, `g` returns to live |
 | `hackspain telemetry stats` | What the watcher has recorded on this machine |
 
@@ -116,7 +103,7 @@ Meant for a terminal left open all weekend: detects AI harnesses (Claude Code, C
 ## Exit codes
 
 | Code | Meaning |
-|---|---|
+| --- | --- |
 | `0` | All good |
 | `1` | Server or generic error |
 | `2` | Usage error (bad flags, missing input in non-interactive mode) |
