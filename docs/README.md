@@ -75,6 +75,8 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **Tests live next to the code they cover**: feature tests under `app/<feature>/tests/`; health lives in `app/tests/`. Not a top-level `backend/tests/`.
 - **`make lint` / `make test` run inside already-up containers**: the stack must be up first. `make build` builds AND starts it (`docker compose up --build -d`), so CI only needs `make build` — no separate `make up` step.
 - **Postgres data volume mounts at `/var/lib/postgresql`, not `/var/lib/postgresql/data`**: postgres 18+ images store data in `/var/lib/postgresql/<major>/docker` and the entrypoint hard-fails on any mount at the old `/data` path — even an empty volume. Bumping the major version still needs a dump-and-restore or volume reset (`docker compose down -v`).
+- **Frontend image must not copy host `node_modules`**: root `.dockerignore` excludes `frontend/node_modules` so `COPY frontend/ .` cannot overwrite the Linux install with Darwin Rollup binaries. Recreate the anonymous `/code/node_modules` volume after a bad copy (`docker compose up --renew-anon-volumes`).
+- **`PYTHONPATH=/app` on the backend**: Alembic is invoked as a venv entrypoint (`uv run alembic`), which does not put the bind-mounted `app/` package on `sys.path`. Uvicorn's `app.main:app` import still works because `uv run` adds the project cwd.
 - **Compose build cache is env-injected**: `cache_from`/`cache_to` interpolate `CACHE_FROM`/`CACHE_TO`; CI sets them to the GitHub Actions cache (`type=gha`), local builds default to throwaway `/tmp` dirs. Only one CI workflow exists (`ci.yml`) — it covers push and PRs to `main`, with in-progress runs cancelled on new commits.
 - **`jev` sets the level; playbooks execute it**: criticality is intent of the *chain*, not of one event. L3–L5 are prewritten host-side scripts (`contain` / `cut-egress` / `kill-swarm`), never an LLM choosing the cut. The L2 Helmcode supervisor may only request a re-score.
 - **Graph is sparse; context is short ∥ long**: only level ≥ 1 becomes a node (JSONL keeps everything). On every event, `jev` gets the recent burst and the key-node history in parallel — a streak of bad nodes is dangerous; a mild node after earlier problems still counts for more. How those are mixed is `jev`'s job.
@@ -88,4 +90,3 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
-- Known gaps vs this doc: [INCONSISTENCIES.md](../INCONSISTENCIES.md).
