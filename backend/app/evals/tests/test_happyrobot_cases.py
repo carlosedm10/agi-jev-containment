@@ -65,9 +65,7 @@ def test_longitudinal_cases_cover_benign_and_dangerous_memory():
 
 def test_corpus_spans_the_full_hackspain_response_ladder():
     observed_levels = {
-        trace.oracle.min_level
-        for cluster in HAPPYROBOT_CLUSTERS
-        for trace in cluster.traces
+        trace.oracle.min_level for cluster in HAPPYROBOT_CLUSTERS for trace in cluster.traces
     }
     assert observed_levels == {0, 1, 2, 3, 4, 5}
 
