@@ -1,126 +1,126 @@
 # hackspain CLI — The One Doc
 
-Cliente de terminal para participantes: misma cuenta y mismos datos que el dashboard (equipos, retos, entrega, feed y watcher). Documentación canónica en la web: [hackspain.app/cli](https://hackspain.app/cli).
+Terminal client for participants: same account and same data as the dashboard (teams, tracks, submission, feed, and watcher). Canonical documentation on the web: [hackspain.app/cli](https://hackspain.app/cli).
 
 ```
-Participante → hackspain (local) → API HackSpain → dashboard hackspain.app
+Participant → hackspain (local) → HackSpain API → hackspain.app dashboard
 ```
 
 ## The taxonomy
 
-| Área | Qué cubre en terminal |
+| Area | What it covers in the terminal |
 |---|---|
-| **auth** | Sesión, login por navegador o código de 8 dígitos |
-| **profile** | Datos de participante y enlaces GitHub/X |
-| **team** | Equipo, invitación, repo, stack |
-| **track / project / submit** | Retos, proyecto y entrega |
-| **perk / milestone** | Beneficios (catálogo) e hitos del equipo |
-| **feed / post** | Feed social y publicaciones |
-| **watch / telemetry** | Watcher de harnesses de IA y estadísticas locales |
+| **auth** | Session, login via browser or 8-digit code |
+| **profile** | Participant details and GitHub/X links |
+| **team** | Team, invitations, repo, stack |
+| **track / project / submit** | Tracks, project, and submission |
+| **perk / milestone** | Perks (catalog) and team milestones |
+| **feed / post** | Social feed and posts |
+| **watch / telemetry** | Watcher for AI harnesses and local stats |
 
-## Instalación
+## Installation
 
-macOS y Linux: binario autocontenido.
+macOS and Linux: self-contained binary.
 
 ```bash
 curl -fsSL https://hackspain.com/install.sh | sh
-hackspain update   # más adelante, para la última versión
+hackspain update   # later on, for the latest version
 ```
 
-Windows: descarga `hackspain-windows-x64.exe` desde la página de releases y renómbralo a `hackspain.exe`.
+Windows: download `hackspain-windows-x64.exe` from the releases page and rename it to `hackspain.exe`.
 
-## Primeros pasos
+## Getting started
 
-Misma cuenta que el dashboard. El login abre el navegador para aprobar el dispositivo; también vale el código de 8 dígitos. Después puede pedir nombre, teléfono o GitHub.
+Same account as the dashboard. Login opens the browser to approve the device; the 8-digit code also works. Afterwards it may ask for your name, phone, or GitHub.
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `hackspain` | Dónde estás y qué toca hacer; en terminal interactiva, menú para moverte |
-| `hackspain auth login [--email …] [--code …]` | Por defecto abre `/cli-auth` para aprobar este dispositivo. Con `--email`/`--code`, código de 8 dígitos por correo, como en la web |
-| `hackspain open [feed\|teams\|perks\|…]` | Abre el dashboard en el navegador con sesión ya iniciada |
-| `hackspain auth status` | Comprueba tu sesión |
-| `hackspain auth logout` | Cierra sesión |
+| `hackspain` | Where you are and what to do next; in an interactive terminal, a menu to navigate |
+| `hackspain auth login [--email …] [--code …]` | By default opens `/cli-auth` to approve this device. With `--email`/`--code`, 8-digit code by email, as on the web |
+| `hackspain open [feed\|teams\|perks\|…]` | Opens the dashboard in the browser, already signed in |
+| `hackspain auth status` | Checks your session |
+| `hackspain auth logout` | Signs out |
 
-## Perfil
+## Profile
 
-La foto y la ficha completa se hacen en el dashboard.
+The photo and full profile are done in the dashboard.
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `hackspain profile` | Nombre, dieta, viaje, teléfono, avisos, GitHub y X |
-| `hackspain profile edit [--name …] [--diet …] [--diet-details …] [--from …]` | Edita datos del perfil |
-| `hackspain profile notify on\|off` | Activa o desactiva avisos |
-| `hackspain profile phone [+34…]` | Guarda teléfono de contacto |
-| `hackspain profile github [--unlink]` | Enlace para autorizar GitHub en el navegador |
-| `hackspain profile x [@usuario] [--clear]` | Guarda usuario de X |
+| `hackspain profile` | Name, diet, travel, phone, notifications, GitHub, and X |
+| `hackspain profile edit [--name …] [--diet …] [--diet-details …] [--from …]` | Edits profile data |
+| `hackspain profile notify on\|off` | Enables or disables notifications |
+| `hackspain profile phone [+34…]` | Saves contact phone number |
+| `hackspain profile github [--unlink]` | Link to authorize GitHub in the browser |
+| `hackspain profile x [@user] [--clear]` | Saves X handle |
 
-## Equipo
+## Team
 
-Para unirte, el dueño comparte su código de invitación de 8 caracteres.
+To join, the owner shares their 8-character invitation code.
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `hackspain team create <name> [-m github:x -m a@b.c]` | Crea el equipo; añade gente por GitHub, X o email |
-| `hackspain team join <code>` | Únete con el código del dueño |
-| `hackspain team show \| list` | Tu equipo, o todos los equipos |
-| `hackspain team code [--regenerate]` | Muestra o regenera el código de invitación |
-| `hackspain team repo [url…] [--clear]` | Vincula repositorio(s) público(s) de GitHub; actividad en el feed. Hazlo público antes de vincular |
-| `hackspain team leave` | Sal del equipo |
-| `hackspain team transfer [member]` | El dueño cede el equipo a otro miembro |
-| `hackspain team dissolve` | El dueño borra un equipo sin otros miembros |
-| `hackspain stack set nextjs convex claude-code` | Declara el stack tecnológico del equipo |
+| `hackspain team create <name> [-m github:x -m a@b.c]` | Creates the team; adds people by GitHub, X, or email |
+| `hackspain team join <code>` | Joins with the owner's code |
+| `hackspain team show \| list` | Your team, or all teams |
+| `hackspain team code [--regenerate]` | Shows or regenerates the invitation code |
+| `hackspain team repo [url…] [--clear]` | Links public GitHub repo(s); activity shows in the feed. Make it public before linking |
+| `hackspain team leave` | Leaves the team |
+| `hackspain team transfer [member]` | The owner hands the team over to another member |
+| `hackspain team dissolve` | The owner deletes a team with no other members |
+| `hackspain stack set nextjs convex claude-code` | Declares the team's tech stack |
 
-## Retos y entrega
+## Tracks and submission
 
-Un proyecto por equipo, tantos retos como quieras. La entrega congela todo; los borradores se pueden guardar antes.
+One project per team, as many tracks as you want. Submitting freezes everything; drafts can be saved beforehand.
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `hackspain track list` | Retos disponibles |
-| `hackspain track register <slug…> \| unregister <slug…>` | Apúntate o bórrate de retos |
-| `hackspain track move <from> <to>` | Cámbiate de reto |
-| `hackspain submit [--draft]` | Formulario interactivo de entrega; flags para scripts |
-| `hackspain project show \| list` | Tu proyecto, o todos los proyectos |
+| `hackspain track list` | Available tracks |
+| `hackspain track register <slug…> \| unregister <slug…>` | Join or leave tracks |
+| `hackspain track move <from> <to>` | Switch tracks |
+| `hackspain submit [--draft]` | Interactive submission form; flags for scripts |
+| `hackspain project show \| list` | Your project, or all projects |
 
-## Perks y milestones
+## Perks and milestones
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `hackspain perk list` | Catálogo de beneficios de partners (reclamar en el dashboard) |
-| `hackspain milestone add firstCommit\|firstBuild\|firstDemo\|custom [--label …] [--at ISO]` | Registra un hito del equipo |
-| `hackspain milestone list [--all]` | Hitos registrados |
+| `hackspain perk list` | Partner perks catalog (claim in the dashboard) |
+| `hackspain milestone add firstCommit\|firstBuild\|firstDemo\|custom [--label …] [--at ISO]` | Records a team milestone |
+| `hackspain milestone list [--all]` | Recorded milestones |
 
 ## Feed
 
-Mismo feed que la página Feed del dashboard: mensajes y actividad GitHub de repos de equipo.
+Same feed as the dashboard's Feed page: messages and GitHub activity from team repos.
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `hackspain feed [-n 20] [--no-images] [--before …]` | Últimas publicaciones y actividad, paginado. En kitty, Ghostty, WezTerm, iTerm2 o terminal de VS Code las fotos en terminal; en el resto, enlace |
-| `hackspain post "texto" [--image foto.jpg]` | Publica (≤500 caracteres; jpeg/png/webp/gif ≤5 MB) |
+| `hackspain feed [-n 20] [--no-images] [--before …]` | Latest posts and activity, paginated. In kitty, Ghostty, WezTerm, iTerm2, or the VS Code terminal, photos render in the terminal; elsewhere, a link |
+| `hackspain post "text" [--image photo.jpg]` | Posts (≤500 characters; jpeg/png/webp/gif ≤5 MB) |
 
 ## Watcher
 
-Pensado para una terminal abierta todo el fin de semana: detecta harnesses de IA (Claude Code, Codex, Gemini CLI, Qwen Code, OpenCode, Kilo Code, Cline), muestra feed y avisos de la organización, y reporta uso. No envía prompts ni rutas completas de tu máquina.
+Meant for a terminal left open all weekend: detects AI harnesses (Claude Code, Codex, Gemini CLI, Qwen Code, OpenCode, Kilo Code, Cline), shows the org feed and notifications, and reports usage. It does not send prompts or full paths from your machine.
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `hackspain watch [--interval 30] [--no-upload] [--no-images] [--once]` | Arranca el watcher; reporta uso de IA en la ventana de la hackathon (también cuando estaba cerrado). `q` sale, `p` pausa, `↑`/`↓` recorren el feed, `g` vuelve al directo |
-| `hackspain telemetry stats` | Lo que el watcher ha registrado en esta máquina |
+| `hackspain watch [--interval 30] [--no-upload] [--no-images] [--once]` | Starts the watcher; reports AI usage during the hackathon window (including while it was closed). `q` quits, `p` pauses, `↑`/`↓` scroll the feed, `g` returns to live |
+| `hackspain telemetry stats` | What the watcher has recorded on this machine |
 
 ### Key decisions
 
-- **`--json` en scripts** — Cualquier comando con `--json` imprime un solo objeto JSON en stdout y desactiva prompts; el resto va a stderr (p. ej. `hackspain --json team show`, `hackspain --json feed -n 5`).
-- **Fallos rápidos** — Comandos que requieren equipo, solicitud aceptada u onboarding completo fallan con el siguiente paso indicado. Fuera de la ventana de la hackathon siguen funcionando `hackspain profile`, `hackspain perk list` y `hackspain open participantes`.
+- **`--json` in scripts** — Any command with `--json` prints a single JSON object to stdout and disables prompts; everything else goes to stderr (e.g. `hackspain --json team show`, `hackspain --json feed -n 5`).
+- **Fail fast** — Commands that require a team, an accepted application, or completed onboarding fail with the next step indicated. Outside the hackathon window, `hackspain profile`, `hackspain perk list`, and `hackspain open participantes` still work.
 
-## Códigos de salida
+## Exit codes
 
-| Código | Significado |
+| Code | Meaning |
 |---|---|
-| `0` | Todo bien |
-| `1` | Error del servidor o genérico |
-| `2` | Error de uso (flags mal puestos, falta input en modo no interactivo) |
-| `3` | Sin sesión o sesión caducada |
-| `4` | Aún no elegible (sin solicitud, sin aceptar, onboarding incompleto o hackathon no en marcha) |
-| `5` | No se pudo alcanzar el backend |
-| `130` | Interrumpido (Ctrl+C) |
+| `0` | All good |
+| `1` | Server or generic error |
+| `2` | Usage error (bad flags, missing input in non-interactive mode) |
+| `3` | No session or expired session |
+| `4` | Not yet eligible (no application, not accepted, incomplete onboarding, or hackathon not running) |
+| `5` | Could not reach the backend |
+| `130` | Interrupted (Ctrl+C) |
