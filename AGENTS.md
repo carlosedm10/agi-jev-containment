@@ -5,6 +5,8 @@ Local stack for the HackSpain 2026 hackathon: FastAPI (`backend/`), React/Vite (
 Read before changing anything:
 docs/ is the source of true in case of doubt follow docs instructions.
 
+**AI skills** → [`.agents/skills/`](.agents/skills/) — Makefile, Docker, FastAPI/React, docs, CI, and pydantic_ai conventions. Claude Code loads them via [`.claude/skills/`](.claude/skills/); for other tools run the installer in [`.agents/install`](.agents/install) (see [`.agents/README.md`](.agents/README.md)).
+
 1. [docs/README.md](docs/README.md) — taxonomy, architecture, data flows, key decisions. Keep its "Key decisions" list updated when a change makes or supersedes one.
 2. [docs/cli.md](docs/cli.md) — hackspain CLI command surface. Read before documenting or mentioning CLI commands.
 3. Root `Makefile` — `build`, `up`, `down`, `lint`, `test`, `migrate`.
