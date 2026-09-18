@@ -67,8 +67,8 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 
 - **Compose hostname in `DATABASE_URL`**: the API talks to `postgres-hackspain`, not `localhost`. Host-side tools that are not on `appnet_hackspain` must use `localhost:5432` instead.
 - **CORS pinned to the Vite origin**: `http://localhost:3000` only — other origins are rejected on purpose until a real frontend origin exists.
-- **Feature packages own their tests**: pytest `testpaths = ["app"]`; tests sit under `app/<feature>/tests/`, not a top-level `backend/tests/`.
-- **`make lint` / `make test` exec into running containers**: they are not `run --rm`. The stack must already be up (CI does `make up` first).
+- **Tests live next to the code they cover**: feature tests under `app/<feature>/tests/`; health lives in `app/tests/`. Not a top-level `backend/tests/`.
+- **`make lint` / `make test` run inside already-up containers**: the stack must be up first (CI does `make up`).
 
 ## Where the details live
 

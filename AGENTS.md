@@ -19,5 +19,5 @@ Known code flaws: [INCONSISTENCIES.md](INCONSISTENCIES.md) — check before fixi
 
 ## Local verification
 
-- App: `make lint` and `make test` after the stack is up (`make build` / `make up`). Atomics use `docker compose exec`.
+- App: `make lint` and `make test` after the stack is up (`make build` / `make up`). Per-service targets (`lint-backend`, …) use `docker compose exec` and fail if the container is not running.
 - CLI docs: relative links resolve; every listed command still appears on the official CLI page.
