@@ -28,6 +28,7 @@ These names repeat in compose, Makefile targets, and env vars.
 | **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
 | **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) |
 | **jev** | Classifier: event type + chain intent + discrete level | Called from the monitoring host, not the sandbox |
+| **HappyRobot evals** | Paired safe, unsafe, and covert agent traces across single and longitudinal sessions | `backend/app/evals/` · [docs/HappyRobotEvals.md](HappyRobotEvals.md) |
 
 ## How it's built
 
@@ -82,6 +83,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **Graph is sparse; context is short ∥ long**: only level ≥ 1 becomes a node (JSONL keeps everything). On every event, `jev` gets the recent burst and the key-node history in parallel — a streak of bad nodes is dangerous; a mild node after earlier problems still counts for more. How those are mixed is `jev`'s job.
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
 - **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra.
+- **Long memory is evidence, never authority**: evals preserve source, trust, time, and corrections across sessions. Historical context may inform a decision, but repetition, a summary, or a prior success cannot grant identity or permission. Every adversarial journey has a nearby safe control so stricter monitoring does not hide false positives.
 
 ## Where the details live
 
@@ -89,4 +91,5 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - [docs/Graph.md](Graph.md) — action graph spec (sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
+- [docs/HappyRobotEvals.md](HappyRobotEvals.md) — HappyRobot use-case map, adversarial methodology, and the synthetic corpus contract.
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
