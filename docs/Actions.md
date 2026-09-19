@@ -132,26 +132,39 @@ Rollback: recreate agent containers from known images, empty workspaces. New `ru
 
 Not a sixth level. A side-effect of L4 and L5. Number in `ONCALL_PHONE`, never in git. Outbound HappyRobot voice (`template: voice-agent`). Pager egress is not on `agentnet`. Infra does not wait for pickup; missing env = log error + still cut.
 
-The To-number lives on the outbound node, not in the POST body. Hook URL, API key, and number stay in gitignored `.env`. Local fire: `scripts/page.sh`. After changing who gets the call, confirm the run's `to` before anyone picks up.
+Destination is `telefono` in the POST (`ONCALL_PHONE` in gitignored `.env`). The outbound To field reads that payload var. Hook URL and API key stay in `.env`. The demo dispatcher fires this at L4/L5 without waiting for simulated containment. `scripts/page.sh` is a direct diagnostic: it POSTs the hook and can poll via `scripts/pager_watch.py`. After changing who gets the call, confirm the run's `to` before anyone picks up.
 
 ```
 POST $HAPPYROBOT_HOOK_URL
 Authorization: Bearer $HAPPYROBOT_API_KEY
 {
   "tipo_emergencia": "{intent} (level {level}, run {run_id})",
-  "pautas": "{action_taken}. Abra {viewer_url}.",
+  "pautas": "{action_taken}.",
   "nivel_gravedad": "crítico",
-  "nombre_contacto": "$ONCALL_NAME"
+  "nombre_contacto": "$ONCALL_NAME",
+  "telefono": "$ONCALL_PHONE"
 }
 ```
 
-Voice: identify as the pager, say `{action_taken}`, ask him to open `{viewer_url}`. Retry once on no pickup. Do not roll infra back.
+Voice: identify as the pager, say the AGI escaped its sandbox, say `{action_taken}` in plain language. Do not send him to the viewer — that UI is for the room, not the phone. Retry once on no pickup. Do not roll infra back.
 
 ---
 
+### Demo adapter (this phase)
+
+The wallboard is driven by a simulated incident feed, not by `jev`. Another service POSTs an already-decided level:
+
+```
+POST /api/demo/incidents/{incident_id}/dispatch
+X-Dispatch-Token: $ACTION_DISPATCH_TOKEN
+{"level": 3, "intent": "optional", "rationale": "optional"}
+```
+
+Levels only increase per incident; duplicates and lower levels are no-ops. The journal under `<run_log_dir>/demo-actions/` is separate from the classifier tape. L1–L3 (and the infra half of L4/L5) are simulated. L4/L5 also place the real HappyRobot call in parallel. React on `:3000` polls `GET /api/demo/incidents/latest`. This adapter does not set run level on the Action Graph.
+
 ### Dispatcher
 
-Host-side, every time `jev` returns a level greater than the run's stored level.
+Host-side production path, every time `jev` returns a level greater than the run's stored level. Not wired yet; the demo adapter above is what the viewer uses today.
 
 ```
 on_jev(run, result):

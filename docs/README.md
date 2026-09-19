@@ -27,7 +27,8 @@ These names repeat in compose, Makefile targets, and env vars.
 | **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
 | **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
 | **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
-| **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) |
+| **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) · `backend/app/actions/` |
+| **Demo incidents** | Simulated L1–L5 feed for the wallboard; real HappyRobot only at L4/L5 | `POST /api/demo/incidents/{id}/dispatch` |
 | **Demo scenarios** | Malicious-agent harness + the L1–L5 demo arcs | [docs/scenarios.md](scenarios.md) |
 | **jev** | Classifier: chain intent → level 0–5 + confidence + intent choice | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
 
@@ -53,9 +54,9 @@ GitHub Actions copies `.env_template` to `.env`, then only `make build`, `make u
 
 Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environment. Compose injects `DATABASE_URL` with host `postgres-hackspain` (not `localhost`). Pydantic settings also accept a `.env` next to the process cwd (`/app` in the container), and ignore extra keys such as `POSTGRES_*`.
 
-- **Reads**: `GET /health` hits no database. `GET /api/runs/{run_id}` returns the run's derived level and its materialized key nodes; `GET /api/runs` lists runs seen on the JSONL tape.
-- **Writes**: `POST /api/runs/{run_id}/events` appends the event to the run's JSONL tape, runs the two-tier classification pipeline, and materializes a graph node when the verdict is level ≥ 1. Postgres is currently unused by the product path: the graph is in-memory with a JSON snapshot, the tape is JSONL under `run_log_dir`, and there is no SQLAlchemy model — so `alembic/versions/` still has no revisions and `make migrate` remains a no-op.
-- **Sync / background**: none.
+- **Reads**: `GET /health` hits no database. `GET /api/runs/{run_id}` returns the run's derived level and its materialized key nodes; `GET /api/runs` lists runs seen on the JSONL tape. The wallboard polls `GET /api/demo/incidents/latest` (404 until a demo incident exists).
+- **Writes**: `POST /api/runs/{run_id}/events` appends the event to the run's JSONL tape, runs the two-tier classification pipeline, and materializes a graph node when the verdict is level ≥ 1. Postgres is currently unused by the product path: the graph is in-memory with a JSON snapshot, the tape is JSONL under `run_log_dir`, and there is no SQLAlchemy model — so `alembic/versions/` still has no revisions and `make migrate` remains a no-op. `POST /api/demo/incidents/{incident_id}/dispatch` accepts a simulated level 1–5 (header `X-Dispatch-Token`); it does not write the classifier tape or the Action Graph.
+- **Sync / background**: accepted demo dispatches run their playbook as an asyncio task; the POST returns after the journal records acceptance.
 - **Agent run (product path)**: sandbox JSONL (complete) → `jev` scores short-term burst ∥ long-term key-node history → graph materializes only level ≥ 1 → dispatcher runs the [actions playbook](Actions.md). On this laptop that is tag / Helmcode supervisor / `docker pause` + close ports / disconnect `agentnet` / stop the agent compose. Ideal mapping (IAM, IGW, swarm) is in that same doc. L4–L5 also page Guli Moreno via HappyRobot, in parallel with the cut.
 
 ### Entities
@@ -69,7 +70,8 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 2. `make build` starts Postgres, then uvicorn on `:8000`, then the frontend container on `:3000`.
 3. Browser or `curl` `GET http://localhost:8000/health` → `{"status":"ok"}`.
 4. `curl -X POST localhost:8000/api/runs/demo/events -H 'content-type: application/json' -d '{"event":"file_read","path":"/app/.env"}'` → verdict JSON. With no `TYPESAFE_API_KEY` this returns a clean degraded verdict (level unchanged, `degraded: true`), and the event still lands on the tape — not a 500.
-5. OpenAPI UI is at `http://localhost:8000/docs`.
+5. `curl -X POST localhost:8000/api/demo/incidents/demo/dispatch -H 'content-type: application/json' -H "X-Dispatch-Token: $ACTION_DISPATCH_TOKEN" -d '{"level":1}'` starts a simulated playbook; the wallboard on `:3000` polls it. Skip L4/L5 unless you intend to place a real call.
+6. OpenAPI UI is at `http://localhost:8000/docs`.
 
 ## Key decisions and caveats (why it is this way)
 
@@ -88,7 +90,8 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **The tape and the graph are different things**: the JSONL tape under `run_log_dir` keeps every event (short-term context, replay, forensics); the graph keeps only materialized key nodes. Conflating them is what made the old code unable to be sparse.
 - **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty).
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
-- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra. Destination is on the outbound node, not in the JSON. Hook URL, key, and number stay in gitignored `.env`; `scripts/page.sh` is the local trigger.
+- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra. The pager JSON includes `telefono` from `ONCALL_PHONE`; the outbound To field reads that payload var. Hook URL, key, and number stay in gitignored `.env`. The demo dispatcher places that call at L4/L5; `scripts/page.sh` remains a direct pager diagnostic.
+- **The L1–L5 ladder in the viewer is state-driven**: React polls `GET /api/demo/incidents/latest` and renders only journaled action state. A lower row can look reached without showing `OK` unless that action actually ran. Containment, supervision, egress, forensics, and swarm shutdown are simulated in this phase; the L4/L5 pager is real. Demo journals live under `<run_log_dir>/demo-actions/`, never in the classifier tape. Code: `backend/app/actions/` and `frontend/src/ladder/`.
 
 ## Where the details live
 
