@@ -4,6 +4,9 @@ import json
 import os
 import tempfile
 import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -15,11 +18,112 @@ from app.graph.models import Node
 _UPDATABLE_FIELDS = frozenset({"level", "threshold", "intent", "event", "action_id"})
 
 
+@dataclass(frozen=True)
+class GraphUpdate:
+    """One atomic batch of graph changes, broadcast to stream subscribers.
+
+    ``upsert_nodes`` carries full node payloads (neighbors by id), so applying
+    it replaces the client-side version of each node wholesale.
+    """
+
+    revision: int
+    root: str | None
+    upsert_nodes: list[dict[str, Any]]
+    removed_node_ids: list[str]
+
+
+GraphListener = Callable[[GraphUpdate], None]
+
+
 class ActionGraph:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._nodes: dict[str, Node] = {}
         self._root_id: str | None = None
+        # Streaming state: monotonically increasing revision, batched change
+        # tracking, and listeners notified after each top-level mutation.
+        self._revision = 0
+        self._listeners: list[GraphListener] = []
+        self._batch_depth = 0
+        self._dirty_upserts: dict[str, None] = {}  # ordered set
+        self._dirty_removed: set[str] = set()
+
+    # -- Streaming support ------------------------------------------------------
+    #
+    # subscribe() registers the listener and captures the initial snapshot
+    # under a single lock acquisition, so a client can never miss an update
+    # committed between "read snapshot" and "register".
+
+    def subscribe(self, listener: GraphListener) -> dict[str, Any]:
+        with self._lock:
+            self._listeners.append(listener)
+            return self._snapshot()
+
+    def unsubscribe(self, listener: GraphListener) -> None:
+        with self._lock:
+            try:
+                self._listeners.remove(listener)
+            except ValueError:
+                pass
+
+    @property
+    def revision(self) -> int:
+        with self._lock:
+            return self._revision
+
+    def _snapshot(self) -> dict[str, Any]:
+        """Capture {revision, root, nodes}; caller must hold the lock."""
+        return {
+            "revision": self._revision,
+            "root": self._root_id,
+            "nodes": [_node_payload(node) for node in self._nodes.values()],
+        }
+
+    @contextmanager
+    def _batch(self) -> Iterator[None]:
+        """Group mutations so composite ops emit a single GraphUpdate.
+
+        Nested batches (e.g. append -> ensure_run -> add_node) only emit at
+        the outermost boundary. Caller must hold the lock.
+        """
+        self._batch_depth += 1
+        try:
+            yield
+        finally:
+            self._batch_depth -= 1
+        if self._batch_depth == 0:
+            self._emit()
+
+    def _emit(self) -> None:
+        """Publish the pending batch as one update; caller must hold the lock."""
+        if not self._dirty_upserts and not self._dirty_removed:
+            return
+        self._revision += 1
+        update = GraphUpdate(
+            revision=self._revision,
+            root=self._root_id,
+            upsert_nodes=[
+                _node_payload(self._nodes[nid])
+                for nid in self._dirty_upserts
+                if nid in self._nodes
+            ],
+            removed_node_ids=sorted(self._dirty_removed),
+        )
+        self._dirty_upserts = {}
+        self._dirty_removed = set()
+        for listener in list(self._listeners):
+            try:
+                listener(update)
+            except Exception:  # noqa: BLE001 - a broken sink must not break mutations
+                pass
+
+    def _mark_upsert(self, node: Node) -> None:
+        self._dirty_upserts[node.id] = None
+        self._dirty_removed.discard(node.id)
+
+    def _mark_removed(self, node_id: str) -> None:
+        if node_id not in self._dirty_upserts:
+            self._dirty_removed.add(node_id)
 
     @property
     def root(self) -> Node | None:
@@ -61,12 +165,15 @@ class ActionGraph:
                 raise ValueError(f"connect target {connect.id!r} is not in the graph")
 
             node = Node(id=node_id, threshold=value, tool=tool, **fields)
-            self._nodes[node_id] = node
-            if connect is not None:
-                connect.neighbors.append(node)
-                node.neighbors.append(connect)  # mutual: undirected adjacency
-            else:
-                self._root_id = node_id
+            with self._batch():
+                self._nodes[node_id] = node
+                if connect is not None:
+                    connect.neighbors.append(node)
+                    node.neighbors.append(connect)  # mutual: undirected adjacency
+                    self._mark_upsert(connect)  # its neighbor list changed too
+                else:
+                    self._root_id = node_id
+                self._mark_upsert(node)
             return node
 
     def connect(self, src: Node, dst: Node) -> None:
@@ -80,8 +187,11 @@ class ActionGraph:
                 raise ValueError("self-loops are not allowed")
             if dst in src.neighbors:
                 raise ValueError(f"edge {src.id!r} -- {dst.id!r} already exists")
-            src.neighbors.append(dst)
-            dst.neighbors.append(src)
+            with self._batch():
+                src.neighbors.append(dst)
+                dst.neighbors.append(src)
+                self._mark_upsert(src)
+                self._mark_upsert(dst)
 
     def ensure_run(self, run_id: str) -> Node:
         if not isinstance(run_id, str) or not run_id:
@@ -90,10 +200,12 @@ class ActionGraph:
             run_node = self._nodes.get(f"run:{run_id}")
             if run_node is not None:
                 return run_node
-            if self._root_id is None:
-                self.add_node("root")
-            root = self._nodes[self._root_id]
-            return self.add_node(f"run:{run_id}", connect=root, run_id=run_id)
+            # Composite op: may create root and run node in one go.
+            with self._batch():
+                if self._root_id is None:
+                    self.add_node("root")
+                root = self._nodes[self._root_id]
+                return self.add_node(f"run:{run_id}", connect=root, run_id=run_id)
 
     def append(
         self,
@@ -106,23 +218,28 @@ class ActionGraph:
         action_id: str | None = None,
     ) -> Node:
         with self._lock:
-            run_node = self.ensure_run(run_id)
-            # Run membership is the run_id stamp, not graph traversal: an undirected
-            # graph cannot keep runs isolated by direction alone.
-            chained = [n for n in self._nodes.values() if n.run_id == run_id and n is not run_node]
-            last = chained[-1] if chained else run_node
-            seq = len(chained) + 1
-            return self.add_node(
-                f"{run_id}:{seq}",
-                connect=last,
-                threshold=threshold,
-                run_id=run_id,
-                level=Level(level),
-                intent=intent,
-                event=event,
-                action_id=action_id,
-                created_at=datetime.now(UTC),
-            )
+            # Composite op: ensure_run may create the root and the run node
+            # before the new key node — all of it lands in one GraphUpdate.
+            with self._batch():
+                run_node = self.ensure_run(run_id)
+                # Run membership is the run_id stamp, not graph traversal: an undirected
+                # graph cannot keep runs isolated by direction alone.
+                chained = [
+                    n for n in self._nodes.values() if n.run_id == run_id and n is not run_node
+                ]
+                last = chained[-1] if chained else run_node
+                seq = len(chained) + 1
+                return self.add_node(
+                    f"{run_id}:{seq}",
+                    connect=last,
+                    threshold=threshold,
+                    run_id=run_id,
+                    level=Level(level),
+                    intent=intent,
+                    event=event,
+                    action_id=action_id,
+                    created_at=datetime.now(UTC),
+                )
 
     def run_nodes(self, run_id: str) -> list[Node]:
         with self._lock:
@@ -163,14 +280,20 @@ class ActionGraph:
             node = self._nodes.get(node_id)
             if node is None:
                 raise ValueError(f"node id does not exist: {node_id!r}")
-            for name, value in fields.items():
-                setattr(node, name, value)
+            with self._batch():
+                for name, value in fields.items():
+                    setattr(node, name, value)
+                self._mark_upsert(node)
             return node
 
     def clear(self) -> None:
         with self._lock:
-            self._nodes = {}
-            self._root_id = None
+            removed = list(self._nodes)
+            with self._batch():
+                self._nodes = {}
+                self._root_id = None
+                for node_id in removed:
+                    self._mark_removed(node_id)
 
     def save(self, path: str | Path) -> None:
         with self._lock:
@@ -237,8 +360,13 @@ class ActionGraph:
             else:
                 root_id = None
 
-            self._nodes = created
-            self._root_id = root_id
+            with self._batch():
+                for node_id in self._nodes:
+                    self._mark_removed(node_id)
+                self._nodes = created
+                self._root_id = root_id
+                for node in created.values():
+                    self._mark_upsert(node)
 
     def reachable(self, node: Node) -> list[Node]:
         """Cycle-safe traversal of node's connected component (node itself excluded)."""
@@ -255,6 +383,21 @@ class ActionGraph:
 
         visit(node)
         return ordered
+
+
+def _node_payload(node: Node) -> dict[str, Any]:
+    """Serializable stream payload for a node: every field but the live tool."""
+    return {
+        "id": node.id,
+        "neighbors": [n.id for n in node.neighbors],
+        "threshold": node.threshold,
+        "run_id": node.run_id,
+        "level": int(node.level),
+        "intent": node.intent,
+        "event": node.event,
+        "action_id": node.action_id,
+        "created_at": node.created_at.isoformat() if node.created_at else None,
+    }
 
 
 def _node_row(node: Node) -> dict[str, Any]:
