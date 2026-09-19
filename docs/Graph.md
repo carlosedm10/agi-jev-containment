@@ -43,7 +43,7 @@ There is no `Run` model. Everything the pipeline needs about a run is derived fr
 - **Subscribe is atomic**: the listener is registered and the snapshot captured under one lock acquisition, so no change can slip between "read the snapshot" and "start listening".
 - **Slow clients are dropped**: each subscriber owns a bounded queue (64 updates); overflow ends that stream so the client reconnects and resynchronizes from a fresh snapshot. There is no replay buffer — reconnecting always starts from a new snapshot.
 
-The hub is `backend/app/graph/stream.py` (one queue per client, subscribe/unsubscribe), the endpoint `backend/app/graph/router.py`. The browser consumes it through `useGraphStream()` in `frontend/src/graph/`, which mirrors the graph in memory; `frontend/src/live/` renders that mirror at `/live` (`chainEdges()` derives each run's path `run:{run_id} → {run_id}:1 → {run_id}:2 …` from node ids and animates it, coloured by the run's escalate-only level).
+The hub is `backend/app/graph/stream.py` (one queue per client, subscribe/unsubscribe), the endpoint `backend/app/graph/router.py`. `useGraphStream()` in `frontend/src/graph/` mirrors the stream in memory; `frontend/src/live/` renders that mirror at `/live` (`chainEdges()` derives each run's path `run:{run_id} → {run_id}:1 → {run_id}:2 …` from node ids and animates it, coloured by the run's escalate-only level). The dashboard at `/` uses mock data instead: its React Flow panel renders protocol-compatible classified nodes plus separate provisional “Awaiting Jev” overlays. Mutual adjacency is deduplicated into undirected edges, with stable per-run columns and zoom/fit controls. Selection reveals the verdict and associated protective trace; no mock control sends API requests.
 
 ### Example
 
