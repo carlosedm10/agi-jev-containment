@@ -5,6 +5,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.actions.call_status import CallStatus
+
 ActionMode = Literal["simulated", "real"]
 ActionStatus = Literal["queued", "running", "ok", "partial", "failed", "canceled"]
 RowStatus = Literal["idle", "running", "ok", "partial", "failed", "canceled"]
@@ -50,6 +52,7 @@ class ActionTransition(BaseModel):
     timestamp: datetime = Field(default_factory=utc_now)
     detail: str | None = None
     error_code: str | None = None
+    call_status: CallStatus | None = None
 
 
 ActionRecord = DispatchAccepted | ActionTransition
@@ -61,4 +64,5 @@ class IncidentActionState(BaseModel):
     rows: dict[int, RowStatus]
     actions: list[ActionTransition]
     pager_status: ActionStatus | Literal["idle"] = "idle"
+    call_status: CallStatus = "idle"
     updated_at: datetime | None = None

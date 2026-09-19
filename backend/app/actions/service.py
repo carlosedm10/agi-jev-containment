@@ -4,6 +4,7 @@ import asyncio
 from collections import defaultdict
 from typing import Protocol
 
+from app.actions.call_status import CallStatus
 from app.actions.journal import ActionJournal
 from app.actions.models import (
     ActionStatus,
@@ -21,6 +22,8 @@ class PagerTransition(Protocol):
         status: ActionStatus,
         detail: str | None = None,
         error_code: str | None = None,
+        *,
+        call_status: CallStatus | None = None,
     ) -> None: ...
 
 
@@ -269,6 +272,8 @@ class ActionService:
             status: ActionStatus,
             detail: str | None = None,
             error_code: str | None = None,
+            *,
+            call_status: CallStatus | None = None,
         ) -> None:
             self._transition(
                 action,
@@ -276,6 +281,7 @@ class ActionService:
                 status,
                 detail=detail,
                 error_code=error_code,
+                call_status=call_status,
             )
 
         try:
@@ -293,6 +299,7 @@ class ActionService:
                 "failed",
                 detail=str(exc),
                 error_code="pager_error",
+                call_status="failed",
             )
 
     def _transition(
@@ -303,6 +310,7 @@ class ActionService:
         *,
         detail: str | None = None,
         error_code: str | None = None,
+        call_status: CallStatus | None = None,
     ) -> None:
         self._journal.append(
             ActionTransition(
@@ -315,6 +323,7 @@ class ActionService:
                 status=status,
                 detail=detail,
                 error_code=error_code,
+                call_status=call_status,
             )
         )
 
