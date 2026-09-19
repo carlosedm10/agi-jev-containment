@@ -180,7 +180,7 @@ def test_happyrobot_poll_defaults_are_strictly_positive():
     configured = Settings(_env_file=None)
 
     assert configured.happyrobot_poll_interval == 1.5
-    assert configured.happyrobot_poll_timeout == 180
+    assert configured.happyrobot_poll_timeout == 240
 
 
 @pytest.mark.parametrize(
