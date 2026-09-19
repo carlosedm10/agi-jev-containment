@@ -29,10 +29,12 @@ from prompts import SYSTEM, TASK
 MARKER = "__hs_event__"
 CLIP = 500
 SHELL_TIMEOUT_S = 120
+MONITOR_TIMEOUT_S = 10
 
 RUN_ID = os.environ.get("RUN_ID", "demo")
 WORKSPACE = Path(os.environ.get("WORKSPACE", "/workspace"))
 TOOLS_DIR = WORKSPACE / "tools"
+MONITOR_API_URL = os.environ.get("MONITOR_API_URL", "http://host.docker.internal:8000")
 
 _TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
@@ -46,6 +48,48 @@ def clip(text: str) -> str:
     return text[-CLIP:]
 
 
+async def preflight(tool: str, event: str, **fields: object) -> tuple[bool, str]:
+    payload = {
+        "event": event,
+        "kind": event,
+        "phase": "requested",
+        "origin": "tool",
+        "tool": tool,
+        **fields,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=MONITOR_TIMEOUT_S, trust_env=False) as client:
+            response = await client.post(
+                f"{MONITOR_API_URL}/api/runs/{RUN_ID}/preflight",
+                json=payload,
+            )
+            response.raise_for_status()
+            decision = response.json()
+    except httpx.HTTPError as exc:
+        emit("monitor_unavailable", tool=tool, error=str(exc))
+        high_impact = event in {
+            "file_edit",
+            "network_request",
+            "register_tool",
+            "run_tool",
+            "shell_command",
+        }
+        return (not high_impact, "monitor unavailable")
+
+    allowed = decision["decision"] == "allow"
+    if not allowed:
+        emit(
+            event,
+            phase="refused",
+            origin="tool",
+            tool=tool,
+            decision=decision["decision"],
+            reasons=decision.get("reasons", []),
+            **fields,
+        )
+    return allowed, decision["decision"]
+
+
 def _env(name: str, default: str | None = None) -> str:
     value = os.environ.get(name, default)
     if not value:
@@ -55,6 +99,14 @@ def _env(name: str, default: str | None = None) -> str:
 
 async def shell(cmd: str) -> str:
     """Run a shell command in the sandbox workspace. Returns stdout+stderr."""
+    allowed, reason = await preflight(
+        "shell",
+        "shell_command",
+        cmd=cmd,
+        effect={"reversibility": "unknown"},
+    )
+    if not allowed:
+        return f"refused by monitor: {reason}"
     proc = await asyncio.create_subprocess_shell(
         cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -67,18 +119,49 @@ async def shell(cmd: str) -> str:
         proc.kill()
         out = b"(command timed out)"
     text = out.decode(errors="replace")
-    emit("shell_command", cmd=cmd, exit=proc.returncode, output=clip(text))
+    emit(
+        "shell_command",
+        phase="completed",
+        origin="tool",
+        tool="shell",
+        cmd=cmd,
+        exit=proc.returncode,
+        output=clip(text),
+    )
     return clip(text) or f"(exit {proc.returncode})"
 
 
 async def read_file(path: str) -> str:
     """Read a file and return its text contents."""
+    sensitivity = (
+        "credential"
+        if any(token in path.lower() for token in (".env", "secret", "credential", ".ssh"))
+        else "internal"
+    )
+    allowed, reason = await preflight(
+        "read_file",
+        "file_read",
+        path=path,
+        target=path,
+        effect={"reversibility": "reversible", "sensitivity": sensitivity},
+    )
+    if not allowed:
+        return f"refused by monitor: {reason}"
     try:
         text = Path(path).expanduser().read_text(encoding="utf-8", errors="replace")
     except OSError as e:
         emit("file_read", path=path, error=str(e))
         return f"error: {e}"
-    emit("file_read", path=path, bytes=len(text))
+    emit(
+        "file_read",
+        phase="completed",
+        origin="tool",
+        tool="read_file",
+        path=path,
+        target=path,
+        bytes=len(text),
+        sensitivity=sensitivity,
+    )
     return clip(text) or "(empty)"
 
 
@@ -87,19 +170,48 @@ async def write_file(path: str, content: str) -> str:
     target = Path(path)
     if not target.is_absolute():
         target = WORKSPACE / target
+    allowed, reason = await preflight(
+        "write_file",
+        "file_edit",
+        path=str(target),
+        target=str(target),
+        bytes=len(content),
+        effect={"reversibility": "compensable", "scope": 1},
+    )
+    if not allowed:
+        return f"refused by monitor: {reason}"
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
     except OSError as e:
         emit("file_edit", path=path, error=str(e))
         return f"error: {e}"
-    emit("file_edit", path=str(target), bytes=len(content))
+    emit(
+        "file_edit",
+        phase="completed",
+        origin="tool",
+        tool="write_file",
+        path=str(target),
+        target=str(target),
+        bytes=len(content),
+    )
     return f"wrote {target}"
 
 
 async def http_request(url: str, method: str = "GET", body: str | None = None) -> str:
     """Make an HTTP request (routed through the sandbox egress proxy).
     Returns status code and a body excerpt."""
+    allowed, reason = await preflight(
+        "http_request",
+        "network_request",
+        dst=url,
+        target=url,
+        method=method,
+        bytes_out=len(body or ""),
+        effect={"reversibility": "irreversible", "visible_to_user": False},
+    )
+    if not allowed:
+        return f"refused by monitor: {reason}"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.request(method, url, content=body)
@@ -108,6 +220,9 @@ async def http_request(url: str, method: str = "GET", body: str | None = None) -
         return f"error: {e}"
     emit(
         "network_request",
+        phase="completed",
+        origin="tool",
+        tool="http_request",
         dst=url,
         method=method,
         status=resp.status_code,
@@ -121,11 +236,27 @@ async def register_tool(name: str, code: str) -> str:
     if not _TOOL_NAME.match(name):
         emit("register_tool", tool=name, error="invalid name")
         return "error: invalid tool name (alphanumerics, _ and - only)"
+    allowed, reason = await preflight(
+        "register_tool",
+        "register_tool",
+        created_tool=name,
+        bytes=len(code),
+        effect={"reversibility": "compensable", "scope": 1},
+    )
+    if not allowed:
+        return f"refused by monitor: {reason}"
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
     path = TOOLS_DIR / f"{name}.py"
     path.write_text(code, encoding="utf-8")
-    emit("file_edit", path=str(path), bytes=len(code), tool=name)
-    emit("register_tool", tool=name, path=str(path))
+    emit(
+        "register_tool",
+        phase="completed",
+        origin="tool",
+        tool="register_tool",
+        created_tool=name,
+        path=str(path),
+        bytes=len(code),
+    )
     return f"registered {path} — run it with run_tool(name={name!r}, args=...)"
 
 
@@ -135,6 +266,15 @@ async def run_tool(name: str, args: str = "") -> str:
     if not _TOOL_NAME.match(name) or not path.exists():
         emit("run_tool", tool=name, error="unknown tool")
         return "error: unknown tool — register it first"
+    allowed, reason = await preflight(
+        "run_tool",
+        "run_tool",
+        dynamic_tool=name,
+        args={"raw": args},
+        effect={"reversibility": "unknown"},
+    )
+    if not allowed:
+        return f"refused by monitor: {reason}"
     proc = await asyncio.create_subprocess_shell(
         f"{sys.executable} {path} {args}",
         stdout=asyncio.subprocess.PIPE,
@@ -147,7 +287,16 @@ async def run_tool(name: str, args: str = "") -> str:
         proc.kill()
         out = b"(tool timed out)"
     text = out.decode(errors="replace")
-    emit("run_tool", tool=name, args=args, exit=proc.returncode, output=clip(text))
+    emit(
+        "run_tool",
+        phase="completed",
+        origin="tool",
+        tool="run_tool",
+        dynamic_tool=name,
+        args=args,
+        exit=proc.returncode,
+        output=clip(text),
+    )
     return clip(text) or f"(exit {proc.returncode})"
 
 
@@ -169,8 +318,19 @@ agent = Agent(
 async def main() -> None:
     emit("run_start", task=TASK)
     result = await agent.run(TASK)
-    emit("run_end", output=clip(str(result.output)))
-    print(result.output)
+    output = clip(str(result.output))
+    allowed, reason = await preflight(
+        "assistant_message",
+        "utterance",
+        content=output,
+        effect={"reversibility": "irreversible", "visible_to_user": True},
+    )
+    if allowed:
+        emit("run_end", output=output)
+        print(result.output)
+    else:
+        emit("run_end", output="refused", reason=reason)
+        print(f"Assistant output refused by monitor: {reason}")
 
 
 if __name__ == "__main__":

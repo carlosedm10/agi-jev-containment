@@ -95,6 +95,9 @@ class Neo4jGraphStore:
                 "jev_answers_json": json.dumps(assessment.jev_answers, default=str, sort_keys=True),
                 "jev_model": assessment.jev_model,
                 "jev_latency_ms": assessment.jev_latency_ms,
+                "dispatch_actions_json": json.dumps(
+                    assessment.dispatch_actions, default=str, sort_keys=True
+                ),
             },
         }
         async with self._get_driver().session(database=settings.neo4j_database) as session:

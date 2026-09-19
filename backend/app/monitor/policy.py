@@ -34,6 +34,7 @@ DEFAULT_POLICY = AgentPolicy(
         "shell": ToolPolicy(effect=Reversibility.UNKNOWN),
         "register_tool": ToolPolicy(effect=Reversibility.COMPENSABLE, counter_action="remove_tool"),
         "run_tool": ToolPolicy(effect=Reversibility.UNKNOWN),
+        "assistant_message": ToolPolicy(effect=Reversibility.IRREVERSIBLE),
         "memory_write": ToolPolicy(
             effect=Reversibility.COMPENSABLE, counter_action="tombstone_memory"
         ),

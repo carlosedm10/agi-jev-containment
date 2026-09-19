@@ -139,7 +139,7 @@ def normalize_event(run_id: str, payload: dict[str, Any], *, sequence: int | Non
         phase=phase,
         origin=origin,
         agent=payload.get("agent"),
-        tool=payload.get("tool") or _TOOL_NAMES.get(kind) or (kind if kind in _TOOL_EVENTS else None),
+        tool=payload.get("tool") or _TOOL_NAMES.get(kind),
         target=payload.get("target") or payload.get("dst") or payload.get("path"),
         channel=payload.get("channel"),
         identity_state=identity,

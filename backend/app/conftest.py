@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 from app.graph import graph
 from app.main import app
 from app.config import settings
+from app.dispatch import dispatcher
 from app.monitor import monitor
 
 JEV_URL = "https://api.typesafe.ai/v1/systemone"
@@ -27,8 +28,10 @@ async def client():
 def disable_external_graph(monkeypatch):
     monkeypatch.setattr(settings, "neo4j_enabled", False)
     monitor.clear()
+    dispatcher.clear()
     yield
     monitor.clear()
+    dispatcher.clear()
 
 
 @pytest.fixture

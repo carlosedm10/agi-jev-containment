@@ -6,6 +6,7 @@ import logging
 import httpx
 
 from app.classification import pipeline
+from app.dispatch import dispatcher
 from app.classification.models import Level
 from app.events import EventPhase, normalize_event
 from app.graph import graph
@@ -36,6 +37,8 @@ async def ingest(
             await client.aclose()
     nodes = graph.run_nodes(run_id)
     assessment = monitor.assess(normalized, verdict, before_level)
+    actions = dispatcher.handle(normalized, assessment)
+    assessment.dispatch_actions = [action.model_dump(mode="json") for action in actions]
     node_id = nodes[-1].id if len(nodes) > before_nodes else None
     if node_id and assessment.gate.incident_level > graph.get_node(node_id).level:
         graph.update(node_id, level=assessment.gate.incident_level)
@@ -61,6 +64,8 @@ async def ingest(
         "trajectory_risk": assessment.gate.trajectory_risk,
         "reasons": assessment.gate.reasons,
         "graph_persisted": graph_persisted,
+        "dispatch_actions": assessment.dispatch_actions,
+        "jev_latency_ms": verdict.latency_ms,
     }
 
 

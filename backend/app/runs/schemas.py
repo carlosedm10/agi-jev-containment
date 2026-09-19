@@ -32,6 +32,8 @@ class IngestOut(BaseModel):
     trajectory_risk: float = 0.0
     reasons: list[str] = Field(default_factory=list)
     graph_persisted: bool = False
+    dispatch_actions: list[dict[str, Any]] = Field(default_factory=list)
+    jev_latency_ms: float | None = None
 
 
 class GraphOut(BaseModel):

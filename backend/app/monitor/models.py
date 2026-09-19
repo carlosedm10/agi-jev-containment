@@ -54,3 +54,4 @@ class MonitorAssessment(BaseModel):
     jev_answers: dict[str, Any] = Field(default_factory=dict)
     jev_model: str | None = None
     jev_latency_ms: float | None = None
+    dispatch_actions: list[dict[str, Any]] = Field(default_factory=list)
