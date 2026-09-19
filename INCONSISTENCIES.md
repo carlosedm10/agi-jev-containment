@@ -8,4 +8,5 @@ Tracked flaws that are knowingly left in place. Resolve an entry by fixing it, t
 
 ## Not built
 
-- The dispatcher records idempotent L1–L5 actions and executes demo-world counters. Host-side automatic invocation of Docker containment scripts remains intentionally separate because the backend container does not mount the Docker socket; scripts are verified through `--dry-run`.
+- The in-process `app.dispatch` dispatcher records idempotent L1–L5 kinds and executes demo-world counters for the lab. Host-side playbooks and HappyRobot paging live in `app.actions.ActionService` after the deterministic gate; automatic Docker containment from the backend container remains separate because the API does not mount the Docker socket.
+- [docs/Actions.md](docs/Actions.md) references containment scripts (`scripts/contain.sh`, `scripts/cut-egress.sh`, `scripts/kill-swarm.sh`) that exist in-repo but are not invoked automatically from the backend container.

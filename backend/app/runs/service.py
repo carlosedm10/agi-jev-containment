@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from app.actions.models import DispatchAccepted
 from app.classification import pipeline
 from app.dispatch import dispatcher
 from app.events import EventPhase, MonitorEvent, normalize_event, redact_event
@@ -107,6 +108,16 @@ async def ingest(
             action_id=None,
         ).id
 
+    incident_level = int(assessment.gate.incident_level)
+    if (
+        node_id is not None
+        and not verdict.degraded
+        and incident_level >= 1
+    ):
+        accepted = await dispatch_classified(run_id, incident_level, verdict.intent)
+        if accepted is not None and accepted.planned_actions:
+            graph.update(node_id, action_id=accepted.planned_actions[0].action_id)
+
     graph_persisted = True
     try:
         await neo4j_graph.persist(normalized, assessment)
@@ -144,3 +155,14 @@ async def preflight(
     payload = dict(event)
     payload["phase"] = EventPhase.REQUESTED.value
     return await ingest(run_id, payload, client)
+
+
+async def dispatch_classified(
+    run_id: str, level: int, intent: str | None
+) -> DispatchAccepted | None:
+    from app.actions.router import DispatchRequest, get_action_service
+
+    return await get_action_service().dispatch(
+        run_id,
+        DispatchRequest(level=level, intent=intent),
+    )

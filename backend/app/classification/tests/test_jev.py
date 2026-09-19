@@ -86,8 +86,16 @@ async def test_request_state_shape(mock_jev):
     state = {
         "run_id": "run-1",
         "prior_level": Level.MILD,
-        "short_term": [Node(id="e1", threshold=0.0, tool={"event": "file_read"})],
-        "long_term": [Node(id="old", threshold=0.8)],
+        "short_term": [Node(id="e1", threshold=0.0, event={"event": "file_read"})],
+        "long_term": [
+            Node(
+                id="old",
+                threshold=0.8,
+                level=Level.SEVERE,
+                intent="recon",
+                event={"event": "file_read"},
+            )
+        ],
     }
     await classify(ac, state)
     body_state = ac.calls[0]["state"]
@@ -95,18 +103,17 @@ async def test_request_state_shape(mock_jev):
     assert body_state["prior_level"] == 1
     assert body_state["short_term"][0] == {
         "id": "e1",
-        "threshold": 0.0,
         "level": 0,
+        "threshold": 0.0,
         "intent": None,
-        "event": None,
-        "tool": {"event": "file_read"},
+        "event": {"event": "file_read"},
     }
     assert body_state["long_term"][0] == {
         "id": "old",
+        "level": 3,
         "threshold": 0.8,
-        "level": 0,
-        "intent": None,
-        "event": None,
+        "intent": "recon",
+        "event": {"event": "file_read"},
     }
 
 

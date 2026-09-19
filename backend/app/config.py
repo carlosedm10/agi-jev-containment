@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import PositiveFloat, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     neo4j_database: str = "neo4j"
     neo4j_enabled: bool = True
     tool_hold_ms: int = 1500
+    action_step_delay: float = 0.35
+    action_dispatch_token: str = ""
+    happyrobot_api_key: str = ""
+    happyrobot_hook_url: str = ""
+    happyrobot_api_base: str = ""
+    oncall_phone: str = ""
+    oncall_name: str = ""
+    happyrobot_poll_interval: PositiveFloat = 1.5
+    happyrobot_poll_timeout: PositiveFloat = 240
 
     model_config = SettingsConfigDict(
         env_file=".env", extra="ignore", env_ignore_empty=True

@@ -25,13 +25,18 @@ async def client():
 
 
 @pytest.fixture(autouse=True)
-def disable_external_graph(monkeypatch):
+def test_isolation(monkeypatch):
+    from app.actions.router import get_action_service
+
     monkeypatch.setattr(settings, "neo4j_enabled", False)
+    monkeypatch.setattr(settings, "action_step_delay", 0)
     monitor.clear()
     dispatcher.clear()
+    get_action_service.cache_clear()
     yield
     monitor.clear()
     dispatcher.clear()
+    get_action_service.cache_clear()
 
 
 @pytest.fixture

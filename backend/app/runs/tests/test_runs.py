@@ -122,6 +122,30 @@ class TestPostEvents:
         assert body["duplicate"] is False
         assert (tape_dir / "demo.jsonl").exists()
         assert graph.level("demo") == Level.MODERATE
+        assert graph.get_node("demo:1").action_id == "demo:tag_run"
+
+
+    async def test_same_level_does_not_re_dispatch(self, client: AsyncClient, fresh, mock_jev, monkeypatch):
+        monkeypatch.setattr(settings, "typesafe_api_key", "test")
+        monkeypatch.setattr(service, "client_factory", lambda: mock_jev(["level_2_moderate"]))
+
+        first = await client.post("/api/runs/demo/events", json={"event": "file_read"})
+        second = await client.post("/api/runs/demo/events", json={"event": "shell_command"})
+
+        assert first.json()["escalated"] is True
+        assert second.json()["escalated"] is False
+        assert graph.get_node("demo:1").action_id == "demo:tag_run"
+        assert graph.get_node("demo:2").action_id is None
+
+
+    async def test_degraded_verdict_does_not_dispatch(self, client: AsyncClient, fresh, tape_dir, monkeypatch):
+        monkeypatch.setattr(settings, "typesafe_api_key", "")
+
+        await client.post("/api/runs/demo/events", json={"event": "file_read"})
+
+        from app.actions.router import get_action_service
+
+        assert get_action_service().get_state("demo").accepted_level == 0
 
     async def test_second_event_chains_node_id(
         self, client: AsyncClient, fresh, mock_jev, monkeypatch

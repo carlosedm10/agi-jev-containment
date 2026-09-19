@@ -3,12 +3,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.actions.router import router as actions_router
 from app.evals.router import (
     lab_benchmarks_page,
     lab_conversation_page,
     lab_css,
     lab_inspector_page,
     lab_page,
+)
+from app.evals.router import (
     router as evals_router,
 )
 from app.graph.neo4j import neo4j_graph
@@ -35,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+app.include_router(actions_router, prefix="/api/demo", tags=["demo actions"])
 app.include_router(evals_router, prefix="/api/evals", tags=["evals"])
 app.include_router(runs_router, prefix="/api/runs", tags=["runs"])
 app.include_router(realtime_router, prefix="/api/runs", tags=["realtime"])
