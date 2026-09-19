@@ -161,6 +161,27 @@ test:
 	make test-backend
 	make test-frontend
 
+# ----------------------------- Agent stack ----------------------------- #
+# The sandbox fleet lives in compose.agents.yaml on agentnet — a separate file
+# and network from the product stack, so containment can never hit the viewer.
+.PHONY: agents-build agents-up agents-down collect
+
+agents-build:
+	@echo ":: agents-build: compose.agents.yaml"
+	docker compose -f compose.agents.yaml up --build -d
+
+agents-up:
+	@echo ":: agents-up: compose.agents.yaml"
+	docker compose -f compose.agents.yaml up -d
+
+agents-down:
+	@echo ":: agents-down: compose.agents.yaml"
+	docker compose -f compose.agents.yaml down
+
+# Forward one sandbox's JSONL events to the ingest API (needs the product stack up).
+collect:
+	./scripts/collect.sh hackspain_agent $(RUN_ID)
+
 # ----------------------------- Experiments ----------------------------- #
 .PHONY: bench bench-analyze bench-plots
 

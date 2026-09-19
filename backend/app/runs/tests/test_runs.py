@@ -122,7 +122,7 @@ class TestPostEvents:
         assert first.json()["node_id"] == "demo:1"
         assert second.json()["node_id"] == "demo:2"
 
-    async def test_benign_verdict_materializes_nothing(self, client: AsyncClient, fresh, mock_jev, monkeypatch):
+    async def test_benign_verdict_materializes_l0_node(self, client: AsyncClient, fresh, mock_jev, monkeypatch):
         monkeypatch.setattr(settings, "typesafe_api_key", "test")
         monkeypatch.setattr(service, "client_factory", lambda: mock_jev(["level_0_benign"]))
 
@@ -131,7 +131,8 @@ class TestPostEvents:
         body = response.json()
         assert body["level"] == 0
         assert body["escalated"] is False
-        assert body["node_id"] is None
+        assert body["node_id"] == "demo:1"
+        assert graph.get_node("demo:1").level == Level.NONE
         assert graph.key_nodes("demo") == []
 
     async def test_missing_api_key_returns_clean_degraded_verdict_not_500(
@@ -185,7 +186,7 @@ class TestGetRuns:
 
         body = response.json()
         assert body["level"] == 3
-        assert [n["id"] for n in body["key_nodes"]] == ["demo:1"]
+        assert [n["id"] for n in body["key_nodes"]] == ["demo:2"]
         assert body["key_nodes"][0]["threshold"] == 0.9
 
     async def test_list_runs_includes_taped_runs(self, client: AsyncClient, fresh, mock_jev, monkeypatch):

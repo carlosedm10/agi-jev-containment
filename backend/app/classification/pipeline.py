@@ -30,15 +30,14 @@ async def evaluate(client: httpx.AsyncClient, run_id: str, event: dict[str, Any]
                     return Verdict(level=prior, confidence=0.0, degraded=True)
     else:
         _UNSURE_STREAKS.pop(run_id, None)
-    if verdict.level >= Level.MILD:
-        graph.append(
-            run_id,
-            level=verdict.level,
-            threshold=verdict.confidence,
-            intent=verdict.intent,
-            event=event,
-            action_id=None,
-        )
+    graph.append(
+        run_id,
+        level=verdict.level,
+        threshold=verdict.confidence,
+        intent=verdict.intent,
+        event=event,
+        action_id=None,
+    )
     return verdict
 
 

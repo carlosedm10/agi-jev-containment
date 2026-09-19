@@ -1,6 +1,6 @@
 # Action Graph
 
-A dynamic graph for tracing events. The full JSONL log keeps every event; this graph only keeps **key nodes** — anything `jev` scores at level ≥ 1. Harmless chatter stays in the log so the viewer is not a wall of noise.
+A dynamic graph for tracing events. Every classified action materializes a node — the graph is the run's complete action sequence, benign included. The **key nodes** are the flagged subset (`jev` scores level ≥ 1); the JSONL log also keeps every raw event for forensics and replay.
 
 On every new event, `jev` re-reads **short-term and long-term context in parallel** (it owns how to mix them):
 
@@ -13,7 +13,7 @@ How `jev` rewrites, promotes, or weights those nodes is `jev`'s job. We always h
 * Single-rooted: exactly one root — the first node created; every run node hangs off it (`root → run:{run_id} → {run_id}:1 → {run_id}:2 → …`), created lazily by `ensure_run(run_id)`. `root` is an entry point, not a parent.
 * Undirected: nodes keep `neighbors` — a **mutual** adjacency list: if `a` lists `b`, `b` lists `a`. There is no `parent`: a node can have any number of neighbors, and **loops are allowed**. `connect(src, dst)` adds a mutual edge between two existing nodes (duplicates and self-loops rejected). Traversals (`reachable()`) are cycle-safe (visited set), so a loop can never hang `save`/`load`.
 * Runs are isolated by `run_id`, not by the graph: with undirected edges, traversal alone cannot tell runs apart, so a run's nodes are exactly the ones stamped with its `run_id` (in insertion order). Even explicit cross-run edges cannot leak one run's nodes into another's level or key-node history.
-* Sparse: a node is materialized only when `jev` returns level ≥ 1. Below that (`level_0_benign`, [Jev.md](Jev.md)), the event exists only in JSONL.
+* Complete: one node per classified action — a `level_0_benign` verdict still materializes a `Level.NONE` node. The flagged subset is `key_nodes()` (level ≥ 1). Only unclassified events (degraded verdict — `jev` unreachable, [Jev.md](Jev.md)) stay tape-only.
 * Node: Each node has a threshold and an optional associated tool (default: `None`). A materialized node also records `{run_id, level, intent, event, action_id, created_at}` — the evidence needed to replay a run and drive the playbooks ([Actions.md](Actions.md)).
 * Singleton: A single shared instance manages the entire graph.
 * Persistence: Supports efficient `save()` and `load()` operations. The snapshot stores the explicit `root` id plus, per node, its `neighbors` by id — so loops survive the roundtrip. All fields except the live `tool` object survive.
@@ -27,10 +27,10 @@ Implemented in `backend/app/graph/`: `Node` lives in `models.py`, the `ActionGra
 There is no `Run` model. Everything the pipeline needs about a run is derived from the nodes stamped with the run's `run_id`:
 
 - `graph.level(run_id)` — the run's effective level: `max` over the run's node levels (default `Level.NONE`). Escalate-only and L1-stickiness fall out of `max()` over an append-only structure — a run never downgrades, and `prior_level` for the next jev call is just this value.
-- `graph.key_nodes(run_id)` — the run's nodes in insertion order; this is the `long_term` array handed to `jev` ([Jev.md](Jev.md)).
+- `graph.key_nodes(run_id)` — the run's *flagged* nodes (level ≥ 1) in insertion order; this is the `long_term` array handed to `jev` ([Jev.md](Jev.md)). All nodes, benign included, are `run_nodes(run_id)`.
 - `graph.actionable_level(run_id)` — the max level among nodes whose `threshold` clears the action gate. A low-confidence L3 is recorded (the run level still reads L3) but does not fire a playbook until a confident verdict confirms it.
 
-`append(run_id, …)` chains a new key node under the run's last node with id `{run_id}:{seq}`; `connect(src, dst)` adds extra edges between existing nodes (this is how loops form); `update(node_id, **fields)` is how the dispatcher later stamps `action_id` on a node that fired a playbook; `clear()` resets the instance in place (a human clearing them from the viewer, [Actions.md](Actions.md)).
+`append(run_id, …)` chains a new node under the run's last node with id `{run_id}:{seq}`; `connect(src, dst)` adds extra edges between existing nodes (this is how loops form); `update(node_id, **fields)` is how the dispatcher later stamps `action_id` on a node that fired a playbook; `clear()` resets the instance in place (a human clearing them from the viewer, [Actions.md](Actions.md)).
 
 ### Example
 
