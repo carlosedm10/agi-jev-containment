@@ -33,12 +33,12 @@ class TestAddNode:
         with pytest.raises(ValueError, match="first node must be the root"):
             g.add_node("orphan", connect=Node(id="ghost"))
 
-    def test_edge_links_nodes(self, g: ActionGraph):
+    def test_edge_links_nodes_mutually(self, g: ActionGraph):
         root = g.add_node("root")
         tool = object()
         child = g.add_node("child", connect=root, threshold=1.0, tool=tool)
         assert root.neighbors == [child]
-        assert child.neighbors == []
+        assert child.neighbors == [root]
         assert child.tool is tool
 
     def test_duplicate_id_rejected(self, g: ActionGraph):
@@ -72,24 +72,32 @@ class TestAddNode:
 
 
 class TestConnect:
-    def test_connect_adds_edge_between_existing_nodes(self, g: ActionGraph):
+    def test_connect_adds_a_mutual_edge(self, g: ActionGraph):
         root = g.add_node("root")
         left = g.add_node("left", connect=root)
         right = g.add_node("right", connect=root)
         g.connect(left, right)
         assert root.neighbors == [left, right]
-        assert left.neighbors == [right]
-        assert right.neighbors == []
+        assert left.neighbors == [root, right]
+        assert right.neighbors == [root, left]
 
-    def test_connect_can_create_a_cycle_and_traversal_terminates(self, g: ActionGraph):
-        run_node = g.ensure_run("r")
-        g.append("r", level=Level.MILD, threshold=0.9)
-        a1 = g.get_node("r:1")
-        g.connect(a1, run_node)  # back-edge: run:r -> r:1 -> run:r
+    def test_diamond_node_lists_all_its_neighbors(self, g: ActionGraph):
+        root = g.add_node("root")
+        a = g.add_node("a", connect=root)
+        b = g.add_node("b", connect=a)
+        c = g.add_node("c", connect=a)
+        g.connect(b, c)
+        # c is connected to BOTH a and b: two neighbors, no parent concept
+        assert c.neighbors == [a, b]
+        assert a.neighbors == [root, b, c]
 
-        nodes = g.run_nodes("r")
-        assert [n.id for n in nodes] == ["run:r", "r:1"]
-        assert g.level("r") == Level.MILD
+    def test_undirected_loop_traversal_terminates(self, g: ActionGraph):
+        root = g.add_node("root")
+        a = g.add_node("a", connect=root)
+        b = g.add_node("b", connect=a)
+        g.connect(b, root)  # loop root -- a -- b -- root
+
+        assert [n.id for n in g.reachable(root)] == ["a", "b"]
 
     def test_connect_rejects_duplicate_edge(self, g: ActionGraph):
         root = g.add_node("root")
@@ -116,17 +124,6 @@ class TestConnect:
         root = other.add_node("root")
         with pytest.raises(ValueError, match="not in the graph"):
             other.connect(stale, root)
-
-    def test_predecessors_gives_the_reverse_view(self, g: ActionGraph):
-        root = g.add_node("root")
-        a = g.add_node("a", connect=root)
-        b = g.add_node("b", connect=a)
-        c = g.add_node("c", connect=a)
-        g.connect(b, c)
-
-        assert g.predecessors(c) == [a, b]  # two predecessors, no parent concept
-        assert g.predecessors(root) == []
-        assert g.predecessors(a) == [root]
 
 
 class TestPersistence:
@@ -157,22 +154,28 @@ class TestPersistence:
         }
         assert restored.root is restored.get_node("root")
         assert [c.id for c in restored.get_node("root").neighbors] == ["left", "right"]
-        assert restored.get_node("left").neighbors == [restored.get_node("leaf")]
+        assert restored.get_node("left").neighbors == [
+            restored.get_node("root"),
+            restored.get_node("leaf"),
+        ]
+        assert restored.get_node("leaf").neighbors == [restored.get_node("left")]
 
-    def test_save_load_roundtrip_preserves_a_cycle(self, g: ActionGraph, tmp_path):
+    def test_save_load_roundtrip_preserves_a_loop(self, g: ActionGraph, tmp_path):
         root = g.add_node("root")
         a = g.add_node("a", connect=root)
         b = g.add_node("b", connect=a)
-        g.connect(b, a)  # cycle a -> b -> a
+        g.connect(b, root)  # loop root -- a -- b -- root
 
         path = tmp_path / "graph.json"
         g.save(path)
         restored = ActionGraph()
         restored.load(path)
 
-        assert restored.get_node("a").neighbors == [restored.get_node("b")]
-        assert restored.get_node("b").neighbors == [restored.get_node("a")]
         assert restored.root is restored.get_node("root")
+        # Neighbor order after load follows snapshot wiring, not insertion: compare as sets.
+        assert {n.id for n in restored.get_node("root").neighbors} == {"a", "b"}
+        assert {n.id for n in restored.get_node("a").neighbors} == {"root", "b"}
+        assert {n.id for n in restored.get_node("b").neighbors} == {"a", "root"}
 
     def test_save_empty_graph(self, g: ActionGraph, tmp_path):
         path = tmp_path / "empty.json"
@@ -324,6 +327,7 @@ class TestRunSubtrees:
         assert g.root.id == "root"
         assert run_node.id == "run:r1"
         assert g.root.neighbors == [run_node]
+        assert run_node.neighbors == [g.root]
         assert run_node.run_id == "r1"
         assert run_node.level == Level.NONE
 
@@ -347,14 +351,15 @@ class TestRunSubtrees:
         n1 = g.append("r", level=Level.MILD, threshold=0.9, intent="recon")
         n2 = g.append("r", level=Level.SEVERE, threshold=0.8, intent="exfiltrate_secrets")
         assert [n1.id, n2.id] == ["r:1", "r:2"]
-        assert run_node.neighbors == [n1]
-        assert n1.neighbors == [n2]
+        assert run_node.neighbors == [g.root, n1]
+        assert n1.neighbors == [run_node, n2]
+        assert n2.neighbors == [n1]
         assert n1.run_id == "r" and n2.run_id == "r"
 
     def test_append_creates_the_run_lazily(self, g: ActionGraph):
         node = g.append("r", level=Level.MILD, threshold=0.9)
         assert g.root.id == "root"
-        assert g.get_node("run:r").neighbors == [node]
+        assert g.get_node("run:r").neighbors == [g.root, node]
 
     def test_append_validates_threshold(self, g: ActionGraph):
         with pytest.raises(ValueError, match="threshold"):
@@ -374,6 +379,18 @@ class TestRunSubtrees:
         assert [n.id for n in g.run_nodes("b")] == ["run:b", "b:1"]
         assert g.run_nodes("a") == [g.get_node("run:a"), a1, a2]
         assert g.run_nodes("missing") == []
+
+    def test_run_isolation_survives_extra_edges_between_runs(self, g: ActionGraph):
+        # Undirected graph: runs are isolated by their run_id stamp, not by
+        # edge direction, so even explicit cross-run edges cannot leak nodes.
+        g.ensure_run("a")
+        g.ensure_run("b")
+        a1 = g.append("a", level=Level.MILD, threshold=0.9)
+        b1 = g.append("b", level=Level.SEVERE, threshold=0.9)
+        g.connect(a1, b1)
+        assert [n.id for n in g.run_nodes("a")] == ["run:a", "a:1"]
+        assert g.level("a") == Level.MILD
+        assert g.level("b") == Level.SEVERE
 
     def test_key_nodes_exclude_sub_mild_levels(self, g: ActionGraph):
         g.ensure_run("r")
@@ -451,6 +468,7 @@ class TestRunPersistence:
         restored = ActionGraph()
         restored.load(path)
 
+        run_node = restored.get_node("run:r")
         r1 = restored.get_node("r:1")
         r2 = restored.get_node("r:2")
         assert r1.run_id == "r" and r2.run_id == "r"
@@ -459,7 +477,9 @@ class TestRunPersistence:
         assert r1.event == {"event": "file_read"}
         assert r2.action_id == "a1"
         assert r1.created_at == n1.created_at
-        assert r1.neighbors == [r2]
+        assert run_node.neighbors == [restored.root, r1]
+        assert r1.neighbors == [run_node, r2]
+        assert r2.neighbors == [r1]
         assert restored.level("r") == Level.SEVERE
         assert [n.id for n in restored.key_nodes("r")] == ["r:1", "r:2"]
 

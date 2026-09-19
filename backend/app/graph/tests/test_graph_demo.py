@@ -78,7 +78,12 @@ def _scripted_client() -> httpx.AsyncClient:
     )
 
 
-def _dump(node: Any, prefix: str = "", is_last: bool = True, is_root: bool = True) -> None:
+def _dump(node: Any, prefix: str = "", is_last: bool = True, is_root: bool = True, _seen=None) -> None:
+    if _seen is None:
+        _seen = set()
+    if node.id in _seen:
+        return
+    _seen.add(node.id)
     if is_root:
         print(f"{node.id}")
         neighbors = node.neighbors
@@ -98,7 +103,7 @@ def _dump(node: Any, prefix: str = "", is_last: bool = True, is_root: bool = Tru
         neighbors = node.neighbors
         prefix += "    " if is_last else "│   "
     for i, child in enumerate(neighbors):
-        _dump(child, prefix, is_last=i == len(neighbors) - 1, is_root=False)
+        _dump(child, prefix, is_last=i == len(neighbors) - 1, is_root=False, _seen=_seen)
 
 
 @pytest.fixture(autouse=True)

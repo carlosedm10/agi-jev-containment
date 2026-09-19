@@ -64,12 +64,13 @@ class ActionGraph:
             self._nodes[node_id] = node
             if connect is not None:
                 connect.neighbors.append(node)
+                node.neighbors.append(connect)  # mutual: undirected adjacency
             else:
                 self._root_id = node_id
             return node
 
     def connect(self, src: Node, dst: Node) -> None:
-        """Add a directed edge src -> dst between two existing nodes (cycles allowed)."""
+        """Add a mutual edge between two existing nodes (undirected; loops allowed)."""
         with self._lock:
             if self._nodes.get(src.id) is not src:
                 raise ValueError(f"source node {src.id!r} is not in the graph")
@@ -78,13 +79,9 @@ class ActionGraph:
             if src is dst:
                 raise ValueError("self-loops are not allowed")
             if dst in src.neighbors:
-                raise ValueError(f"edge {src.id!r} -> {dst.id!r} already exists")
+                raise ValueError(f"edge {src.id!r} -- {dst.id!r} already exists")
             src.neighbors.append(dst)
-
-    def predecessors(self, node: Node) -> list[Node]:
-        """Reverse view: nodes with an edge pointing at node (undirected read of a directed graph)."""
-        with self._lock:
-            return [n for n in self._nodes.values() if node in n.neighbors]
+            dst.neighbors.append(src)
 
     def ensure_run(self, run_id: str) -> Node:
         if not isinstance(run_id, str) or not run_id:
@@ -110,15 +107,11 @@ class ActionGraph:
     ) -> Node:
         with self._lock:
             run_node = self.ensure_run(run_id)
-            last = run_node
-            seen = {run_node.id}
-            while last.neighbors:
-                nxt = last.neighbors[-1]
-                if nxt.id in seen:  # cycle: stop, chain here
-                    break
-                seen.add(nxt.id)
-                last = nxt
-            seq = len(self._reachable(run_node)) + 1
+            # Run membership is the run_id stamp, not graph traversal: an undirected
+            # graph cannot keep runs isolated by direction alone.
+            chained = [n for n in self._nodes.values() if n.run_id == run_id and n is not run_node]
+            last = chained[-1] if chained else run_node
+            seq = len(chained) + 1
             return self.add_node(
                 f"{run_id}:{seq}",
                 connect=last,
@@ -136,7 +129,10 @@ class ActionGraph:
             run_node = self._nodes.get(f"run:{run_id}")
             if run_node is None:
                 return []
-            return [run_node, *self._reachable(run_node)]
+            return [
+                run_node,
+                *(n for n in self._nodes.values() if n.run_id == run_id and n is not run_node),
+            ]
 
     def key_nodes(self, run_id: str) -> list[Node]:
         return [n for n in self.run_nodes(run_id) if n.level >= Level.MILD]
@@ -223,13 +219,15 @@ class ActionGraph:
                         raise ValueError(f"snapshot contains a self-loop on {node.id!r}")
                     if neighbor_id in seen:
                         raise ValueError(
-                            f"snapshot contains duplicate edge {node.id!r} -> {neighbor_id!r}"
+                            f"snapshot contains duplicate edge {node.id!r} -- {neighbor_id!r}"
                         )
                     seen.add(neighbor_id)
                     neighbor = created.get(neighbor_id)
                     if neighbor is None:
                         raise ValueError(f"snapshot references unknown neighbor {neighbor_id!r}")
-                    node.neighbors.append(neighbor)
+                    if neighbor not in node.neighbors:  # already wired from the other side
+                        node.neighbors.append(neighbor)
+                        neighbor.neighbors.append(node)
 
             if rows:
                 if root_id is None:
@@ -242,8 +240,8 @@ class ActionGraph:
             self._nodes = created
             self._root_id = root_id
 
-    def _reachable(self, node: Node) -> list[Node]:
-        """Cycle-safe DFS from node (excluded), in edge insertion order."""
+    def reachable(self, node: Node) -> list[Node]:
+        """Cycle-safe traversal of node's connected component (node itself excluded)."""
         ordered: list[Node] = []
         visited: set[str] = {node.id}
 
