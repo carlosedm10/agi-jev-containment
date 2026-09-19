@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import sys
@@ -21,12 +22,20 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
-
-from app.actions.call_status import map_call
+_CALL_STATUS_PATH = ROOT / "backend" / "app" / "actions" / "call_status.py"
+_CALL_STATUS_SPEC = importlib.util.spec_from_file_location(
+    "_hackspain_call_status", _CALL_STATUS_PATH
+)
+if _CALL_STATUS_SPEC is None or _CALL_STATUS_SPEC.loader is None:
+    raise ImportError(f"cannot load call status mapping from {_CALL_STATUS_PATH}")
+_CALL_STATUS = importlib.util.module_from_spec(_CALL_STATUS_SPEC)
+sys.modules[_CALL_STATUS_SPEC.name] = _CALL_STATUS
+_CALL_STATUS_SPEC.loader.exec_module(_CALL_STATUS)
 
 STATUS_PATH = ROOT / "assets" / "quiver" / "pager-status.json"
-TERMINAL_RUN = {"completed", "succeeded", "failed", "canceled", "skipped"}
+TERMINAL_RUN = _CALL_STATUS.TERMINAL_RUN
+derive_api_base = _CALL_STATUS.derive_api_base
+map_call = _CALL_STATUS.map_call
 
 
 def load_env() -> dict[str, str]:
@@ -44,12 +53,10 @@ def load_env() -> dict[str, str]:
 
 
 def api_base(env: dict[str, str]) -> str:
-    if env.get("HAPPYROBOT_API_BASE"):
-        return env["HAPPYROBOT_API_BASE"].rstrip("/")
-    hook = env.get("HAPPYROBOT_HOOK_URL") or ""
-    if "platform.eu.happyrobot.ai" in hook:
-        return "https://platform.eu.happyrobot.ai/api/v2"
-    return "https://platform.happyrobot.ai/api/v2"
+    return derive_api_base(
+        env.get("HAPPYROBOT_HOOK_URL") or "",
+        env.get("HAPPYROBOT_API_BASE"),
+    )
 
 
 def get_json(url: str, key: str) -> Any:

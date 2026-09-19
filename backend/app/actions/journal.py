@@ -88,16 +88,12 @@ class ActionJournal:
         pager_actions = [
             action for action in latest_by_action.values() if action.ladder_level is None
         ]
-        pager_status = (
-            max(pager_actions, key=lambda action: action.timestamp).status
-            if pager_actions
-            else "idle"
-        )
         latest_pager = (
             max(pager_actions, key=lambda action: action.timestamp)
             if pager_actions
             else None
         )
+        pager_status = latest_pager.status if latest_pager is not None else "idle"
         call_status = (
             latest_pager.call_status
             if latest_pager is not None and latest_pager.call_status is not None
