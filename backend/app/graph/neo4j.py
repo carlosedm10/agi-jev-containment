@@ -10,7 +10,7 @@ from app.classification.models import Level
 from app.config import settings
 from app.events import MonitorEvent
 from app.monitor.models import DriftState, GateDecision, MonitorAssessment
-from app.monitor.neighborhood import RUN_WINDOW, memory_keys
+from app.monitor.neighborhood import RUN_WINDOW
 
 
 @dataclass(frozen=True)
@@ -248,56 +248,50 @@ class Neo4jGraphStore:
     async def linked_run_ids(self, event: MonitorEvent, limit: int = RUN_WINDOW) -> list[str]:
         if not self.enabled:
             return []
-        keys = sorted(memory_keys(event))
+        entity_ids = [
+            value
+            for value in (
+                event.agent,
+                f"tool:{event.tool}" if event.tool else None,
+                event.target,
+                f"channel:{event.channel}" if event.channel else None,
+            )
+            if value
+        ]
+        ref_ids = [event.id, *event.caused_by, *event.derived_from]
+        if not entity_ids and not event.caused_by and not event.derived_from:
+            return []
         query = """
-        OPTIONAL MATCH (seed:Event {run_id: $run_id})
-        WHERE coalesce(seed.placeholder, false) = false
-        WITH collect(DISTINCT seed.id) AS persisted_seed_ids
-        MATCH (other:Event)
-        WHERE other.run_id <> $run_id
-          AND coalesce(other.placeholder, false) = false
-          AND (
-            ($target IS NOT NULL AND other.target = $target)
-            OR (
-              $agent IS NOT NULL AND $target IS NOT NULL
-              AND other.agent = $agent AND other.target = $target
-            )
-            OR (
-              $tool IS NOT NULL AND $target IS NOT NULL
-              AND other.tool = $tool AND other.target = $target
-            )
-            OR other.id IN $caused_by
-            OR other.id IN $derived_from
-            OR other.id = $event_id
-            OR other.id IN persisted_seed_ids
-            OR EXISTS {
-              MATCH (other)-[:CAUSED_BY|DERIVED_FROM]->(linked:Event)
-              WHERE linked.id = $event_id OR linked.id IN persisted_seed_ids
-                 OR linked.run_id = $run_id
-            }
-            OR EXISTS {
-              MATCH (linked:Event)-[:CAUSED_BY|DERIVED_FROM]->(other)
-              WHERE linked.id = $event_id OR linked.id IN persisted_seed_ids
-                 OR linked.run_id = $run_id
-            }
-            OR ANY(pattern IN $memory_patterns WHERE
-              (other.metadata_json IS NOT NULL AND other.metadata_json CONTAINS pattern)
-              OR (other.args_json IS NOT NULL AND other.args_json CONTAINS pattern)
-            )
-          )
-        RETURN DISTINCT other.run_id AS run_id
+        CALL {
+          UNWIND $entity_ids AS eid
+          MATCH (entity:Entity {id: eid})<-[:TOUCHES]-(other:Event)
+          WHERE other.run_id <> $run_id AND coalesce(other.placeholder, false) = false
+          RETURN DISTINCT other.run_id AS run_id
+          UNION
+          MATCH (seed:Event {run_id: $run_id})-[:TOUCHES]->(entity:Entity)<-[:TOUCHES]-(other:Event)
+          WHERE other.run_id <> $run_id AND coalesce(other.placeholder, false) = false
+          RETURN DISTINCT other.run_id AS run_id
+          UNION
+          UNWIND $ref_ids AS rid
+          MATCH (ref:Event {id: rid})
+          OPTIONAL MATCH (ref)-[:CAUSED_BY]->(caused:Event)
+          OPTIONAL MATCH (cause:Event)-[:CAUSED_BY]->(ref)
+          WITH $run_id AS run_id,
+               collect(DISTINCT caused) + collect(DISTINCT cause) + collect(DISTINCT ref) AS nodes
+          UNWIND nodes AS other
+          WITH run_id, other
+          WHERE other IS NOT NULL AND other.run_id <> run_id
+            AND coalesce(other.placeholder, false) = false
+          RETURN DISTINCT other.run_id AS run_id
+        }
+        RETURN run_id
         ORDER BY run_id
         LIMIT $limit
         """
         params = {
             "run_id": event.run_id,
-            "event_id": event.id,
-            "target": event.target,
-            "agent": event.agent,
-            "tool": event.tool,
-            "caused_by": list(event.caused_by),
-            "derived_from": list(event.derived_from),
-            "memory_patterns": keys,
+            "entity_ids": entity_ids,
+            "ref_ids": ref_ids,
             "limit": limit,
         }
         async with self._get_driver().session(database=settings.neo4j_database) as session:

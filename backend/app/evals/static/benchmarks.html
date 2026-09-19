@@ -66,23 +66,44 @@
 
     function barChart(items, { max = 1 } = {}) {
       if (!items || !items.length) return "";
-      const width = 560;
-      const height = 140;
-      const gap = 4;
-      const barW = Math.max(8, (width - gap * items.length) / items.length);
-      const scale = height - 28;
+      const width = 720;
+      const plotH = 120;
+      const labelH = 52;
+      const height = plotH + labelH + 16;
+      const gap = 8;
+      const barW = Math.min(56, Math.max(18, (width - gap * (items.length + 1)) / items.length));
       let svg = `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img">`;
       items.forEach((item, i) => {
         const v = Math.max(0, Number(item.value) || 0);
-        const h = max ? (v / max) * scale : 0;
-        const x = i * (barW + gap);
-        const y = scale - h;
+        const h = max ? (v / max) * plotH : 0;
+        const x = gap + i * (barW + gap);
+        const y = plotH - h + 12;
         const cls = item.fail ? "fail" : "ok";
-        svg += `<rect class="bar ${cls}" x="${x}" y="${y}" width="${barW}" height="${Math.max(h, 1)}" />`;
-        svg += `<text x="${x + barW / 2}" y="${height - 4}" text-anchor="middle">${item.label}</text>`;
+        svg += `<rect class="bar ${cls}" x="${x}" y="${y}" width="${barW}" height="${Math.max(h, 2)}" rx="2" />`;
+        svg += `<text class="val" x="${x + barW / 2}" y="${y - 4}" text-anchor="middle">${v.toFixed(2)}</text>`;
+        const lx = x + barW / 2;
+        const ly = plotH + 22;
+        svg += `<text class="lbl" x="${lx}" y="${ly}" text-anchor="end" transform="rotate(-38 ${lx} ${ly})">${item.label}</text>`;
       });
       svg += "</svg>";
       return svg;
+    }
+
+    function chartItems(entries, valueKey = "rate") {
+      const sentinel = [];
+      const rest = [];
+      for (const [label, row] of entries) {
+        const item = {
+          label: shortRule(label),
+          title: label,
+          value: row[valueKey] ?? row.rate ?? 0,
+          fail: (row[valueKey] ?? row.rate ?? 1) < 1,
+        };
+        if (/^[NEP]\d/i.test(label) || /^[NEP]\d/i.test(item.label)) sentinel.push(item);
+        else rest.push(item);
+      }
+      if (sentinel.length) return sentinel;
+      return rest.slice(0, 12);
     }
 
     function confusionTable(block) {
@@ -112,7 +133,7 @@
       const liveReg = report.live_regression;
       const study = report.study || {};
       let banner = `<section class="span"><h2>Verdict <span class="${verdictClass(overall)}">${overall}</span> · path <span class="${path === "ingest" ? "ok" : "stub"}">${path || "empty"}</span> · Jev <span class="${live ? "ok" : "stub"}">${jevMode}</span></h2>`;
-      banner += `<div class="tiny">Default Run lab suite uses <code>service.ingest</code> (JSONL, monitor, Jev-or-degrade, gate, dispatch, Neo4j persist, SSE). Quick smoke is in-process Sentinel only — not the science number. LIVE means a classify returned <code>latency_ms</code>, not that the API key is set. Inspect neighborhood is RAM; Neo4j is persist/restore.</div>`;
+      banner += `<div class="tiny">Default Run lab suite uses <code>service.ingest</code> (JSONL, monitor, Jev-or-degrade, gate, dispatch, Neo4j persist, SSE). Quick smoke is in-process Sentinel only — not the science number. LIVE means a classify returned <code>latency_ms</code>, not that the API key is set. Inspect neighborhood is link-scoped; ingest rehydrates linked runs from Neo4j when enabled.</div>`;
       banner += `<div class="row"><span>repeats</span><b>${fmt(report.repeats || study.repeats)}</b></div>`;
       banner += `<div class="row"><span>n Sentinel traces</span><b>${fmt(n.sentinel_traces)}</b></div>`;
       banner += `<div class="row"><span>n HappyRobot traces</span><b>${fmt(n.happyrobot_traces)}</b></div>`;
@@ -149,11 +170,7 @@
         html += `<div class="row"><span>walk / ingest ms</span><b>${fmt(study.walk_ms)}</b></div>`;
         html += `<div class="row"><span>observed level</span><b>${fmt(study.observed_level)}</b></div>`;
         html += `<div class="tiny">${study.note || ""}</div>`;
-        const familyBars = Object.entries(study.by_family || {}).map(([label, row]) => ({
-          label: label.replace("E", "").replace("N", "N").slice(0, 10),
-          value: row.rate ?? 0,
-          fail: (row.rate ?? 1) < 1,
-        }));
+        const familyBars = chartItems(Object.entries(study.by_family || {}));
         html += `<h2>Oracle match by family</h2>${barChart(familyBars)}`;
         const labelBars = Object.entries(study.by_label || {}).map(([label, row]) => ({
           label,
@@ -179,9 +196,9 @@
         html += `<div class="row"><span>best knobs</span><b>${fmt(hpo.best_knobs)}</b></div>`;
         html += `<div class="row"><span>delta vs baseline</span><b>${fmt(hpo.delta_vs_baseline)}</b></div>`;
         const trialBars = (hpo.trials || []).map((trial, i) => ({
-          label: `t${i}`,
+          label: `t${i + 1}`,
           value: trial.accuracy?.oracle_match_rate ?? 0,
-          fail: false,
+          fail: (trial.accuracy?.oracle_match_rate ?? 1) < 1,
         }));
         html += barChart(trialBars);
         html += `<table><thead><tr><th>Knobs</th><th>Match</th><th>Safe FP</th><th>Covert R</th></tr></thead><tbody>`;
@@ -204,11 +221,7 @@
           html += `<div class="row"><span>checkpoint delay</span><b>${fmt(block.checkpoint_delay_events || block.checkpoint_delay_events_mean)}</b></div>`;
           html += `<div class="row"><span>no-downgrade</span><b>${fmt(block.no_downgrade_rate)}</b></div>`;
           html += `<div class="row"><span>pager on L4</span><b>${fmt(block.pager_on_l4_rate)}</b></div>`;
-          const ruleBars = Object.entries(block.sentinel_per_rule).map(([rule, row]) => ({
-            label: rule.slice(0, 6),
-            value: row.recall ?? 0,
-            fail: (row.recall ?? 1) < 1,
-          }));
+          const ruleBars = chartItems(Object.entries(block.sentinel_per_rule), "recall");
           html += barChart(ruleBars);
           html += `<table><thead><tr><th>Rule</th><th>P</th><th>R</th><th>TP</th><th>FP</th><th>FN</th></tr></thead><tbody>`;
           for (const [rule, row] of Object.entries(block.sentinel_per_rule)) {

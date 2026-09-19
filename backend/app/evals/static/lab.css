@@ -62,11 +62,13 @@ button.ghost {
   border: 1px solid #444;
   font-weight: 600;
 }
-.chart { width: 100%; height: 150px; margin: 8px 0; }
+.chart { width: 100%; height: 210px; margin: 8px 0; overflow: visible; }
 .chart .bar { fill: #48f; }
 .chart .bar.ok { fill: #3a8; }
 .chart .bar.fail { fill: #c44; }
-.chart text { fill: var(--muted); font-size: 8px; }
+.chart text { fill: var(--muted); font-size: 11px; }
+.chart text.val { fill: #c8cdd8; font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart text.lbl { fill: var(--muted); font-size: 10px; }
 .badge { font-size: 22px; font-weight: 800; }
 .badge.l0 { color: var(--ok); }
 .badge.l1 { color: #cc0; }
