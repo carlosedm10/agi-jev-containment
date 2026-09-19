@@ -38,7 +38,7 @@ class ActionGraph:
     def add_node(
         self,
         node_id: str,
-        parent: Node | None = None,
+        connect: Node | None = None,
         threshold: float = 0.0,
         tool: Any | None = None,
         **fields: Any,
@@ -51,22 +51,35 @@ class ActionGraph:
             if node_id in self._nodes:
                 raise ValueError(f"node id already exists: {node_id!r}")
             if self._root_id is None:
-                if parent is not None:
+                if connect is not None:
                     raise ValueError(
-                        "graph is empty: the first node must be the root (parent=None)"
+                        "graph is empty: the first node must be the root (connect=None)"
                     )
-            elif parent is None:
-                raise ValueError(f"root already exists ({self._root_id!r}): parent is required")
-            elif parent.id not in self._nodes:
-                raise ValueError(f"parent {parent.id!r} is not in the graph")
+            elif connect is None:
+                raise ValueError(f"root already exists ({self._root_id!r}): connect is required")
+            elif self._nodes.get(connect.id) is not connect:
+                raise ValueError(f"connect target {connect.id!r} is not in the graph")
 
-            node = Node(id=node_id, parent=parent, threshold=value, tool=tool, **fields)
+            node = Node(id=node_id, threshold=value, tool=tool, **fields)
             self._nodes[node_id] = node
-            if parent is not None:
-                parent.children.append(node)
+            if connect is not None:
+                connect.neighbors.append(node)
             else:
                 self._root_id = node_id
             return node
+
+    def connect(self, src: Node, dst: Node) -> None:
+        """Add a directed edge src -> dst between two existing nodes (cycles allowed)."""
+        with self._lock:
+            if self._nodes.get(src.id) is not src:
+                raise ValueError(f"source node {src.id!r} is not in the graph")
+            if self._nodes.get(dst.id) is not dst:
+                raise ValueError(f"destination node {dst.id!r} is not in the graph")
+            if src is dst:
+                raise ValueError("self-loops are not allowed")
+            if dst in src.neighbors:
+                raise ValueError(f"edge {src.id!r} -> {dst.id!r} already exists")
+            src.neighbors.append(dst)
 
     def ensure_run(self, run_id: str) -> Node:
         if not isinstance(run_id, str) or not run_id:
@@ -78,7 +91,7 @@ class ActionGraph:
             if self._root_id is None:
                 self.add_node("root")
             root = self._nodes[self._root_id]
-            return self.add_node(f"run:{run_id}", parent=root, run_id=run_id)
+            return self.add_node(f"run:{run_id}", connect=root, run_id=run_id)
 
     def append(
         self,
@@ -93,12 +106,17 @@ class ActionGraph:
         with self._lock:
             run_node = self.ensure_run(run_id)
             last = run_node
-            while last.children:
-                last = last.children[-1]
-            seq = len(self._descendants(run_node)) + 1
+            seen = {run_node.id}
+            while last.neighbors:
+                nxt = last.neighbors[-1]
+                if nxt.id in seen:  # cycle: stop, chain here
+                    break
+                seen.add(nxt.id)
+                last = nxt
+            seq = len(self._reachable(run_node)) + 1
             return self.add_node(
                 f"{run_id}:{seq}",
-                parent=last,
+                connect=last,
                 threshold=threshold,
                 run_id=run_id,
                 level=Level(level),
@@ -113,7 +131,7 @@ class ActionGraph:
             run_node = self._nodes.get(f"run:{run_id}")
             if run_node is None:
                 return []
-            return [run_node, *self._descendants(run_node)]
+            return [run_node, *self._reachable(run_node)]
 
     def key_nodes(self, run_id: str) -> list[Node]:
         return [n for n in self.run_nodes(run_id) if n.level >= Level.MILD]
@@ -155,7 +173,10 @@ class ActionGraph:
 
     def save(self, path: str | Path) -> None:
         with self._lock:
-            payload = {"nodes": [_node_row(node) for node in self._nodes.values()]}
+            payload = {
+                "root": self._root_id,
+                "nodes": [_node_row(node) for node in self._nodes.values()],
+            }
 
         target = Path(path)
         fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
@@ -169,6 +190,7 @@ class ActionGraph:
 
     def load(self, path: str | Path) -> None:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
+        root_id = data.get("root")
         rows = data["nodes"]
 
         with self._lock:
@@ -188,41 +210,54 @@ class ActionGraph:
                 )
                 created[node.id] = node
 
-            roots = 0
-            root_id: str | None = None
             for row in rows:
                 node = created[row["id"]]
-                parent_id = row["parent"]
-                if parent_id is not None:
-                    parent = created.get(parent_id)
-                    if parent is None:
-                        raise ValueError(f"snapshot references unknown parent {parent_id!r}")
-                    node.parent = parent
-                    parent.children.append(node)
-                else:
-                    roots += 1
-                    if roots > 1:
-                        raise ValueError("snapshot contains more than one root")
-                    root_id = row["id"]
+                seen: set[str] = set()
+                for neighbor_id in row.get("neighbors", []):
+                    if neighbor_id == node.id:
+                        raise ValueError(f"snapshot contains a self-loop on {node.id!r}")
+                    if neighbor_id in seen:
+                        raise ValueError(
+                            f"snapshot contains duplicate edge {node.id!r} -> {neighbor_id!r}"
+                        )
+                    seen.add(neighbor_id)
+                    neighbor = created.get(neighbor_id)
+                    if neighbor is None:
+                        raise ValueError(f"snapshot references unknown neighbor {neighbor_id!r}")
+                    node.neighbors.append(neighbor)
 
-            if rows and root_id is None:
-                raise ValueError("snapshot contains no root")
+            if rows:
+                if root_id is None:
+                    raise ValueError("snapshot contains nodes but no root")
+                if root_id not in created:
+                    raise ValueError(f"snapshot root {root_id!r} is not among the nodes")
+            else:
+                root_id = None
 
             self._nodes = created
             self._root_id = root_id
 
-    def _descendants(self, node: Node) -> list[Node]:
+    def _reachable(self, node: Node) -> list[Node]:
+        """Cycle-safe DFS from node (excluded), in edge insertion order."""
         ordered: list[Node] = []
-        for child in node.children:
-            ordered.append(child)
-            ordered.extend(self._descendants(child))
+        visited: set[str] = {node.id}
+
+        def visit(current: Node) -> None:
+            for neighbor in current.neighbors:
+                if neighbor.id in visited:
+                    continue
+                visited.add(neighbor.id)
+                ordered.append(neighbor)
+                visit(neighbor)
+
+        visit(node)
         return ordered
 
 
 def _node_row(node: Node) -> dict[str, Any]:
     row: dict[str, Any] = {
         "id": node.id,
-        "parent": node.parent.id if node.parent else None,
+        "neighbors": [n.id for n in node.neighbors],
         "threshold": node.threshold,
     }
     if node.run_id is not None:

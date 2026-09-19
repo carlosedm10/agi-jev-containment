@@ -20,8 +20,7 @@ class TestAddNode:
     def test_first_node_becomes_root(self, g: ActionGraph):
         root = g.add_node("root", threshold=0.5)
         assert g.root is root
-        assert root.parent is None
-        assert root.children == []
+        assert root.neighbors == []
         assert root.threshold == 0.5
         assert root.tool is None
 
@@ -30,16 +29,16 @@ class TestAddNode:
         with pytest.raises(ValueError, match="root already exists"):
             g.add_node("another-root")
 
-    def test_root_cannot_have_parent_in_empty_graph(self, g: ActionGraph):
+    def test_first_node_cannot_connect_in_empty_graph(self, g: ActionGraph):
         with pytest.raises(ValueError, match="first node must be the root"):
-            g.add_node("orphan", parent=Node(id="ghost"))
+            g.add_node("orphan", connect=Node(id="ghost"))
 
-    def test_child_links_to_parent(self, g: ActionGraph):
+    def test_edge_links_nodes(self, g: ActionGraph):
         root = g.add_node("root")
         tool = object()
-        child = g.add_node("child", parent=root, threshold=1.0, tool=tool)
-        assert child.parent is root
-        assert root.children == [child]
+        child = g.add_node("child", connect=root, threshold=1.0, tool=tool)
+        assert root.neighbors == [child]
+        assert child.neighbors == []
         assert child.tool is tool
 
     def test_duplicate_id_rejected(self, g: ActionGraph):
@@ -47,10 +46,10 @@ class TestAddNode:
         with pytest.raises(ValueError, match="already exists"):
             g.add_node("root")
 
-    def test_unknown_parent_rejected(self, g: ActionGraph):
+    def test_unknown_connect_target_rejected(self, g: ActionGraph):
         g.add_node("root")
         with pytest.raises(ValueError, match="not in the graph"):
-            g.add_node("child", parent=Node(id="ghost"))
+            g.add_node("child", connect=Node(id="ghost"))
 
     @pytest.mark.parametrize("threshold", [0.0, 1.0, 0.42])
     def test_threshold_bounds_inclusive(self, g: ActionGraph, threshold: float):
@@ -72,18 +71,67 @@ class TestAddNode:
         assert g.get_node("missing") is None
 
 
+class TestConnect:
+    def test_connect_adds_edge_between_existing_nodes(self, g: ActionGraph):
+        root = g.add_node("root")
+        left = g.add_node("left", connect=root)
+        right = g.add_node("right", connect=root)
+        g.connect(left, right)
+        assert root.neighbors == [left, right]
+        assert left.neighbors == [right]
+        assert right.neighbors == []
+
+    def test_connect_can_create_a_cycle_and_traversal_terminates(self, g: ActionGraph):
+        run_node = g.ensure_run("r")
+        g.append("r", level=Level.MILD, threshold=0.9)
+        a1 = g.get_node("r:1")
+        g.connect(a1, run_node)  # back-edge: run:r -> r:1 -> run:r
+
+        nodes = g.run_nodes("r")
+        assert [n.id for n in nodes] == ["run:r", "r:1"]
+        assert g.level("r") == Level.MILD
+
+    def test_connect_rejects_duplicate_edge(self, g: ActionGraph):
+        root = g.add_node("root")
+        child = g.add_node("child", connect=root)
+        with pytest.raises(ValueError, match="already exists"):
+            g.connect(root, child)
+
+    def test_connect_rejects_self_loop(self, g: ActionGraph):
+        root = g.add_node("root")
+        with pytest.raises(ValueError, match="self-loop"):
+            g.connect(root, root)
+
+    def test_connect_rejects_nodes_outside_the_graph(self, g: ActionGraph):
+        root = g.add_node("root")
+        with pytest.raises(ValueError, match="not in the graph"):
+            g.connect(Node(id="ghost"), root)
+        with pytest.raises(ValueError, match="not in the graph"):
+            g.connect(root, Node(id="ghost"))
+
+    def test_connect_rejects_stale_instances(self, g: ActionGraph):
+        stale = g.add_node("stale")
+        g.clear()
+        other = ActionGraph()
+        root = other.add_node("root")
+        with pytest.raises(ValueError, match="not in the graph"):
+            other.connect(stale, root)
+
+
 class TestPersistence:
     def test_save_load_roundtrip(self, g: ActionGraph, tmp_path):
         root = g.add_node("root", threshold=0.1)
-        left = g.add_node("left", parent=root, threshold=0.5)
-        g.add_node("right", parent=root, threshold=0.9)
-        g.add_node("leaf", parent=left, threshold=0.0)
+        left = g.add_node("left", connect=root, threshold=0.5)
+        g.add_node("right", connect=root, threshold=0.9)
+        g.add_node("leaf", connect=left, threshold=0.0)
 
         path = tmp_path / "graph.json"
         g.save(path)
-        assert json.loads(path.read_text())["nodes"][0] == {
+        payload = json.loads(path.read_text())
+        assert payload["root"] == "root"
+        assert payload["nodes"][0] == {
             "id": "root",
-            "parent": None,
+            "neighbors": ["left", "right"],
             "threshold": 0.1,
         }
 
@@ -97,13 +145,28 @@ class TestPersistence:
             "leaf": 0.0,
         }
         assert restored.root is restored.get_node("root")
-        assert [c.id for c in restored.get_node("root").children] == ["left", "right"]
-        assert restored.get_node("leaf").parent is restored.get_node("left")
+        assert [c.id for c in restored.get_node("root").neighbors] == ["left", "right"]
+        assert restored.get_node("left").neighbors == [restored.get_node("leaf")]
+
+    def test_save_load_roundtrip_preserves_a_cycle(self, g: ActionGraph, tmp_path):
+        root = g.add_node("root")
+        a = g.add_node("a", connect=root)
+        b = g.add_node("b", connect=a)
+        g.connect(b, a)  # cycle a -> b -> a
+
+        path = tmp_path / "graph.json"
+        g.save(path)
+        restored = ActionGraph()
+        restored.load(path)
+
+        assert restored.get_node("a").neighbors == [restored.get_node("b")]
+        assert restored.get_node("b").neighbors == [restored.get_node("a")]
+        assert restored.root is restored.get_node("root")
 
     def test_save_empty_graph(self, g: ActionGraph, tmp_path):
         path = tmp_path / "empty.json"
         g.save(path)
-        assert json.loads(path.read_text()) == {"nodes": []}
+        assert json.loads(path.read_text()) == {"root": None, "nodes": []}
 
         restored = ActionGraph()
         restored.load(path)
@@ -137,10 +200,38 @@ class TestPersistence:
         assert [n.id for n in g.nodes] == ["new-root"]
         assert g.root.id == "new-root"
 
-    def test_load_rejects_snapshot_with_unknown_parent(self, g: ActionGraph, tmp_path):
+    def test_load_rejects_snapshot_with_unknown_neighbor(self, g: ActionGraph, tmp_path):
         path = tmp_path / "bad.json"
-        path.write_text(json.dumps({"nodes": [{"id": "a", "parent": "ghost", "threshold": 0.0}]}))
-        with pytest.raises(ValueError, match="unknown parent"):
+        path.write_text(
+            json.dumps(
+                {"root": "a", "nodes": [{"id": "a", "neighbors": ["ghost"], "threshold": 0.0}]}
+            )
+        )
+        with pytest.raises(ValueError, match="unknown neighbor"):
+            g.load(path)
+
+    def test_load_rejects_snapshot_with_self_loop(self, g: ActionGraph, tmp_path):
+        path = tmp_path / "self-loop.json"
+        path.write_text(
+            json.dumps({"root": "a", "nodes": [{"id": "a", "neighbors": ["a"], "threshold": 0.0}]})
+        )
+        with pytest.raises(ValueError, match="self-loop"):
+            g.load(path)
+
+    def test_load_rejects_snapshot_with_duplicate_edges(self, g: ActionGraph, tmp_path):
+        path = tmp_path / "dupe.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "root": "a",
+                    "nodes": [
+                        {"id": "a", "neighbors": ["b", "b"], "threshold": 0.0},
+                        {"id": "b", "neighbors": [], "threshold": 0.0},
+                    ],
+                }
+            )
+        )
+        with pytest.raises(ValueError, match="duplicate edge"):
             g.load(path)
 
     def test_failed_load_preserves_current_graph(self, g: ActionGraph, tmp_path):
@@ -149,10 +240,11 @@ class TestPersistence:
         path.write_text(
             json.dumps(
                 {
+                    "root": "a",
                     "nodes": [
-                        {"id": "a", "parent": None, "threshold": 0.0},
-                        {"id": "b", "parent": "ghost", "threshold": 0.0},
-                    ]
+                        {"id": "a", "neighbors": ["ghost"], "threshold": 0.0},
+                        {"id": "b", "neighbors": [], "threshold": 0.0},
+                    ],
                 }
             )
         )
@@ -161,20 +253,30 @@ class TestPersistence:
         assert [n.id for n in g.nodes] == ["keeper"]
         assert g.root.id == "keeper"
 
-    def test_load_rejects_snapshot_with_two_roots(self, g: ActionGraph, tmp_path):
-        path = tmp_path / "bad.json"
+    def test_load_rejects_snapshot_with_nodes_but_no_root(self, g: ActionGraph, tmp_path):
+        path = tmp_path / "rootless.json"
+        path.write_text(json.dumps({"nodes": [{"id": "a", "neighbors": [], "threshold": 0.0}]}))
+        with pytest.raises(ValueError, match="no root"):
+            g.load(path)
+
+    def test_load_rejects_snapshot_with_root_not_among_nodes(self, g: ActionGraph, tmp_path):
+        path = tmp_path / "ghost-root.json"
+        path.write_text(
+            json.dumps({"root": "ghost", "nodes": [{"id": "a", "neighbors": [], "threshold": 0.0}]})
+        )
+        with pytest.raises(ValueError, match="not among the nodes"):
+            g.load(path)
+
+    def test_load_accepts_snapshot_without_optional_fields(self, g: ActionGraph, tmp_path):
+        path = tmp_path / "minimal.json"
         path.write_text(
             json.dumps(
-                {
-                    "nodes": [
-                        {"id": "a", "parent": None, "threshold": 0.0},
-                        {"id": "b", "parent": None, "threshold": 0.0},
-                    ]
-                }
+                {"root": "root", "nodes": [{"id": "root", "neighbors": [], "threshold": 0.5}]}
             )
         )
-        with pytest.raises(ValueError, match="more than one root"):
-            g.load(path)
+        g.load(path)
+        assert g.get_node("root").level == Level.NONE
+        assert g.get_node("root").run_id is None
 
 
 class TestThreadSafety:
@@ -184,7 +286,7 @@ class TestThreadSafety:
 
         def add(i: int) -> None:
             try:
-                g.add_node(f"node-{i}", parent=root)
+                g.add_node(f"node-{i}", connect=root)
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
 
@@ -196,7 +298,7 @@ class TestThreadSafety:
 
         assert errors == []
         assert len(g.nodes) == 101
-        assert len(root.children) == 100
+        assert len(root.neighbors) == 100
 
 
 class TestSingleton:
@@ -210,7 +312,7 @@ class TestRunSubtrees:
         run_node = g.ensure_run("r1")
         assert g.root.id == "root"
         assert run_node.id == "run:r1"
-        assert run_node.parent is g.root
+        assert g.root.neighbors == [run_node]
         assert run_node.run_id == "r1"
         assert run_node.level == Level.NONE
 
@@ -223,8 +325,7 @@ class TestRunSubtrees:
     def test_runs_share_the_single_root(self, g: ActionGraph):
         a = g.ensure_run("a")
         b = g.ensure_run("b")
-        assert g.root.children == [a, b]
-        assert a.parent is g.root and b.parent is g.root
+        assert g.root.neighbors == [a, b]
 
     def test_ensure_run_rejects_empty_id(self, g: ActionGraph):
         with pytest.raises(ValueError, match="non-empty"):
@@ -235,15 +336,14 @@ class TestRunSubtrees:
         n1 = g.append("r", level=Level.MILD, threshold=0.9, intent="recon")
         n2 = g.append("r", level=Level.SEVERE, threshold=0.8, intent="exfiltrate_secrets")
         assert [n1.id, n2.id] == ["r:1", "r:2"]
-        assert n1.parent is run_node
-        assert n2.parent is n1
-        assert run_node.children == [n1]
+        assert run_node.neighbors == [n1]
+        assert n1.neighbors == [n2]
         assert n1.run_id == "r" and n2.run_id == "r"
 
     def test_append_creates_the_run_lazily(self, g: ActionGraph):
         node = g.append("r", level=Level.MILD, threshold=0.9)
         assert g.root.id == "root"
-        assert node.parent is g.get_node("run:r")
+        assert g.get_node("run:r").neighbors == [node]
 
     def test_append_validates_threshold(self, g: ActionGraph):
         with pytest.raises(ValueError, match="threshold"):
@@ -324,13 +424,15 @@ class TestUpdate:
     def test_update_unknown_field_raises(self, g: ActionGraph):
         node = g.add_node("n")
         with pytest.raises(ValueError, match="unknown node fields"):
-            g.update(node.id, parent=None)
+            g.update(node.id, neighbors=None)
 
 
 class TestRunPersistence:
     def test_save_load_roundtrip_preserves_run_fields(self, g: ActionGraph, tmp_path):
         g.ensure_run("r")
-        n1 = g.append("r", level=Level.MILD, threshold=0.9, intent="recon", event={"event": "file_read"})
+        n1 = g.append(
+            "r", level=Level.MILD, threshold=0.9, intent="recon", event={"event": "file_read"}
+        )
         g.append("r", level=Level.SEVERE, threshold=0.8, action_id="a1")
 
         path = tmp_path / "graph.json"
@@ -346,7 +448,7 @@ class TestRunPersistence:
         assert r1.event == {"event": "file_read"}
         assert r2.action_id == "a1"
         assert r1.created_at == n1.created_at
-        assert r2.parent is r1
+        assert r1.neighbors == [r2]
         assert restored.level("r") == Level.SEVERE
         assert [n.id for n in restored.key_nodes("r")] == ["r:1", "r:2"]
 
@@ -361,31 +463,3 @@ class TestRunPersistence:
         assert updated.level == Level.SEVERE
         assert updated.intent == "recon"
         assert updated.created_at == node.created_at
-
-    def test_load_accepts_legacy_snapshot_without_new_fields(self, g: ActionGraph, tmp_path):
-        path = tmp_path / "legacy.json"
-        path.write_text(
-            json.dumps({"nodes": [{"id": "root", "parent": None, "threshold": 0.5}]})
-        )
-        g.load(path)
-        assert g.get_node("root").level == Level.NONE
-        assert g.get_node("root").run_id is None
-
-    def test_load_rejects_snapshot_with_nodes_but_no_root(self, g: ActionGraph, tmp_path):
-        path = tmp_path / "orphan.json"
-        path.write_text(
-            json.dumps({"nodes": [{"id": "a", "parent": "missing-root", "threshold": 0.0}]})
-        )
-        with pytest.raises(ValueError):
-            g.load(path)
-
-    def test_load_rejects_parent_cycle_as_rootless(self, g: ActionGraph, tmp_path):
-        path = tmp_path / "cycle.json"
-        path.write_text(
-            json.dumps({"nodes": [
-                {"id": "a", "parent": "b", "threshold": 0.0},
-                {"id": "b", "parent": "a", "threshold": 0.0},
-            ]})
-        )
-        with pytest.raises(ValueError, match="no root"):
-            g.load(path)
