@@ -268,7 +268,7 @@ class Neo4jGraphStore:
           WHERE other.run_id <> $run_id AND coalesce(other.placeholder, false) = false
           RETURN DISTINCT other.run_id AS run_id
           UNION
-          MATCH (seed:Event {run_id: $run_id})-[:TOUCHES]->(entity:Entity)<-[:TOUCHES]-(other:Event)
+          MATCH (root:Event {run_id: $run_id})-[:TOUCHES]->(entity:Entity)<-[:TOUCHES]-(other:Event)
           WHERE other.run_id <> $run_id AND coalesce(other.placeholder, false) = false
           RETURN DISTINCT other.run_id AS run_id
           UNION

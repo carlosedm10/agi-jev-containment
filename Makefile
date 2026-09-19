@@ -156,7 +156,7 @@ eval-integrity:
 monitor-eval:
 	docker compose exec -T backend-hackspain uv run python -m app.evals.run_monitor_regression --output /tmp/monitor-eval.json
 
-.PHONY: lab seed-lab help-lab
+.PHONY: lab populate-labs help-lab
 lab:
 	@echo "Monitor lab (stack must be up):"
 	@echo "  http://localhost:8000/lab"
@@ -164,24 +164,24 @@ lab:
 	@echo "  http://localhost:8000/lab/benchmarks"
 	@echo "  http://localhost:8000/lab/inspector"
 
-# GNU make treats `make seed-lab --live-jev` as a make option and dies.
-# Pass a variable: LIVE_JEV=1 (JEV, not KEV). Default is degraded (seed_lab clears the key).
+# GNU make treats `make populate-labs --live-jev` as a make option and dies.
+# Pass a variable: LIVE_JEV=1 (JEV, not KEV). Default is degraded (populate_labs clears the key).
 LIVE_JEV ?=
-SEED_LAB_FLAGS :=
+POPULATE_FLAGS :=
 ifneq ($(LIVE_JEV),)
-SEED_LAB_FLAGS += --live-jev
+POPULATE_FLAGS += --live-jev
 endif
 
 help-lab:
 	@echo "Lab / evals:"
 	@echo "  make lab                     print lab URLs"
-	@echo "  make seed-lab                ingest Sentinel+HappyRobot, degraded Jev"
-	@echo "  make seed-lab LIVE_JEV=1     keep TYPESAFE_API_KEY (not: make seed-lab --live-jev)"
+	@echo "  make populate-labs           ingest Sentinel+HappyRobot, degraded Jev"
+	@echo "  make populate-labs LIVE_JEV=1  keep TYPESAFE_API_KEY (not: make populate-labs --live-jev)"
 	@echo "  make monitor-eval            72 HappyRobot traces through service.ingest"
 	@echo "  make eval-integrity          HappyRobot corpus pytest"
 
-seed-lab:
-	docker compose exec -T backend-hackspain uv run python -m app.evals.seed_lab $(SEED_LAB_FLAGS)
+populate-labs:
+	docker compose exec -T backend-hackspain uv run python -m app.evals.populate_labs $(POPULATE_FLAGS)
 
 test:
 	make test-backend

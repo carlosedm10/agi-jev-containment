@@ -42,6 +42,8 @@ DEFAULT_BACKEND = os.environ.get("BACKEND_URL", "http://localhost:8000")
 
 # Load the shared generator without importing the full backend package.
 _trace_generator_path = Path(__file__).resolve().parent.parent / "backend" / "app" / "evals" / "trace_generator.py"
+# Make trace_generator able to resolve lab_pool.py in the same directory.
+sys.path.insert(0, str(_trace_generator_path.parent))
 _spec = importlib.util.spec_from_file_location("trace_generator", _trace_generator_path)
 _trace_generator = importlib.util.module_from_spec(_spec)
 sys.modules["trace_generator"] = _trace_generator
@@ -175,12 +177,12 @@ def main() -> None:
     parser.add_argument("--backend", default=DEFAULT_BACKEND, help="backend base URL")
     parser.add_argument("--token", default=os.environ.get("ACTION_DISPATCH_TOKEN"), help="dispatch token for manual action ladder")
     parser.add_argument("--scenario", choices=["exfil", "lateral", "forge", "memory_poison"], default=None, help="force a scenario")
-    parser.add_argument("--seed", type=int, default=None, help="random seed")
+    parser.add_argument("--rng-state", type=int, default=None, help="deterministic random state")
     parser.add_argument("-v", "--verbose", action="store_true", help="print per-run progress")
     args = parser.parse_args()
 
-    if args.seed is not None:
-        random.seed(args.seed)
+    if args.rng_state is not None:
+        random.seed(args.rng_state)
 
     report = populate(
         backend=args.backend,

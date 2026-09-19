@@ -132,8 +132,8 @@ def _method_block(*, ingest_events: int | None = None) -> dict[str, Any]:
                 "required_key": True,
             },
             {
-                "id": "seed_lab_scale",
-                "name": "make seed-lab scale notes (current Neo4j stats; no graph.clear)",
+                "id": "populate_labs_scale",
+                "name": "make populate-labs scale notes (current Neo4j stats; no graph.clear)",
                 "jev": False,
             },
         ],
