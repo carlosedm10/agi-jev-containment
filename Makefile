@@ -102,7 +102,7 @@ logs:
 	docker compose logs -f backend-hackspain frontend-hackspain
 
 # ----------------------------- FastAPI / Alembic ----------------------------- #
-.PHONY: migrate alembic-revision db-load-schema-test
+.PHONY: migrate alembic-revision
 
 # migrate is deliberately bare — the verb the framework's own docs use.
 migrate:
@@ -110,9 +110,6 @@ migrate:
 
 alembic-revision:
 	docker compose exec -T backend-hackspain uv run alembic revision --autogenerate -m "$(MSG)"
-
-db-load-schema-test:
-	docker compose exec -T -e ENV=test backend-hackspain uv run alembic upgrade head
 
 # ----------------------------- Code Formatting ----------------------------- #
 .PHONY: lint-backend lint-frontend lint format-backend format-frontend format lint-fix-backend lint-fix-frontend lint-fix

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import httpx
 import pytest
@@ -18,7 +17,7 @@ def api_key(monkeypatch):
     monkeypatch.setattr(settings, "typesafe_api_key", "test-key")
 
 
-def capturing_client(captured: list[httpx.Request], answer: Any) -> AsyncClient:
+def capturing_client(captured: list[httpx.Request]) -> AsyncClient:
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(request)
         return httpx.Response(
@@ -61,7 +60,7 @@ async def test_request_carries_all_three_questions(mock_jev):
 
 async def test_request_posts_documented_url_model_and_auth(mock_jev):
     captured: list[httpx.Request] = []
-    ac = capturing_client(captured, None)
+    ac = capturing_client(captured)
     await classify(ac, {"short_term": [Node(id="e1")]})
     assert str(captured[0].url) == API_URL
     assert json.loads(captured[0].content)["model"] == MODEL
