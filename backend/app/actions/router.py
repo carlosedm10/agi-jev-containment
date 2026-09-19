@@ -55,7 +55,7 @@ def require_dispatch_token(
             detail="Action dispatch is not configured.",
         )
     if dispatch_token is None or not secrets.compare_digest(
-        dispatch_token, configured_token
+        dispatch_token.encode(), configured_token.encode()
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,6 +70,12 @@ ActionServiceDependency = Annotated[ActionService, Depends(get_action_service)]
     "/incidents/{incident_id}/dispatch",
     response_model=DispatchResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_200_OK: {
+            "model": DispatchResponse,
+            "description": "Duplicate or lower-level dispatch; no new work accepted.",
+        }
+    },
     dependencies=[Depends(require_dispatch_token)],
 )
 async def dispatch_incident(
