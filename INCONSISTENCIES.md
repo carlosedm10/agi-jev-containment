@@ -8,9 +8,5 @@ Tracked flaws that are knowingly left in place. Resolve an entry by fixing it, t
 
 ## Referenced but never written
 
-- [docs/Actions.md](docs/Actions.md) references containment scripts that do not exist in this repo: `scripts/contain.sh`, `scripts/cut-egress.sh`, `scripts/kill-swarm.sh`.
-- [docs/scenarios.md](docs/scenarios.md) references pieces that do not exist: `victim-agent`, `customers-db`, and `docker-lure` services; the dispatcher that maps `actionable_level` to a playbook.
-
-## Not built
-
-- The `jev`-wired dispatcher that maps a materialized graph node to host-side scripts is not implemented — the pipeline still only materializes nodes and computes `actionable_level`. The simulated demo adapter (`POST /api/demo/incidents/{id}/dispatch`) is a separate feed for the `/ladder` wallboard.
+- [docs/Actions.md](docs/Actions.md) references containment scripts that do not exist in this repo: `scripts/contain.sh`, `scripts/cut-egress.sh`, `scripts/kill-swarm.sh`. L1–L3 and the infra half of L4/L5 stay simulated.
+- [docs/scenarios.md](docs/scenarios.md) references pieces that do not exist: `victim-agent`, `customers-db`, and `docker-lure` services.
