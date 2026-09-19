@@ -24,9 +24,12 @@ export type ActivityLink = {
   pending: boolean;
 };
 
-function eventText(node: GraphNode, key: string, fallback: string) {
-  const value = node.event?.[key];
-  return typeof value === "string" && value.length > 0 ? value : fallback;
+function eventText(node: GraphNode, keys: string[], fallback: string) {
+  for (const key of keys) {
+    const value = node.event?.[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return fallback;
 }
 
 export function layoutGraph(graph: Graph, pending: PendingAction | null) {
@@ -46,10 +49,10 @@ export function layoutGraph(graph: Graph, pending: PendingAction | null) {
       id: node.id,
       label: eventText(
         node,
-        "label",
+        ["label", "kind", "event"],
         root ? "Activity entry point" : (node.run_id ?? node.id),
       ),
-      tool: eventText(node, "tool", eventText(node, "event", "")),
+      tool: eventText(node, ["tool", "target", "event"], ""),
       runId: node.run_id,
       position: root ? { x: COLUMN_GAP / 2, y: 0 } : nextPosition(node.run_id),
     };

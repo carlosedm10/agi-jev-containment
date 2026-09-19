@@ -9,7 +9,7 @@ browser :3000  →  frontend-hackspain (Vite :5173)  →  backend-hackspain :800
                                                       →  postgres-hackspain :5432
 ```
 
-- **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`. Vite proxies `/api` to `backend-hackspain:8000`, so the browser talks to one origin. The UI renders nothing today: it mirrors the live graph in memory ([docs/Graph.md](Graph.md)).
+- **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`. Vite proxies `/api` to `backend-hackspain:8000`, so the browser talks to one origin. Two pages: `/` is the mock dashboard driven by `src/dashboard/demo.ts` (no backend); `/live` is the projector view — only the React Flow graph, fed by `/api/graph/stream`, with each run's walked path animated and coloured by level. `/live?demo` swaps the stream for the mock feed ([docs/Graph.md](Graph.md)).
 - **backend/** — FastAPI app (`app.main:app`), uv, SQLAlchemy, Alembic. **CORS allows only `http://localhost:3000`.**
 - **postgres-hackspain** — Postgres 18. Backend waits on a healthy `pg_isready`. Named volume `postgres_data_hackspain`.
 
