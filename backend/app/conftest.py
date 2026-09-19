@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import httpx
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from app.graph import graph
+from app.main import app
+
+JEV_URL = "https://api.typesafe.ai/v1/systemone"
+HELM_URL = "https://api.helmcode.com/v1/chat/completions"
+
+
+@pytest.fixture
+async def client():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
+def fresh_graph():
+    graph.clear()
+    yield graph
+    graph.clear()
+
+
+def _jev_payload(answer: Any) -> dict[str, Any]:
+    if isinstance(answer, dict):
+        return answer
+    return {
+        "answers": {
+            "criticality": {
+                "type": "choice",
+                "choice": answer,
+                "probabilities": {},
+                "confidence": 0.9,
+            }
+        }
+    }
+
+
+@pytest.fixture
+def mock_jev():
+    def factory(answers: list[Any], status: int = 200) -> AsyncClient:
+        calls: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(json.loads(request.content))
+            answer = answers[min(len(calls) - 1, len(answers) - 1)]
+            if isinstance(answer, Exception):
+                raise answer
+            return httpx.Response(status, json=_jev_payload(answer))
+
+        ac = AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="https://api.typesafe.ai"
+        )
+        ac.calls = calls
+        return ac
+
+    return factory
+
+
+@pytest.fixture
+def mock_watcher():
+    def factory(replies: list[Any], status: int = 200) -> AsyncClient:
+        calls: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(json.loads(request.content))
+            reply = replies[min(len(calls) - 1, len(replies) - 1)]
+            if isinstance(reply, Exception):
+                raise reply
+            if isinstance(reply, dict):
+                return httpx.Response(status, json=reply)
+            return httpx.Response(
+                status, json={"choices": [{"message": {"content": reply}}]}
+            )
+
+        ac = AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="https://api.helmcode.com"
+        )
+        ac.calls = calls
+        return ac
+
+    return factory

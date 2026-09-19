@@ -18,6 +18,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./experiments:/experiments
     depends_on:
       postgres-hackspain:
         condition: service_healthy
