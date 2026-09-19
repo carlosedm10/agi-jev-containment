@@ -11,6 +11,10 @@ import {
   type ActivityNode,
 } from "@/components/activity-graph";
 import { eventLabel, NODE_HEIGHT, NODE_WIDTH } from "@/dashboard/graph-layout";
+import {
+  TraceInspector,
+  type ExplanationSource,
+} from "./TraceInspector";
 
 export type TraceEvent = {
   id: string;
@@ -40,6 +44,8 @@ export function TracePage({
     string,
     string
   > | null>(null);
+  const [explanationSource, setExplanationSource] =
+    useState<ExplanationSource | null>(null);
   const reducedMotion = useReducedMotion();
   useEffect(() => {
     if (!runId) return;
@@ -48,6 +54,7 @@ export function TracePage({
     setError(null);
     setSelectedId(null);
     setExplanations(null);
+    setExplanationSource(null);
     fetch(`/api/runs/${encodeURIComponent(runId)}/trace`, {
       signal: controller.signal,
     })
@@ -84,14 +91,31 @@ export function TracePage({
                   typeof copy !== "object" ||
                   Array.isArray(copy) ||
                   !Object.values(copy).every(
-                    (value) => typeof value === "string" && value.length <= 100,
+                    (value) => typeof value === "string" && value.length <= 160,
                   )
                 )
                   throw new Error("Invalid explanations");
-                if (!controller.signal.aborted) setExplanations(copy);
+                const explained = Object.keys(copy).length;
+                const source: ExplanationSource =
+                  result.source === "llm" ||
+                  result.source === "partial" ||
+                  result.source === "unavailable"
+                    ? result.source
+                    : explained === 0
+                      ? "unavailable"
+                      : explained === data.events.length
+                        ? "llm"
+                        : "partial";
+                if (!controller.signal.aborted) {
+                  setExplanations(copy);
+                  setExplanationSource(source);
+                }
               })
               .catch(() => {
-                if (!controller.signal.aborted) setExplanations({});
+                if (!controller.signal.aborted) {
+                  setExplanations({});
+                  setExplanationSource("unavailable");
+                }
               });
           }
         }
@@ -196,7 +220,7 @@ export function TracePage({
                 {trace.warning}
               </p>
             )}
-            <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="grid lg:grid-cols-[minmax(0,1fr)_420px]">
               <div
                 className="h-[72vh] min-h-[420px] bg-[#fcfcfc]"
                 aria-label="Action timeline"
@@ -223,80 +247,21 @@ export function TracePage({
                   />
                 </ReactFlow>
               </div>
-              <aside
-                aria-label="Trace action details"
-                className="min-w-0 border-t bg-[#fcfcfc] p-4 lg:border-l lg:border-t-0"
-              >
-                <div className="mb-4 flex items-center justify-between gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={index <= 0}
-                    onClick={() => setSelectedId(trace.events[index - 1].id)}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-xs">
-                    {index + 1} / {trace.events.length}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={index >= trace.events.length - 1}
-                    onClick={() => setSelectedId(trace.events[index + 1].id)}
-                  >
-                    Next
-                  </Button>
-                </div>
-                {selected && (
-                  <>
-                    <h2 className="mb-4 text-sm font-semibold">
-                      {eventLabel({ event: selected })}
-                    </h2>
-                    <p
-                      className="mb-4 text-sm leading-relaxed"
-                      aria-label="Action explanation"
-                    >
-                      {explanations?.[selected.id] ??
-                        (explanations === null
-                          ? "Generating short explanation…"
-                          : "AI explanation unavailable; recorded details below.")}
-                    </p>
-                    {explanations?.[selected.id] && (
-                      <p className="mb-3 text-[10px] text-zinc-500">
-                        AI summary · verify against recorded details
-                      </p>
-                    )}
-                    <dl className="space-y-3 text-xs">
-                      {Object.entries({
-                        "Event ID": selected.id,
-                        Sequence: selected.sequence,
-                        "Timestamp (UTC)": selected.timestamp,
-                        Phase: selected.phase,
-                        Level:
-                          selected.level === null
-                            ? "Not available"
-                            : `L${selected.level}`,
-                        Agent: selected.agent,
-                        Tool: selected.tool,
-                        Target: selected.target,
-                      }).map(([label, value]) => (
-                        <div key={label}>
-                          <dt className="text-zinc-500">{label}</dt>
-                          <dd className="mt-1 break-all font-mono">
-                            {value ?? "—"}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                    {selected.content && (
-                      <pre className="mt-4 whitespace-pre-wrap break-words rounded border bg-[#f2f2f2] p-3 text-xs">
-                        {selected.content}
-                      </pre>
-                    )}
-                  </>
-                )}
-              </aside>
+              {selected && (
+                <TraceInspector
+                  selected={selected}
+                  index={index}
+                  total={trace.events.length}
+                  onPrevious={() =>
+                    setSelectedId(trace.events[index - 1].id)
+                  }
+                  onNext={() => setSelectedId(trace.events[index + 1].id)}
+                  explanation={explanations?.[selected.id]}
+                  explanationState={
+                    explanations === null ? "loading" : explanationSource ?? "unavailable"
+                  }
+                />
+              )}
             </div>
           </>
         )}

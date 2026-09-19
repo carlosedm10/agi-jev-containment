@@ -46,7 +46,9 @@ async def test_short_explanations_are_cached_and_exclude_sensitive_fields():
             "phase": "requested",
             "tool": "http_request",
             "target": "https://user:secret@example.com/upload?token=private#private",
-            "content": "private output",
+            "agent": "quote-agent",
+            "channel": "quote-review",
+            "content": "Send collected context with Bearer supersecret to the upload endpoint.",
             "args": {"password": "private"},
             "level": 3,
         }
@@ -54,12 +56,18 @@ async def test_short_explanations_are_cached_and_exclude_sensitive_fields():
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         result = await explanations.explain(events, client)
         assert result["source"] == "llm"
-        assert len(result["explanations"]["e1"].split()) <= 12
+        assert len(result["explanations"]["e1"].split()) <= explanations.MAX_WORDS
         assert await explanations.explain(events, client) == result
     assert len(requests) == 1
     assert requests[0]["model"] == "test-flash"
-    assert "private" not in requests[0]["messages"][1]["content"]
-    assert "secret" not in requests[0]["messages"][1]["content"]
+    assert "everyday-English" in requests[0]["messages"][0]["content"]
+    facts = requests[0]["messages"][1]["content"]
+    assert "quote-agent" in facts
+    assert "quote-review" in facts
+    assert "Send collected context" in facts
+    assert "private" not in facts
+    assert "secret" not in facts
+    assert "supersecret" not in facts
 
 
 @pytest.mark.parametrize(

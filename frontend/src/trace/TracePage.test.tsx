@@ -15,7 +15,7 @@ test("trace renders repeated actions as separate nodes and advances the detail p
     target: "/same.txt",
     agent: "quote-agent",
     channel: "quote-review",
-    content: null,
+    content: sequence === 1 ? "Read the shared quote file." : null,
     level: sequence === 2 ? null : sequence,
   }));
   let fail = false;
@@ -27,6 +27,7 @@ test("trace renders repeated actions as separate nodes and advances the detail p
             explanations: {
               "trace:e1": "Read the file to inspect its contents.",
             },
+            source: "partial",
           })
         : Response.json({
             run_id: "trace",
@@ -59,12 +60,28 @@ test("trace renders repeated actions as separate nodes and advances the detail p
       '[aria-label="Trace action details"]',
     )!;
     expect(details.textContent).toContain("trace:e1");
+    expect(details.textContent).toContain("Read file: same.txt");
+    expect(details.textContent).toContain("quote-review");
+    expect(details.textContent).toContain("L1 · Mild");
+    expect(details.textContent).toContain("File Read");
+    expect(details.textContent).toContain("read_file");
+    expect(details.textContent).toContain("/same.txt");
+    expect(details.textContent).toContain(
+      "Read the file to inspect its contents.",
+    );
+    expect(details.textContent).toContain("In plain terms");
+    expect(details.textContent).toContain("DeepSeek · partial batch");
+    expect(details.textContent).not.toContain("Read the shared quote file.");
     const next = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Next",
     )!;
     act(() => next.click());
     expect(details.textContent).toContain("trace:e2");
-    expect(details.textContent).toContain("Not available");
+    expect(details.textContent).toContain("Recorded");
+    expect(details.textContent).toContain("Read file: same.txt");
+    expect(details.textContent).not.toContain(
+      "Read the file to inspect its contents.",
+    );
     expect(
       container
         .querySelector('.react-flow__node[data-id="trace:e2"]')
