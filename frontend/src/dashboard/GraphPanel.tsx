@@ -89,7 +89,7 @@ export function GraphPanel({
         background: "#fff",
       }}
     >
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
+      <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b px-4">
         <h2 className="text-sm font-semibold text-zinc-900">Agent activity</h2>
         <Button
           variant="outline"

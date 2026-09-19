@@ -23,12 +23,26 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <main
         id="dashboard"
+        aria-label="Agent safety dashboard · simulated data"
         className="mx-auto min-h-dvh max-w-[1920px] bg-white p-4 text-zinc-900"
       >
-        <h1 className="sr-only">Agent safety dashboard · simulated data</h1>
+        <header
+          aria-label="AngryRobot"
+          className="mb-2 flex h-14 items-center justify-center"
+        >
+          <h1>
+            <img
+              src="/angry-robot-wordmark.svg"
+              alt="AngryRobot"
+              width={110}
+              height={48}
+              className="h-12 w-auto"
+            />
+          </h1>
+        </header>
         <div
           key={demo.run}
-          className="dashboard-grid grid gap-4 lg:grid-cols-[1.05fr_1fr]"
+          className="dashboard-grid grid gap-2 lg:grid-cols-2"
         >
           <section
             aria-label="Action graph and analysis"
@@ -102,7 +116,7 @@ export default function App() {
               </section>
             )}
           </section>
-          <div className="grid min-h-0 min-w-0 grid-rows-[minmax(250px,0.95fr)_minmax(280px,1fr)] gap-4">
+          <div className="grid min-h-0 min-w-0 grid-rows-[minmax(250px,0.95fr)_minmax(280px,1fr)] gap-2">
             <ActivityPanel
               actions={demo.actions}
               selectedNodeId={selectedNodeId}

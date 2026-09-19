@@ -158,6 +158,17 @@ describe("App", () => {
     expect(container.textContent).toContain("Agent activity");
     expect(container.textContent).toContain("Protective actions");
     expect(container.textContent).toContain("Container logs");
+    expect(
+      container.querySelector('header img[src="/angry-robot.svg"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('header[aria-label="AngryRobot"]')?.className,
+    ).toContain("justify-center");
+    expect(
+      container
+        .querySelector('header h1 img[alt="AngryRobot"]')
+        ?.getAttribute("src"),
+    ).toBe("/angry-robot-wordmark.svg");
     expect(container.textContent).not.toContain("Eyes on every action");
     expect(container.textContent).not.toContain("Follow live");
     expect(container.textContent).not.toContain(
