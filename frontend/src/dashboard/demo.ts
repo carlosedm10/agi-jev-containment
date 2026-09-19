@@ -16,7 +16,7 @@ export type SafeAction = {
   nodeId: string;
   title: string;
   source: "Monitor" | "Host playbook" | "HappyRobot";
-  status: "running" | "done" | "failed";
+  status: "queued" | "running" | "done" | "partial" | "failed" | "canceled";
   level: number;
   startedAt: string;
   details: { label: string; meta: string }[];

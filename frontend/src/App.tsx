@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
 import { MotionConfig } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
+import { PageTabs } from "@/components/page-tabs";
 import { InteractiveLogsTable } from "@/components/ui/interactive-logs-table";
 import { ActivityPanel } from "@/dashboard/ActivityPanel";
 import { GraphPanel } from "@/dashboard/GraphPanel";
@@ -14,13 +15,16 @@ import {
   type SafeAction,
 } from "@/dashboard/demo";
 import { actionsFromIncident, logsFromGraph } from "@/dashboard/feeds";
-import { eventText } from "@/dashboard/graph-layout";
-import { useIncidentFeed } from "@/dashboard/useIncidentFeed";
-import type { Graph } from "@/graph/protocol";
 import {
-  useGraphStream,
-  type GraphStreamStatus,
-} from "@/graph/useGraphStream";
+  eventLabel,
+  eventTarget,
+  eventText,
+  latestRunNode,
+} from "@/dashboard/graph-layout";
+import { useIncidentFeed } from "@/dashboard/useIncidentFeed";
+import { useLogFeed } from "@/dashboard/useLogFeed";
+import type { Graph } from "@/graph/protocol";
+import { useGraphStream, type GraphStreamStatus } from "@/graph/useGraphStream";
 
 const EMPTY_GRAPH: Graph = { revision: 0, root: null, nodes: new Map() };
 
@@ -32,6 +36,13 @@ type DashboardProps = {
   status: GraphStreamStatus | null;
   onRestart?: () => void;
   onTrigger?: () => void;
+  focusNodeId?: string | null;
+  triggerError?: string | null;
+  triggering?: boolean;
+  onStop?: () => void;
+  stopping?: boolean;
+  runActive?: boolean;
+  traceRunId?: string | null;
 };
 
 function Dashboard({
@@ -42,14 +53,25 @@ function Dashboard({
   status,
   onRestart,
   onTrigger,
+  focusNodeId,
+  triggerError,
+  triggering,
+  onStop,
+  stopping,
+  runActive,
+  traceRunId,
 }: DashboardProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedNodeId(focusNodeId ?? null);
+  }, [focusNodeId]);
   const selected = selectedNodeId ? graph.nodes.get(selectedNodeId) : null;
-  const pendingSelected =
-    selectedNodeId === pending?.id ? pending : null;
+  const pendingSelected = selectedNodeId === pending?.id ? pending : null;
   const inspectorTitle =
     pendingSelected?.label ??
-    String(selected?.event?.label ?? selected?.id ?? "");
+    (selected?.event
+      ? eventLabel(selected)
+      : (selected?.run_id ?? "Agent activity"));
 
   return (
     <MotionConfig reducedMotion="user">
@@ -64,7 +86,7 @@ function Dashboard({
       >
         <header
           aria-label="AngryRobot"
-          className="mb-2 flex h-14 items-center justify-center"
+          className="relative mb-2 flex h-14 items-center justify-center"
         >
           <h1>
             <img
@@ -75,11 +97,12 @@ function Dashboard({
               className="h-12 w-auto"
             />
           </h1>
+          <div className="absolute right-0"><PageTabs page="dashboard" runId={traceRunId} /></div>
         </header>
         <div className="dashboard-grid grid gap-2 lg:grid-cols-2">
           <section
             aria-label="Action graph and analysis"
-            className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border shadow-xs"
+            className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border shadow-xs"
           >
             <div className="min-h-0 flex-1">
               <GraphPanel
@@ -89,6 +112,12 @@ function Dashboard({
                 onSelectNode={setSelectedNodeId}
                 onRestart={onRestart}
                 onTrigger={onTrigger}
+                focusNodeId={focusNodeId}
+                triggerError={triggerError}
+                triggering={triggering}
+                onStop={onStop}
+                stopping={stopping}
+                runActive={runActive}
                 status={status}
               />
             </div>
@@ -119,6 +148,17 @@ function Dashboard({
                         )
                       : "Structural graph node. This groups the session or run; it is not a safety verdict."}
                 </p>
+                {selected?.event && (
+                  <p className="mt-2 break-all font-mono text-[11px] text-zinc-500">
+                    {[
+                      eventText(selected, ["agent"], ""),
+                      eventText(selected, ["tool"], ""),
+                      eventTarget(selected),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
                 {selected?.event && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
                     <span
@@ -171,7 +211,7 @@ function Dashboard({
             />
             <section
               aria-label="Container log viewer"
-              className="min-h-0 min-w-0 overflow-hidden rounded-xl border shadow-xs"
+              className="min-h-0 min-w-0 overflow-hidden rounded-md border shadow-xs"
             >
               <InteractiveLogsTable logs={logs} />
             </section>
@@ -198,25 +238,106 @@ function DemoDashboard() {
 }
 
 function StreamDashboard() {
+  const [previousScenario, setPreviousScenario] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [followRunId, setFollowRunId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("run"));
+  const [triggering, setTriggering] = useState(false);
+  const [triggerError, setTriggerError] = useState<string | null>(null);
   const { graph, status } = useGraphStream();
-  const incident = useIncidentFeed();
-  const view = graph ?? EMPTY_GRAPH;
+  const incident = useIncidentFeed(followRunId);
+  const { logs: liveLogs, clear: clearLogs } = useLogFeed();
+  const view = useMemo(() => {
+    const current = graph ?? EMPTY_GRAPH;
+    if (!followRunId) return current;
+    return {
+      ...current,
+      nodes: new Map(
+        [...current.nodes].map(([id, node]) => {
+          const state = node.run_states?.[followRunId];
+          return [
+            id,
+            state ? { ...node, ...state, run_id: followRunId } : node,
+          ];
+        }),
+      ),
+    };
+  }, [graph, followRunId]);
   const actions = useMemo(
     () => (incident === null ? [] : actionsFromIncident(incident)),
     [incident],
   );
-  const logs = useMemo(() => logsFromGraph(view), [view]);
+  const logs = useMemo(
+    () => liveLogs ?? logsFromGraph(graph ?? EMPTY_GRAPH),
+    [liveLogs, graph],
+  );
+
+  useEffect(() => {
+    if (!activeRunId) return;
+    const controller = new AbortController();
+    const timer = setInterval(async () => {
+      try {
+        const response = await fetch(
+          `/api/demo/trigger/${encodeURIComponent(activeRunId)}`,
+          { signal: controller.signal },
+        );
+        if (!response.ok) return;
+        const state = await response.json();
+        if (!controller.signal.aborted && state.active === false) {
+          setActiveRunId(null);
+          setStopping(false);
+        }
+      } catch {
+        /* Retry while the run is active. */
+      }
+    }, 750);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [activeRunId]);
+
+  const stopRun = async () => {
+    if (!activeRunId) return;
+    setStopping(true);
+    setTriggerError(null);
+    try {
+      const response = await fetch(
+        `/api/demo/trigger/${encodeURIComponent(activeRunId)}/stop`,
+        { method: "POST" },
+      );
+      if (!response.ok) throw new Error("Stop failed");
+    } catch {
+      setStopping(false);
+      setTriggerError("Could not stop the run. Try again.");
+    }
+  };
 
   const triggerRun = async () => {
-    const scenario = Math.random() < 0.5 ? "exfil" : "lateral";
+    const choices = ["exfil", "lateral", "forge", "memory_poison"].filter(
+      (scenario) => scenario !== previousScenario,
+    );
+    const scenario = choices[Math.floor(Math.random() * choices.length)];
+    clearLogs();
+    setTriggering(true);
+    setFollowRunId(null);
+    setTriggerError(null);
     try {
-      await fetch("/api/demo/trigger", {
+      const response = await fetch("/api/demo/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario, delay_ms: 400 }),
+        body: JSON.stringify({ scenario, delay_ms: 900 }),
       });
+      if (!response.ok) throw new Error("Trigger failed");
+      const result = await response.json();
+      if (typeof result.run_id !== "string") throw new Error("Missing run ID");
+      setPreviousScenario(scenario);
+      setFollowRunId(result.run_id);
+      setActiveRunId(result.run_id);
     } catch {
-      // The request starts a background ingest; errors are surfaced in the logs.
+      setTriggerError("Could not start the run. Try again.");
+    } finally {
+      setTriggering(false);
     }
   };
 
@@ -228,6 +349,19 @@ function StreamDashboard() {
       logs={logs}
       status={status}
       onTrigger={triggerRun}
+      triggering={triggering}
+      onStop={stopRun}
+      stopping={stopping}
+      runActive={activeRunId !== null}
+      traceRunId={!activeRunId && !triggering ? followRunId : null}
+      triggerError={triggerError}
+      focusNodeId={
+        triggering
+          ? view.root
+          : followRunId
+            ? latestRunNode(view, followRunId)
+            : null
+      }
     />
   );
 }

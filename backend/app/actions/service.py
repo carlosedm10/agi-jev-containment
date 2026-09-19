@@ -46,6 +46,8 @@ class ActionService:
         )
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._tasks: set[asyncio.Task[None]] = set()
+        self._playbook_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._run_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def dispatch(
         self,
@@ -65,11 +67,7 @@ class ActionService:
                 request.level,
                 page=not self._already_paging(incident_id),
             )
-            completed = {
-                action.action_id
-                for action in state.actions
-                if action.status == "ok"
-            }
+            completed = {action.action_id for action in state.actions if action.status == "ok"}
             plan = [action for action in plan if action.action_id not in completed]
             accepted = DispatchAccepted(
                 incident_id=incident_id,
@@ -87,7 +85,13 @@ class ActionService:
                 )
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
+                self._run_tasks[incident_id] = task
             return accepted
+
+    async def wait_for_actions(self, incident_id: str) -> None:
+        task = self._run_tasks.get(incident_id)
+        if task is not None:
+            await asyncio.shield(task)
 
     def get_state(self, incident_id: str) -> IncidentActionState:
         return self._journal.state(incident_id)
@@ -95,9 +99,7 @@ class ActionService:
     def latest_state(self) -> IncidentActionState | None:
         return self._journal.latest()
 
-    def _plan(
-        self, incident_id: str, level: int, *, page: bool = True
-    ) -> list[PlannedAction]:
+    def _plan(self, incident_id: str, level: int, *, page: bool = True) -> list[PlannedAction]:
         def simulated(name: str, ladder_level: int) -> PlannedAction:
             return PlannedAction(
                 action_id=f"{incident_id}:{name}",
@@ -142,6 +144,10 @@ class ActionService:
         )
 
     async def _run_playbook(self, accepted: DispatchAccepted, *, intent: str) -> None:
+        async with self._playbook_locks[accepted.incident_id]:
+            await self._run_steps(accepted, intent=intent)
+
+    async def _run_steps(self, accepted: DispatchAccepted, *, intent: str) -> None:
         actions = {action.name: action for action in accepted.planned_actions}
         if accepted.level <= 2:
             return

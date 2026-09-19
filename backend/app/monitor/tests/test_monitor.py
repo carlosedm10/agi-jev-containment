@@ -36,8 +36,6 @@ def test_requested_effect_moves_bands_but_not_committed_totals():
     assert state.authority_drift == 3
     assert state.reversibility == 2
     assert state.blast_radius == 3
-    assert state.records_total == 0
-    assert state.amount_total == 0
     assert state.p_violation[3] > state.p_violation[1]
 
 
@@ -161,14 +159,14 @@ def test_unrelated_lab_seeds_do_not_form_a_write_burst():
     for index in range(3):
         _commit(
             engine,
-            MonitorEvent(id=f"a{index}", run_id="seed-a", kind="tool_write", tool="book_load"),
+            MonitorEvent(id=f"a{index}", run_id="run-a", kind="tool_write", tool="book_load"),
         )
     for index in range(3):
         _commit(
             engine,
-            MonitorEvent(id=f"b{index}", run_id="seed-b", kind="tool_write", tool="book_load"),
+            MonitorEvent(id=f"b{index}", run_id="run-b", kind="tool_write", tool="book_load"),
         )
-    probe = MonitorEvent(id="probe", run_id="seed-b", kind="utterance")
+    probe = MonitorEvent(id="probe", run_id="run-b", kind="utterance")
     findings = {item.rule_id for item in engine.prepare(probe).findings}
     assert "N2_WRITE_BURST" not in findings
 

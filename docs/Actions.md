@@ -44,6 +44,8 @@ Jev contributes semantic probabilities; deterministic code owns the final tool d
 
 ### Hard rules
 
+Protective dispatch follows the fused gate even when Jev is degraded: a deterministic L3 finding still runs containment. Shared graph nodes keep separate per-run verdicts so a new run cannot inherit another run's L5. Accepted playbooks execute containment steps in order per incident (including L4 contain-all before cut-egress); L5 waits for earlier accepted containment and its own forensics step before swarm kill. Pager notification remains parallel. The triggered demo waits for each event's containment steps before ingesting the next event; persistent supervision and pager calls do not block that progression.
+
 1. **Chain, not event.** A single `curl` is noise. `curl` + reading `.env` + posting the contents is intent. On every new event, `jev` re-reads short-term and long-term context in parallel.
 2. **Complete graph, sparse context.** Neo4j keeps every event; only level ≥ 1 enters `key_nodes`.
 3. **Levels only escalate.** A run never auto-downgrades. A human clears it from the viewer.
@@ -126,6 +128,8 @@ No HappyRobot call at L4. Rollback (human): `docker unpause`, issue a new scoped
 
 ### Level 5 only — call the on-call (HappyRobot)
 
+The pager journals request/acceptance, webhook retry attempts and HTTP status, provider run ID, elapsed time, call-state changes, and terminal session evidence (duration, SIP code and end event when present). Expand a HappyRobot protective-action row to see the timestamped history. Trace details omit credentials, webhook URLs, phone numbers and raw payloads. Polling timeouts include the poll count.
+
 Not a sixth level. A side-effect of L5, after the cut. Number in `ONCALL_PHONE`, never in git. Outbound HappyRobot voice (`template: voice-agent`). Pager egress is not on `agentnet`. Infra does not wait for pickup; missing env = log error + still cut.
 
 The To-number lives on the outbound node, not in the POST body. Hook URL, API key, and number stay in gitignored `.env`. Local fire: `scripts/page.sh`. After changing who gets the call, confirm the run's `to` before anyone picks up.
@@ -138,11 +142,13 @@ Authorization: Bearer $HAPPYROBOT_API_KEY
   "pautas": "{action_taken}. Abra {viewer_url}.",
   "nivel_gravedad": "crítico",
   "nombre_contacto": "$ONCALL_NAME",
-  "nodos": "{intent}. Nivel {level}. {action_taken}."
+  "nodos": "{recorded_chain_context}. {intent}. Nivel {level}. {action_taken}."
 }
 ```
 
 Voice: identify as the pager, say `{action_taken}`, ask him to open `{viewer_url}`. If he asks what happened, answer from the payload facts (`nodos`, `tipo_emergencia`, `pautas`) — do not mention the classifier, node arrays, or how the level was chosen. Retry once on no pickup. Do not roll infra back.
+
+Dashboard trigger chains are fixed: **Quote context leak** (5 steps), **Neighbor workspace access**, **Unapproved export tool**, and **Untrusted shared context** (6 steps each). All start by reading CHI-DAL, flagging missing approval authority and supervising the request while the quote stays draft with no rate write. Server-scripted demo verdicts progress L0 → L1 → L2 → L3 → L4; six-step chains have two L3 actions. L5 is not scheduled without a breach, and real event ingestion still uses live classification. Steps and planned levels are returned by `GET /api/demo/scenarios`. The pager reads only recorded matching steps into `nodos`, using catalog descriptions rather than untrusted text. Non-catalog incidents retain the intent/level/response summary. Runs use 900 ms between steps plus ingest and containment latency. Calls request at least one minute of conversation, with a 240-second polling timeout; actual duration depends on the provider and recipient. Offline webhook tests verify the context contract, not the hosted workflow.
 
 ---
 

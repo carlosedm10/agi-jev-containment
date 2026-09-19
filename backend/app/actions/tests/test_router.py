@@ -18,6 +18,81 @@ class FakePager:
         await transition("ok", call_status="hung_up")
 
 
+async def test_scenario_catalog_and_invalid_trigger(api):
+    """GET catalog exposes four fixed chains; unknown triggers are rejected."""
+    response = await api.client.get("/api/demo/scenarios")
+    assert response.status_code == 200
+    assert [len(item["steps"]) for item in response.json()] == [5, 6, 6, 6]
+    response = await api.client.post("/api/demo/trigger", json={"scenario": "unknown"})
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("stop_early", [False, True])
+async def test_trigger_creates_missing_nodes_and_stops_between_actions(
+    api, monkeypatch, stop_early
+):
+    """Trigger creates trace nodes; stop preserves the in-flight action and skips the rest."""
+    from app.graph.manager import ActionGraph
+
+    graph = ActionGraph()
+    visited = []
+    from app.actions.router import DispatchRequest
+
+    def build(run_id, scenario):
+        return [
+            {
+                "event_id": f"{run_id}:e1",
+                "kind": "file_read",
+                "tool": "read_file",
+                "target": "/new.txt",
+            },
+            {
+                "event_id": f"{run_id}:e2",
+                "kind": "file_read",
+                "tool": "read_file",
+                "target": "/other.txt",
+            },
+            {
+                "event_id": f"{run_id}:e3",
+                "kind": "file_read",
+                "tool": "read_file",
+                "target": "/new.txt",
+            },
+        ]
+
+    async def ingest(run_id, event, client, **kwargs):
+        if visited:
+            assert any(
+                action.name == "contain_agent" and action.status == "ok"
+                for action in api.service.get_state(run_id).actions
+            )
+        else:
+            await api.service.dispatch(run_id, DispatchRequest(level=3))
+        active = await api.client.get(f"/api/demo/trigger/{run_id}")
+        assert active.json() == {"active": True}
+        visited.append(graph.append(run_id, level=0, threshold=1, event=event))
+        if stop_early:
+            stopped = await api.client.post(f"/api/demo/trigger/{run_id}/stop")
+            assert stopped.status_code == 200
+            assert stopped.json() == {"active": True}
+
+    monkeypatch.setattr("app.actions.router.build_chain", build)
+    monkeypatch.setattr("app.actions.router.chain_levels", lambda scenario: [0, 1, 2])
+    monkeypatch.setattr("app.actions.router.runs_service.ingest", ingest)
+    monkeypatch.setattr("app.actions.router.get_action_service", lambda: api.service)
+    response = await api.client.post("/api/demo/trigger", json={"delay_ms": 0})
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    assert response.json()["event_count"] == 3
+    assert len(visited) == (1 if stop_early else 3)
+    if not stop_early:
+        assert visited[0] is visited[2]
+        assert visited[0] is not visited[1]
+        assert visited[0].visit_count == 2
+    assert (await api.client.get(f"/api/demo/trigger/{run_id}")).json() == {"active": False}
+    assert (await api.client.post(f"/api/demo/trigger/{run_id}/stop")).json() == {"active": False}
+
+
 @dataclass
 class ApiHarness:
     client: AsyncClient
@@ -66,9 +141,7 @@ async def test_dispatch_rejects_non_ascii_latin1_token_without_server_error(api)
     assert response.status_code == 401
 
 
-async def test_dispatch_returns_unavailable_when_server_token_is_not_configured(
-    api, monkeypatch
-):
+async def test_dispatch_returns_unavailable_when_server_token_is_not_configured(api, monkeypatch):
     monkeypatch.setattr("app.actions.router.settings.action_dispatch_token", "")
 
     response = await api.client.post(
@@ -169,9 +242,9 @@ async def test_get_latest_returns_404_without_journaled_incidents(api):
 
 
 def test_dispatch_openapi_documents_noop_response():
-    responses = app.openapi()["paths"][
-        "/api/demo/incidents/{incident_id}/dispatch"
-    ]["post"]["responses"]
+    responses = app.openapi()["paths"]["/api/demo/incidents/{incident_id}/dispatch"]["post"][
+        "responses"
+    ]
 
     assert "200" in responses
 

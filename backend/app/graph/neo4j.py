@@ -44,10 +44,6 @@ class Neo4jGraphStore:
             await self._driver.close()
             self._driver = None
 
-    async def verify(self) -> None:
-        if self.enabled:
-            await self._get_driver().verify_connectivity()
-
     async def setup(self) -> None:
         if not self.enabled:
             return
@@ -268,7 +264,7 @@ class Neo4jGraphStore:
           WHERE other.run_id <> $run_id AND coalesce(other.placeholder, false) = false
           RETURN DISTINCT other.run_id AS run_id
           UNION
-          MATCH (seed:Event {run_id: $run_id})-[:TOUCHES]->(entity:Entity)<-[:TOUCHES]-(other:Event)
+          MATCH (root:Event {run_id: $run_id})-[:TOUCHES]->(entity:Entity)<-[:TOUCHES]-(other:Event)
           WHERE other.run_id <> $run_id AND coalesce(other.placeholder, false) = false
           RETURN DISTINCT other.run_id AS run_id
           UNION

@@ -40,7 +40,7 @@ export function AnimatedSvgEdge({
         <animateMotion
           path={path}
           dur={`${duration}s`}
-          repeatCount="indefinite"
+          repeatCount="1"
           calcMode="linear"
           keyTimes="0;1"
           keyPoints="0;1"

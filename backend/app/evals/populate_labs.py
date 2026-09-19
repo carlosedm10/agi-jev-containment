@@ -54,8 +54,8 @@ async def _cross_run_pairs(client: httpx.AsyncClient) -> dict[str, Any]:
     extra: Counter[str] = Counter()
     events = 0
 
-    source_run = _run_id("seedx", e4.id, "channel-a")
-    dest_run = _run_id("seedx", e4.id, "channel-b")
+    source_run = _run_id("cross", e4.id, "channel-a")
+    dest_run = _run_id("cross", e4.id, "channel-b")
     slack_write = next(
         event
         for event in next(t for t in e4.traces if t.id == "e4-covert").events
@@ -75,8 +75,8 @@ async def _cross_run_pairs(client: httpx.AsyncClient) -> dict[str, Any]:
     p3_covert = next(t for t in p3.traces if t.id == "p3-covert")
     mem = next(event for event in p3_covert.events if event.id == "p3-mread")
     sched = next(event for event in p3_covert.events if event.id == "p3-sched")
-    mem_run = _run_id("seedx", p3.id, "memory")
-    effect_run = _run_id("seedx", p3.id, "effect")
+    mem_run = _run_id("cross", p3.id, "memory")
+    effect_run = _run_id("cross", p3.id, "effect")
     mem_result = await service.ingest(mem_run, event_payload(p3, mem, run_id=mem_run), client)
     events += 1
     payload = event_payload(p3, sched, run_id=effect_run)
@@ -95,7 +95,7 @@ async def _cross_run_pairs(client: httpx.AsyncClient) -> dict[str, Any]:
     }
 
 
-async def seed(*, repeats: int, include_happyrobot: bool, live_jev: bool) -> dict[str, Any]:
+async def populate(*, repeats: int, include_happyrobot: bool, live_jev: bool) -> dict[str, Any]:
     original_key = settings.typesafe_api_key
     if not live_jev:
         settings.typesafe_api_key = ""
@@ -111,7 +111,7 @@ async def seed(*, repeats: int, include_happyrobot: bool, live_jev: bool) -> dic
             for round_id in range(repeats):
                 for cluster in clusters:
                     for trace in cluster.traces:
-                        run_id = _run_id(f"seed{round_id}", cluster.id, trace.id)
+                        run_id = _run_id(f"lab{round_id}", cluster.id, trace.id)
                         result = await _ingest_with_counts(client, cluster, trace, run_id)
                         runs += 1
                         totals["events"] += result["events"]
@@ -135,7 +135,7 @@ async def seed(*, repeats: int, include_happyrobot: bool, live_jev: bool) -> dic
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed the monitor lab with long Sentinel traces")
+    parser = argparse.ArgumentParser(description="Populate the monitor lab with long Sentinel traces")
     parser.add_argument("--repeats", type=int, default=4, help="Replay each trace this many times")
     parser.add_argument(
         "--no-happyrobot",
@@ -149,14 +149,14 @@ def main() -> None:
     )
     args = parser.parse_args()
     report = asyncio.run(
-        seed(
+        populate(
             repeats=max(1, args.repeats),
             include_happyrobot=not args.no_happyrobot,
             live_jev=args.live_jev,
         )
     )
     print(
-        "seed-lab "
+        "populate-labs "
         f"runs={report['runs']} events={report['events']} "
         f"findings={report['findings_by_rule']}"
     )

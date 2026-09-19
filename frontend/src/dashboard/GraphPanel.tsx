@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
   ReactFlow,
   type Edge,
 } from "@xyflow/react";
-import { Play, RotateCcw, Workflow } from "lucide-react";
+import { Play, RotateCcw, Square, Workflow } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 
 import {
@@ -18,18 +18,29 @@ import {
 } from "@/components/activity-graph";
 import { Button } from "@/components/ui/button";
 import type { PendingAction } from "@/dashboard/demo";
-import { layoutGraph, NODE_HEIGHT, NODE_WIDTH } from "@/dashboard/graph-layout";
+import {
+  eventText,
+  layoutGraph,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+} from "@/dashboard/graph-layout";
 import type { Graph } from "@/graph/protocol";
 import type { GraphStreamStatus } from "@/graph/useGraphStream";
 import { cn } from "@/lib/utils";
 
-export type GraphPanelProps = {
+type GraphPanelProps = {
   graph: Graph;
   pending: PendingAction | null;
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
   onRestart?: () => void;
   onTrigger?: () => void;
+  focusNodeId?: string | null;
+  triggerError?: string | null;
+  triggering?: boolean;
+  onStop?: () => void;
+  stopping?: boolean;
+  runActive?: boolean;
   status?: GraphStreamStatus | null;
 };
 
@@ -46,9 +57,28 @@ export function GraphPanel({
   onSelectNode,
   onRestart,
   onTrigger,
+  focusNodeId,
+  triggerError,
+  triggering,
+  onStop,
+  stopping,
+  runActive,
   status = null,
 }: GraphPanelProps) {
   const reducedMotion = useReducedMotion();
+  const previousFocus = useRef(focusNodeId);
+  const [transition, setTransition] = useState<{ source: string; target: string } | null>(null);
+  useEffect(() => {
+    const source = previousFocus.current;
+    previousFocus.current = focusNodeId;
+    if (!source || !focusNodeId || source === focusNodeId || reducedMotion || !runActive) {
+      setTransition(null);
+      return;
+    }
+    setTransition({ source, target: focusNodeId });
+    const timer = setTimeout(() => setTransition(null), 650);
+    return () => clearTimeout(timer);
+  }, [focusNodeId, reducedMotion, runActive]);
 
   const layout = useMemo(() => layoutGraph(graph, pending), [graph, pending]);
 
@@ -74,19 +104,31 @@ export function GraphPanel({
         position: item.position,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
-        selected: item.id === selectedNodeId,
+        selected: item.id === (focusNodeId ?? selectedNodeId),
         className: fresh.has(item.id) ? "live-node-new" : undefined,
         data: { item, reducedMotion, onSelect: onSelectNode },
       })),
-    [layout.nodes, fresh, selectedNodeId, reducedMotion, onSelectNode],
+    [
+      layout.nodes,
+      fresh,
+      selectedNodeId,
+      focusNodeId,
+      reducedMotion,
+      onSelectNode,
+    ],
   );
   const edges = useMemo<Edge[]>(() => {
+    const active = transition
+      ? layout.links.find((link) =>
+          (link.source === transition.source && link.target === transition.target) ||
+          (link.target === transition.source && link.source === transition.target))
+      : pending ? layout.links.find((link) => link.pending) : undefined;
     return layout.links.map((link) => ({
       id: link.id,
-      source: link.source,
-      target: link.target,
-      type: link.pending && !reducedMotion ? "activity" : "default",
-      data: { duration: 3, path: "bezier" },
+      source: link.id === active?.id && transition ? transition.source : link.source,
+      target: link.id === active?.id && transition ? transition.target : link.target,
+      type: link.id === active?.id && !reducedMotion ? "activity" : "default",
+      data: { duration: 0.65, path: "bezier" },
       style: {
         stroke: link.pending ? "#a8bbef" : "#c8c3bc",
         strokeWidth: 1.5,
@@ -95,14 +137,24 @@ export function GraphPanel({
       selectable: false,
       focusable: false,
     }));
-  }, [layout.links, reducedMotion]);
-  const nodeKey = JSON.stringify(layout.nodes.map((node) => node.id));
-  const pill = status === null ? null : STATUS_PILL[status];
+  }, [layout.links, reducedMotion, transition, pending]);
+  const focused = focusNodeId ? graph.nodes.get(focusNodeId) : undefined;
+  const nodeKey = JSON.stringify([
+    focused
+      ? [
+          focused.id,
+          layout.nodes.find((node) => node.id === focused.id)?.position,
+        ]
+      : layout.nodes.map((node) => node.id),
+    focused ? eventText(focused, ["id", "event_id"], "") : null,
+  ]);
+  const pill = status === null || status === "live" ? null : STATUS_PILL[status];
 
   return (
     <section
       className="graph-panel"
       aria-label="Agent activity graph"
+      data-transition={transition ? `${transition.source}->${transition.target}` : undefined}
       style={{
         height: "100%",
         minHeight: 0,
@@ -111,13 +163,15 @@ export function GraphPanel({
         background: "#fcfcfc",
       }}
     >
-      <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b px-4">
-        <h2 className="text-sm font-semibold text-zinc-900">Agent activity</h2>
-        <div className="flex items-center gap-2">
+      <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#b06a38] bg-[#d59566] pl-4 pr-1">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-[#1a1614]">
+          Agent activity
+        </h2>
+        <div className="flex items-center gap-1">
           {pill && (
             <span
               aria-label="Stream status"
-              className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-0.5 font-mono text-[10px] tracking-widest text-zinc-600"
+              className="flex items-center gap-1.5 rounded-full border border-transparent bg-[#fdfcf4] px-2.5 py-0.5 font-mono text-[10px] tracking-widest text-[#1a1614]"
             >
               <span
                 aria-hidden="true"
@@ -132,27 +186,48 @@ export function GraphPanel({
           {onTrigger && (
             <Button
               variant="default"
-              size="sm"
+              size="icon-sm"
               aria-label="Trigger a live demo run"
+              title="Run again"
               onClick={onTrigger}
+              disabled={triggering || runActive}
+              className="bg-[#fdfcf4] text-[#1a1614] hover:bg-[#f2f2f2]"
             >
               <Play aria-hidden="true" />
-              Trigger run
             </Button>
           )}
           {onRestart && (
             <Button
               variant="outline"
-              size="sm"
+              size="icon-sm"
               aria-label="Restart test run"
+              title="Restart test run"
               onClick={onRestart}
+              className="border-[#1a1614]/20 bg-[#fdfcf4] text-[#1a1614] hover:bg-[#f2f2f2]"
             >
               <RotateCcw aria-hidden="true" />
-              Restart test run
+            </Button>
+          )}
+          {onStop && (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={onStop}
+              disabled={!runActive || stopping}
+              aria-label="Stop run"
+              title={stopping ? "Stopping…" : "Stop run"}
+              aria-busy={stopping}
+            >
+              <Square aria-hidden="true" />
             </Button>
           )}
         </div>
       </header>
+      {triggerError && (
+        <p role="alert" className="px-4 py-2 text-xs text-red-700">
+          {triggerError}
+        </p>
+      )}
       <div style={{ flex: 1, minHeight: 220, position: "relative" }}>
         <ReactFlow
           nodes={nodes}
@@ -178,7 +253,11 @@ export function GraphPanel({
             color="#e9edf2"
           />
           <GraphControls />
-          <FollowViewport nodeKey={nodeKey} reducedMotion={reducedMotion} />
+          <FollowViewport
+            nodeKey={nodeKey}
+            reducedMotion={reducedMotion}
+            focusNodeId={focusNodeId}
+          />
         </ReactFlow>
         {nodes.length === 0 && (
           <div

@@ -4,6 +4,7 @@ import json
 import re
 import threading
 from collections import defaultdict
+from heapq import nlargest
 from pathlib import Path
 from typing import Any
 
@@ -58,3 +59,28 @@ def list_runs() -> list[str]:
     if not root.exists():
         return []
     return sorted(path.stem for path in root.glob("*.jsonl"))
+
+
+def recent_events(limit: int) -> list[dict[str, Any]]:
+    # ponytail: scan local tapes for the demo; use an indexed event store at larger scale.
+    def rows():
+        for run_id in list_runs():
+            with _LOCKS[run_id]:
+                for event in tail(run_id, limit):
+                    if event.get("id") and event.get("timestamp"):
+                        yield {
+                            key: event.get(key)
+                            for key in (
+                                "id",
+                                "run_id",
+                                "timestamp",
+                                "kind",
+                                "phase",
+                                "agent",
+                                "channel",
+                                "tool",
+                                "target",
+                            )
+                        }
+
+    return nlargest(limit, rows(), key=lambda event: (event["timestamp"], event["id"]))

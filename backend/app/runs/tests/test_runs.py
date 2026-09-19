@@ -53,6 +53,84 @@ def fresh(fresh_graph):
 
 
 class TestLog:
+    async def test_trace_keeps_each_occurrence_and_joins_its_own_assessment(
+        self, client, fresh, monkeypatch
+    ):
+        """GET trace preserves repeated actions and still works during a Neo4j outage."""
+        from app.events import normalize_event
+
+        for sequence in (1, 2, 3):
+            event, _ = log.append_event(
+                normalize_event(
+                    "trace",
+                    {
+                        "id": f"step-{sequence}",
+                        "kind": "file_read",
+                        "tool": "read_file",
+                        "target": "/same.txt",
+                        "args": {"private": "do-not-expose"},
+                    },
+                )
+            )
+            fresh.append("trace", level=sequence, threshold=1, event=event.model_dump(mode="json"))
+
+        async def timeline(run_id):
+            return [
+                {
+                    "event": {"id": "step-1", "sequence": 1},
+                    "assessment": {"gate_json": '{"incident_level": 1}'},
+                }
+            ]
+
+        monkeypatch.setattr(service.neo4j_graph, "timeline", timeline)
+        response = await client.get("/api/runs/trace/trace")
+        assert response.status_code == 200
+        events = response.json()["events"]
+        assert [event["id"] for event in events] == ["step-1", "step-2", "step-3"]
+        assert [event["level"] for event in events] == [1, None, 3]
+        assert "do-not-expose" not in response.text
+
+        async def unavailable(run_id):
+            raise RuntimeError("offline")
+
+        monkeypatch.setattr(service.neo4j_graph, "timeline", unavailable)
+        response = await client.get("/api/runs/trace/trace")
+        assert response.status_code == 200
+        assert len(response.json()["events"]) == 3
+        assert response.json()["warning"]
+        assert (await client.get("/api/runs/missing/trace")).json()["events"] == []
+
+    async def test_recent_logs_refresh_across_runs_and_keep_repeated_actions(self, client, fresh):
+        from app.events import normalize_event
+
+        def record(run_id, sequence, timestamp):
+            event, _ = log.append_event(
+                normalize_event(
+                    run_id,
+                    {
+                        "event_id": f"{run_id}:e{sequence}",
+                        "kind": "file_read",
+                        "tool": "read_file",
+                        "target": "/same.txt",
+                        "timestamp": timestamp,
+                        "args": {"secret": "not-in-log-feed"},
+                    },
+                )
+            )
+            fresh.append(run_id, level=sequence, threshold=1, event=event.model_dump(mode="json"))
+
+        record("first", 1, "2026-09-19T12:00:00Z")
+        first = await client.get("/api/runs/logs/recent")
+        assert first.status_code == 200
+        assert len(first.json()) == 1
+        record("second", 1, "2026-09-19T12:00:01Z")
+        record("first", 2, "2026-09-19T12:00:02Z")
+        refreshed = await client.get("/api/runs/logs/recent")
+        assert [row["id"] for row in refreshed.json()] == ["first:e2", "second:e1", "first:e1"]
+        assert "not-in-log-feed" not in refreshed.text
+        assert len((await client.get("/api/runs/logs/recent?limit=2")).json()) == 2
+        assert (await client.get("/api/runs/logs/recent?limit=0")).status_code == 422
+
     def test_append_then_tail_roundtrip(self, tape_dir):
         log.append("r1", {"seq": 1})
         log.append("r1", {"seq": 2})
@@ -124,8 +202,9 @@ class TestPostEvents:
         assert graph.level("demo") == Level.MODERATE
         assert graph.get_node(node_id).action_id is None
 
-
-    async def test_same_level_does_not_re_dispatch(self, client: AsyncClient, fresh, mock_jev, monkeypatch):
+    async def test_same_level_does_not_re_dispatch(
+        self, client: AsyncClient, fresh, mock_jev, monkeypatch
+    ):
         monkeypatch.setattr(settings, "typesafe_api_key", "test")
         monkeypatch.setattr(service, "client_factory", lambda: mock_jev(["level_2_moderate"]))
 
@@ -139,8 +218,9 @@ class TestPostEvents:
         assert graph.get_node(first_id).action_id is None
         assert graph.get_node(second_id).action_id is None
 
-
-    async def test_degraded_verdict_does_not_dispatch(self, client: AsyncClient, fresh, tape_dir, monkeypatch):
+    async def test_degraded_verdict_does_not_dispatch(
+        self, client: AsyncClient, fresh, tape_dir, monkeypatch
+    ):
         monkeypatch.setattr(settings, "typesafe_api_key", "")
 
         response = await client.post("/api/runs/demo/events", json={"event": "file_read"})
@@ -226,6 +306,16 @@ class TestPostEvents:
         assert graph.level("demo") == Level.SEVERE
         assert graph.get_node(first_id).level == Level.SEVERE
         assert graph.get_node(second_id).level == Level.SEVERE
+        from app.actions.router import get_action_service
+
+        action_service = get_action_service()
+        await action_service.wait_for_actions("demo")
+        state = action_service.get_state("demo")
+        assert state.accepted_level == 3
+        assert any(
+            action.name == "contain_agent" and action.status == "ok" for action in state.actions
+        )
+        assert all(action.name != "kill_agent_swarm" for action in state.actions)
 
     async def test_degraded_events_still_materialize_nodes(
         self, client: AsyncClient, fresh, tape_dir, monkeypatch

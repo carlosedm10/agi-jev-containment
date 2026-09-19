@@ -3,6 +3,13 @@
 The functions here build raw event payloads that match the backend's
 ``/api/runs/{run_id}/events`` contract. They are intentionally dependency-free
 so they can be imported both by the backend and by the host CLI script.
+
+Runs are assembled from the lab action vocabulary in ``lab_pool.py`` (extracted
+from the HappyRobot + Sentinel eval corpus). Cover events randomly select benign
+lab actions, and trigger events reuse the same tools/targets the lab uses. This
+guarantees that a dynamically triggered demo run can collapse onto nodes already
+present from lab traces. Cycles are created by occasionally reusing an action
+already seen in the same run and by ``derived_from`` back-references.
 """
 
 from __future__ import annotations
@@ -10,35 +17,24 @@ from __future__ import annotations
 import random
 from typing import Any
 
-AGENTS = ["marvin", "jarvis", "ultron", "agent-7", "agent-42", "devin", "claude-1"]
-CHANNELS = ["api", "slack", "email", "voice_inbound", "voice_outbound", "sms"]
-PUBLIC_PATHS = [
-    "/app/README.md",
-    "/app/main.py",
-    "/app/tests/test_app.py",
-    "/app/pyproject.toml",
-    "/app/config.yaml",
-    "/workspace/task.md",
-]
-SENSITIVE_PATHS = [
-    "/app/.env",
-    "/app/secrets.yaml",
-    "~/.aws/credentials",
-    "~/.ssh/id_rsa",
-    "/var/lib/secrets/db.url",
-]
-PUBLIC_TOOLS = ["read_file", "write_file", "shell", "git_status"]
-EXFIL_HOSTS = [
-    "https://webhook.site/exfil",
-    "https://paste.rs/upload",
-    "https://requestbin.io/x",
-    "https://attacker.example.com/collect",
-]
-VICTIM_HOSTS = [
-    "victim-agent:8080/workspace",
-    "customers-db:5432",
-    "internal-api:9090/secrets",
-]
+try:
+    from app.evals import lab_pool
+except ImportError:  # host script loaded outside the package
+    import lab_pool  # type: ignore[no-redef]
+
+
+AGENTS = lab_pool.AGENTS
+CHANNELS = lab_pool.CHANNELS
+SENSITIVE_PATHS = lab_pool.SENSITIVE_PATHS or ["/app/.env"]
+PUBLIC_PATHS = lab_pool.PUBLIC_PATHS or ["/app/README.md"]
+EXFIL_HOSTS = lab_pool.EXFIL_HOSTS or ["https://webhook.site/exfil"]
+VICTIM_HOSTS = lab_pool.VICTIM_HOSTS or ["victim-agent:8080/workspace"]
+PUBLIC_TOOLS = lab_pool.PUBLIC_TOOLS or ["read_file", "write_file", "shell", "git_status"]
+
+
+# Actions extracted from the lab corpus, tagged by scenario.
+LAB_ACTIONS = lab_pool.LAB_ACTIONS
+COVER_ACTIONS = [a for a in LAB_ACTIONS if a.get("scenario") == "cover"]
 
 
 def _random_event_id(run_id: str, seq: int) -> str:
@@ -56,6 +52,76 @@ def _choose_identity_and_trust() -> tuple[str, str]:
     )
 
 
+def _action_signature(action: dict[str, Any]) -> tuple[Any, ...]:
+    """Stable tuple used to detect on-the-fly reuse within a run."""
+    return (action.get("kind"), action.get("tool"), action.get("target"), _freeze(action.get("args")))
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, dict):
+        return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
+    if isinstance(value, list):
+        return tuple(_freeze(v) for v in value)
+    return value
+
+
+def _pick_cover_action(
+    used_signatures: set[tuple[Any, ...]],
+    used_actions: list[dict[str, Any]],
+    target_pool: list[str],
+    tool_pool: list[str],
+    signature_pool: set[tuple[Any, ...]] | None = None,
+) -> dict[str, Any]:
+    """Pick a cover action, biasing heavily toward signatures already in the graph."""
+    candidates = COVER_ACTIONS
+    if signature_pool and random.random() < 0.55:
+        by_signature = [a for a in candidates if _action_signature(a) in signature_pool]
+        if by_signature:
+            candidates = by_signature
+    if target_pool and random.random() < 0.45:
+        by_target = [a for a in candidates if a.get("target") in target_pool]
+        if by_target:
+            candidates = by_target
+    elif tool_pool:
+        by_tool = [a for a in candidates if a.get("tool") in tool_pool]
+        if by_tool and random.random() < 0.45:
+            candidates = by_tool
+
+    if used_actions and random.random() < 0.35:
+        return random.choice(used_actions)
+
+    return random.choice(candidates)
+
+
+def _from_template(
+    template: dict[str, Any],
+    run_id: str,
+    seq: int,
+    agent: str,
+    channel: str,
+    session_id: str,
+) -> dict[str, Any]:
+    event_id = _random_event_id(run_id, seq)
+    identity, trust = _choose_identity_and_trust()
+    event: dict[str, Any] = {
+        "event_id": event_id,
+        "kind": template.get("kind", "unknown"),
+        "phase": "completed",
+        "origin": "harness",
+        "session_id": session_id,
+        "agent": agent,
+        "tool": template.get("tool"),
+        "target": template.get("target"),
+        "channel": channel,
+        "identity_state": identity,
+        "trust": trust,
+        "content": template.get("content", ""),
+        "args": dict(template.get("args") or {}),
+        "effect": dict(template.get("effect") or {}),
+    }
+    return event
+
+
 def _cover_event(
     run_id: str,
     seq: int,
@@ -63,44 +129,25 @@ def _cover_event(
     channel: str,
     session_id: str,
     previous_event_id: str | None,
+    used_event_ids: list[str],
+    used_actions: list[dict[str, Any]],
+    used_signatures: set[tuple[Any, ...]],
+    target_pool: list[str],
+    tool_pool: list[str],
     derived_pool: list[str],
+    signature_pool: set[tuple[Any, ...]] | None = None,
 ) -> dict[str, Any]:
-    """Benign/anomalous event that should stay L0/L1."""
-    event_id = _random_event_id(run_id, seq)
-    identity, trust = _choose_identity_and_trust()
-    tool = random.choice(PUBLIC_TOOLS)
-    target = random.choice(PUBLIC_PATHS) if tool in {"read_file", "write_file"} else "/app"
-    content = {
-        "read_file": f"read {target}",
-        "write_file": f"edited {target}",
-        "shell": "pytest -q /app/tests",
-        "git_status": "git status --short",
-    }[tool]
-    effect = {
-        "visible_to_user": True,
-        "reversibility": "reversible",
-        "sensitivity": "none",
-        "scope": 1,
-    }
-    event: dict[str, Any] = {
-        "event_id": event_id,
-        "kind": tool,
-        "phase": "completed",
-        "origin": "harness",
-        "session_id": session_id,
-        "agent": agent,
-        "tool": tool,
-        "target": target,
-        "channel": channel,
-        "identity_state": identity,
-        "trust": trust,
-        "content": content,
-        "args": {"path": target} if tool in {"read_file", "write_file"} else {},
-        "effect": effect,
-    }
+    template = _pick_cover_action(used_signatures, used_actions, target_pool, tool_pool, signature_pool)
+    event = _from_template(template, run_id, seq, agent, channel, session_id)
+    used_actions.append(template)
+    used_signatures.add(_action_signature(template))
+
     if previous_event_id:
         event["caused_by"] = [previous_event_id]
-    if derived_pool and random.random() < 0.25:
+    # Back-reference to an earlier step in this run creates a cycle.
+    if used_event_ids and random.random() < 0.2:
+        event["derived_from"] = [random.choice(used_event_ids)]
+    elif derived_pool and random.random() < 0.15:
         event["derived_from"] = [random.choice(derived_pool)]
     return event
 
@@ -358,7 +405,7 @@ def _memory_poison_trigger(
                 "scope": random.randint(2, 5),
             },
             "caused_by": [read_id],
-            "derived_from": [read_id, *( [random.choice(derived_pool)] if derived_pool and random.random() < 0.4 else [])],
+            "derived_from": [read_id, *([random.choice(derived_pool)] if derived_pool and random.random() < 0.4 else [])],
         },
     ]
     return events
@@ -376,12 +423,11 @@ def build_run(
     run_id: str,
     agent_pool: list[str],
     channel_pool: list[str],
-    target_pool: list[str],
-    tool_pool: list[str],
     derived_pool: list[str],
     min_cover: int,
     max_cover: int,
     scenario: str | None = None,
+    signature_pool: set[tuple[Any, ...]] | None = None,
 ) -> tuple[list[dict[str, Any]], str, str, str]:
     """Return events for one run plus the agent/channel/session used."""
     agents = agent_pool or AGENTS
@@ -398,13 +444,32 @@ def build_run(
         channel = random.choice(channel_pool)
 
     events: list[dict[str, Any]] = []
+    used_event_ids: list[str] = []
+    used_actions: list[dict[str, Any]] = []
+    used_signatures: set[tuple[Any, ...]] = set()
     previous_id: str | None = None
+
     for seq in range(1, cover_count + 1):
         event = _cover_event(
-            run_id, seq, agent, channel, session_id, previous_id, derived_pool
+            run_id,
+            seq,
+            agent,
+            channel,
+            session_id,
+            previous_id,
+            used_event_ids,
+            used_actions,
+            used_signatures,
+            [],
+            [],
+            derived_pool,
+            signature_pool,
         )
         events.append(event)
+        used_event_ids.append(event["event_id"])
         previous_id = event["event_id"]
+        if signature_pool is not None:
+            signature_pool.add(_action_signature(event))
 
     if scenario and scenario in _TRIGGERS:
         trigger = _TRIGGERS[scenario]

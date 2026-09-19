@@ -83,7 +83,7 @@ describe("LivePage", () => {
     ).not.toBeNull();
     expect(container.textContent).toContain("LIVE");
     expect(container.textContent).toContain("L1");
-    expect(container.textContent).toContain("file_read");
+    expect(container.textContent).toContain("Read file");
 
     emit("update", {
       revision: 2,

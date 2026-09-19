@@ -92,7 +92,7 @@ def _corpus_n() -> dict[str, int]:
     }
 
 
-def _method_block(*, ingest_events: int | None = None) -> dict[str, Any]:
+def _method_block() -> dict[str, Any]:
     n = _corpus_n()
     live = bool(settings.typesafe_api_key)
     return {
@@ -132,8 +132,8 @@ def _method_block(*, ingest_events: int | None = None) -> dict[str, Any]:
                 "required_key": True,
             },
             {
-                "id": "seed_lab_scale",
-                "name": "make seed-lab scale notes (current Neo4j stats; no graph.clear)",
+                "id": "populate_labs_scale",
+                "name": "make populate-labs scale notes (current Neo4j stats; no graph.clear)",
                 "jev": False,
             },
         ],

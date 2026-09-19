@@ -30,7 +30,11 @@ function mount(node: ReactNode) {
   act(() => root.render(node));
 }
 
-function node(id: string, neighbors: string[] = [], runId: string | null = null) {
+function node(
+  id: string,
+  neighbors: string[] = [],
+  runId: string | null = null,
+) {
   return {
     id,
     neighbors,
@@ -154,6 +158,175 @@ describe("useGraphStream", () => {
 });
 
 describe("App", () => {
+  test("trigger and stop control the active backend run", async () => {
+    const nativeFetch = globalThis.fetch;
+    const nativeRandom = Math.random;
+    Math.random = () => 0;
+    const requests: string[] = [];
+    let active = true;
+    let triggeredScenario = "";
+    globalThis.fetch = (async (input: string, init?: RequestInit) => {
+      requests.push(`${init?.method ?? "GET"} ${input}`);
+      if (input === "/api/demo/trigger") {
+        triggeredScenario = JSON.parse(String(init?.body)).scenario;
+        return Response.json({ run_id: "trigger-test", event_count: 3 });
+      }
+      if (input.endsWith("/stop")) {
+        active = false;
+        return Response.json({ active: true });
+      }
+      if (input === "/api/demo/trigger/trigger-test")
+        return Response.json({ active });
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    try {
+      mount(<App />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(container.querySelector('[aria-label="Run scenario"]')).toBeNull();
+      expect(container.textContent).not.toContain("Simulated scenario");
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[aria-label="Trigger a live demo run"]',
+      )!;
+      const stop = container.querySelector<HTMLButtonElement>(
+        '[aria-label="Stop run"]',
+      )!;
+      expect(stop.disabled).toBe(true);
+      await act(async () => {
+        trigger.click();
+      });
+      expect(trigger.disabled).toBe(true);
+      expect(["exfil", "lateral", "forge", "memory_poison"]).toContain(
+        triggeredScenario,
+      );
+      expect(stop.disabled).toBe(false);
+      expect(
+        container.querySelector('a[href="/trace?run=trigger-test"]'),
+      ).toBeNull();
+      const first = {
+        ...node("shared:first", ["run:trigger-test"], "older"),
+        event: { id: "trigger-test:e1", kind: "file_read" },
+      };
+      emit("snapshot", {
+        revision: 1,
+        root: "root",
+        nodes: [
+          node("root", ["run:trigger-test"]),
+          node("run:trigger-test", ["root", first.id], "trigger-test"),
+          first,
+        ],
+      });
+      expect(
+        container
+          .querySelector(`.react-flow__node[data-id="${first.id}"]`)
+          ?.classList.contains("selected"),
+      ).toBe(true);
+      const second = {
+        ...node("new:second", [first.id], "trigger-test"),
+        event: { id: "trigger-test:e2", kind: "network_request" },
+      };
+      act(() => {
+        container
+          .querySelector<HTMLElement>(
+            `.react-flow__node[data-id="${first.id}"]`,
+          )!
+          .click();
+      });
+      emit("update", {
+        revision: 2,
+        root: "root",
+        upsert_nodes: [second],
+        removed_node_ids: [],
+      });
+      expect(
+        container
+          .querySelector(`.react-flow__node[data-id="${second.id}"]`)
+          ?.classList.contains("selected"),
+      ).toBe(true);
+      expect(
+        container
+          .querySelector(`.react-flow__node[data-id="${first.id}"]`)
+          ?.classList.contains("selected"),
+      ).toBe(false);
+      expect(
+        container.querySelectorAll(".react-flow__node.selected"),
+      ).toHaveLength(1);
+      expect(
+        container.querySelector('[aria-label="Selected action analysis"]')
+          ?.textContent,
+      ).toContain("Send a network request");
+      emit("update", {
+        revision: 3,
+        root: "root",
+        upsert_nodes: [
+          {
+            ...first,
+            event: { id: "trigger-test:e3", kind: "file_read" },
+            visit_count: 2,
+          },
+        ],
+        removed_node_ids: [],
+      });
+      expect(
+        container
+          .querySelector(`.react-flow__node[data-id="${first.id}"]`)
+          ?.classList.contains("selected"),
+      ).toBe(true);
+      emit("update", {
+        revision: 4,
+        root: "root",
+        removed_node_ids: [],
+        upsert_nodes: [
+          {
+            ...first,
+            level: 5,
+            event: { id: "other:e99" },
+            run_states: {
+              "trigger-test": {
+                level: 3,
+                threshold: 0.9,
+                intent: null,
+                action_id: null,
+                event: { id: "trigger-test:e3", kind: "file_read" },
+              },
+            },
+          },
+        ],
+      });
+      expect(
+        container.querySelector(`.react-flow__node[data-id="${first.id}"]`)
+          ?.textContent,
+      ).toContain("L3");
+      await act(async () => {
+        stop.click();
+      });
+      expect(requests).toContain("POST /api/demo/trigger/trigger-test/stop");
+      expect(stop.disabled).toBe(true);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      });
+      expect(trigger.disabled).toBe(false);
+      expect(stop.disabled).toBe(true);
+      expect(requests).toContain("GET /api/demo/incidents/trigger-test");
+      expect(
+        container.querySelector('a[href="/trace?run=trigger-test"]')
+          ?.textContent,
+      ).toBe("View trace");
+      const previousScenario = triggeredScenario;
+      await act(async () => {
+        trigger.click();
+      });
+      expect(triggeredScenario).not.toBe(previousScenario);
+      expect(["exfil", "lateral", "forge", "memory_poison"]).toContain(
+        triggeredScenario,
+      );
+    } finally {
+      globalThis.fetch = nativeFetch;
+      Math.random = nativeRandom;
+    }
+  });
+
   test("streams the shared graph and reuses upserted nodes", () => {
     mount(<App />);
     expect(FakeEventSource.instances).toHaveLength(1);
@@ -178,13 +351,13 @@ describe("App", () => {
         },
       ],
     });
-    expect(container.textContent).toContain("LIVE");
+    expect(container.querySelector('[aria-label="Stream status"]')).toBeNull();
     expect(
       container.querySelector('.react-flow__node[data-id="r1:1"]'),
     ).not.toBeNull();
     expect(
       container.querySelector('[aria-label="Container logs"]')?.textContent,
-    ).toContain("Read file");
+    ).toContain("stdout F");
 
     emit("update", {
       revision: 2,

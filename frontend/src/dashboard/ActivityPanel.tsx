@@ -13,10 +13,10 @@ export function ActivityPanel({
   return (
     <section
       aria-label="Protective actions"
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-[#fcfcfc] shadow-xs"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border bg-[#fcfcfc] shadow-xs"
     >
-      <header className="flex h-10 shrink-0 items-center border-b border-zinc-200 px-4">
-        <h2 className="text-sm font-semibold text-zinc-900">
+      <header className="flex h-10 shrink-0 items-center border-b border-[#b06a38] bg-[#d59566] px-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-[#1a1614]">
           Protective actions
         </h2>
       </header>

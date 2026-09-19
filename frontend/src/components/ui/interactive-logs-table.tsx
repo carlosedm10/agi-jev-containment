@@ -69,7 +69,7 @@ function LogRow({
           {log.level}
         </Badge>
         <span className="min-w-0">
-          <span className="block truncate text-xs text-zinc-800">
+          <span className="block truncate font-mono text-xs text-zinc-800">
             {log.message}
           </span>
           <span className="mt-0.5 block truncate text-[10px] text-zinc-500">
@@ -138,8 +138,8 @@ export function InteractiveLogsTable({ logs }: { logs: Log[] }) {
       aria-label="Container logs"
       className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#fcfcfc]"
     >
-      <header className="flex h-10 shrink-0 items-center border-b border-zinc-200 px-4">
-        <h2 className="text-sm font-semibold text-zinc-900">Container logs</h2>
+      <header className="flex h-10 shrink-0 items-center border-b border-[#b06a38] bg-[#d59566] px-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-[#1a1614]">Container logs</h2>
       </header>
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <div className="divide-y divide-zinc-100">
