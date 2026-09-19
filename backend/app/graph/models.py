@@ -10,8 +10,7 @@ from app.classification.models import Level
 @dataclass
 class Node:
     id: str
-    parent: Node | None = None
-    children: list[Node] = field(default_factory=list)
+    neighbors: list[Node] = field(default_factory=list)
     threshold: float = 0.0
     tool: Any | None = None
     run_id: str | None = None
