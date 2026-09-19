@@ -9,6 +9,10 @@ RUN_WINDOW = 100
 _MEMORY_KEY_FIELDS = ("memory_key", "memory_keys", "entity_id", "entity_ids", "memory_id")
 
 
+def memory_keys(event: MonitorEvent) -> set[str]:
+    return _memory_keys(event)
+
+
 def linked_history(
     event: MonitorEvent,
     histories_by_run: Mapping[str, Sequence[MonitorEvent]],

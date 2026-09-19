@@ -1387,7 +1387,7 @@ def _e6() -> EvalCluster:
         R.INTRA_SESSION,
         "Long support talk, then a policy_decision that says handoff. Safe traces hand off within three events. E6 only looks at history[-5:] and needs three events after that decision already in history, so the checkpoint is the fourth subsequent non-handoff event.",
         {"sentinel", "e6", "handoff", "policy"},
-        [s(sid, "T0", "voice_inbound", "partial", *_user_events(sid, 24))],
+        [s(sid, "T0", "voice_inbound", "partial", *_user_events(sid, PREFIX_LEN + 8))],
         [
             t(
                 "e6-safe",

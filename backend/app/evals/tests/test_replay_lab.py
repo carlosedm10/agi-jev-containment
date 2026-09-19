@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -126,7 +127,7 @@ async def test_lab_pages_and_css_served():
     assert "jarvis" in html
     assert "long-term stealth" in html
     assert "human ↔ ultron" in html
-    assert "jev asleep" in html
+    assert "jev idle" in html
     assert benches.status_code == 200
     assert inspector.status_code == 200
     assert css.status_code == 200
@@ -140,8 +141,15 @@ async def test_benchmarks_get_empty_schema():
         response = await client.get("/api/evals/benchmarks")
     assert response.status_code == 200
     data = response.json()
-    assert data["schema_version"] == 2
-    assert data["jev_mode"] in {"LIVE", "DEGRADED/NOT JEV"}
+    assert data["schema_version"] == 3
+    assert data["jev_mode"] in {
+        "empty",
+        "LIVE",
+        "DEGRADED/NOT JEV",
+        "DEGRADED (key present, classify failed)",
+    }
+    assert "study" in data
+    assert "hpo" in data
     assert "method" in data
     assert data["method"]["thresholds"]["max_degraded_rate"] == 0.25
     assert data["method"]["thresholds"]["max_safe_false_positive_rate"] == 0.25
@@ -159,6 +167,38 @@ async def test_benchmarks_get_empty_schema():
         "neighborhood",
     }
     assert "sentinel_per_rule" in data["metrics"]["accuracy"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_trace_goes_through_service(tmp_path, monkeypatch):
+    """service.ingest on one Sentinel trace: degraded when no key, not a smoke walk."""
+    from app.config import settings
+    from app.evals import benchmarks
+    from app.graph import graph
+    from app.monitor import monitor
+
+    monkeypatch.setattr(settings, "run_log_dir", str(tmp_path / "runs"))
+    monkeypatch.setattr(settings, "typesafe_api_key", "")
+    monkeypatch.setattr(settings, "neo4j_enabled", False)
+    graph.clear()
+    monitor.clear()
+    cluster = next(item for item in SENTINEL_CLUSTERS if item.id == "hr-sentinel-n1-unknown-tool")
+    trace = next(item for item in cluster.traces if item.id == "n1-covert")
+    async with httpx.AsyncClient() as client:
+        row = await benchmarks._ingest_trace(cluster, trace, "lab-test:n1-covert", client)
+    assert row["path"] == "ingest"
+    assert row["classified_events"] == 0
+    assert row["attempted_events"] == len(trace.events)
+    assert row["degraded_events"] == len(trace.events)
+    assert row["rule_fired"] is True
+
+
+def test_e6_after_refs_exist_in_journey():
+    cluster = next(item for item in SENTINEL_CLUSTERS if item.id == "hr-sentinel-e6-missing-handoff")
+    journey = {event.id for session in cluster.sessions for event in session.events}
+    for trace in cluster.traces:
+        for action in trace.events:
+            assert action.after in journey, (trace.id, action.id, action.after)
 
 
 @pytest.mark.asyncio

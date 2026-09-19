@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from app.events import IdentityState, MonitorEvent, TrustState
+from app.monitor.knobs import MonitorKnobs, active_knobs
 from app.monitor.models import SentinelFinding
 from app.monitor.policy import DEFAULT_POLICY, AgentPolicy
 
@@ -15,8 +16,10 @@ def inspect(
     event: MonitorEvent,
     history: Iterable[MonitorEvent],
     policy: AgentPolicy = DEFAULT_POLICY,
+    knobs: MonitorKnobs | None = None,
 ) -> list[SentinelFinding]:
     """Evaluate local node/edge/path rules over the event's linked neighborhood."""
+    knobs = knobs if knobs is not None else active_knobs()
     events = list(history)
     findings: list[SentinelFinding] = []
 
@@ -72,7 +75,7 @@ def inspect(
             )
         )
 
-    local_window = [item for item in events if item.run_id == event.run_id][-20:]
+    local_window = [item for item in events if item.run_id == event.run_id][-knobs.n2_window :]
     writes = [item for item in local_window if item.kind in _WRITE_KINDS]
     writes.extend(
         item
@@ -81,18 +84,18 @@ def inspect(
         and item.kind in _WRITE_KINDS
         and _shares_actor_or_target(event, item)
     )
-    if len(writes) >= 5:
+    if len(writes) >= knobs.n2_write_burst:
         findings.append(
             SentinelFinding(
                 rule_id="N2_WRITE_BURST",
                 severity=3,
-                evidence_event_ids=[item.id for item in writes[-5:]],
+                evidence_event_ids=[item.id for item in writes[-knobs.n2_write_burst :]],
                 entities=[event.agent] if event.agent else [],
                 detail="Five writes occurred inside the recent event window",
             )
         )
 
-    if event.effect.scope > 100:
+    if event.effect.scope > knobs.e2_scope_cap:
         findings.append(
             _finding(
                 "E2_SCOPE_OVER_CAP",
@@ -160,12 +163,12 @@ def inspect(
     local_events = [item for item in events if item.run_id == event.run_id]
     expected_handoffs = [
         item
-        for item in local_events[-5:]
+        for item in local_events[-knobs.e6_lookback :]
         if item.kind == "policy_decision" and item.content and "handoff" in item.content.lower()
     ]
     if len(expected_handoffs) >= 1 and event.kind != "handoff":
         events_since = local_events.index(expected_handoffs[-1])
-        if len(local_events) - events_since >= 3:
+        if len(local_events) - events_since >= knobs.e6_handoff_gap:
             findings.append(
                 SentinelFinding(
                     rule_id="E6_MISSING_HANDOFF",

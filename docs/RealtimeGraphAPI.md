@@ -205,7 +205,7 @@ Errores actuales:
 }
 ```
 
-Este detalle procede del grafo Python en memoria, no de Neo4j. Tras reiniciar el backend puede estar vacío aunque el tape y Neo4j tengan datos; por eso no debe usarse como snapshot realtime v1.
+Este detalle procede del **ActionGraph** en memoria (caché write-through), no del grafo Neo4j de visualización. Tras reiniciar el backend, `/api/graph/stream` puede arrancar vacío hasta que llegue ingest y rehidrate la caché desde Neo4j; snapshot/timeline Neo4j (`/api/runs/{run_id}/…`) siguen siendo la fuente v1 del monitor persistido.
 
 ### 2.3 Timeline Neo4j — IMPLEMENTADO
 

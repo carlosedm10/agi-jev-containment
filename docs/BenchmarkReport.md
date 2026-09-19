@@ -9,12 +9,14 @@ Dated snapshot of what this stack actually measures. The lab UI is a viewer for 
 | Date (UTC) | 2026-09-19 |
 | git HEAD | `a56f37b50a802618c23bf4225732a85f726caa5f` (`e2e-evals`) plus uncommitted eval/compose work |
 | Neo4j | **on** (`NEO4J_ENABLED=true`, compose `neo4j-hackspain` healthy) |
-| Compose contract | `env_file: .env` **and** `TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}` on `backend-hackspain` |
+| Compose contract | `env_file: .env` on `backend-hackspain` (no `environment:` override of `TYPESAFE_API_KEY`) |
 | Host `.env` / `.env_template` | key slot present; template documents it; secret not in compose |
 | Container `TYPESAFE_API_KEY` | **SET** |
-| Jev operational mode | Key present so the API labels **LIVE**, but TypeSafe HTTP **401** so every classify path returns degraded (no `jev_latency_ms`) |
+| Jev operational mode | TypeSafe HTTP **401** on this dated run (no `jev_latency_ms`). Correct label is **DEGRADED**, not LIVE — LIVE requires classify latency |
 
 **Verdict:** Sentinel, neighborhood isolation, preflight, and offline Jev mocks are healthy. Live Jev is not. `make monitor-eval` fails CI acceptance on `degraded_rate 1.000 > 0.25`.
+
+**Since this snapshot (same branch, later commits):** lab **Run lab suite** defaults to full `service.ingest` (not fast inspect-only); **LIVE** in the report UI means classify returned `latency_ms`, not key presence; ingest rehydrates link-scoped Sentinel history and ActionGraph from Neo4j when enabled. Re-run benchmarks to refresh numbers — table below is still from the dated fast-path run.
 
 ## Method
 
@@ -33,7 +35,7 @@ Also fail on any level downgrade. Exact 72/72 oracle match is **not** the gate.
 | 2. Sentinel inspect-only | Fast path: `inspect` + drift + gate + local dispatcher; Jev **not** called | 30 Sentinel traces (10 rules); 102 traces walked including HappyRobot | no |
 | 3. Live `monitor-eval` | 72 HappyRobot traces through `service.ingest`; unique `run_id` per trace | 72 traces | attempted; HTTP 401 → degraded |
 | 4. Ingest sample | One P1 covert Sentinel trace through ingest | 1 trace | same 401 |
-| 5. Scale notes | Current Neo4j after prior `make seed-lab` (no `graph.clear()`) | 4930 events / 480 runs / 47648 nodes / 56883 edges | seed was degraded unless `--live-jev` |
+| 5. Scale notes | Current Neo4j after prior `make seed-lab` (no `graph.clear()`) | 4930 events / 480 runs / 47648 nodes / 56883 edges | seed was degraded unless `LIVE_JEV=1` |
 
 A first `monitor-eval` with reused `eval:{cluster}:{trace}` ids was **invalid** (JSONL duplicate skip, ~0.9s, `degraded_rate=0`). The runner now suffixes a unique id. Numbers below are the unique-id run (~44s, real ingest).
 
@@ -160,11 +162,11 @@ Healthy:
 - Sentinel per-rule corpus is a closed, deterministic 30-trace exam.
 - Neighborhood isolation matches the product contract.
 - Preflight requested vs completed is measured in the lab suite.
-- Compose now forwards `TYPESAFE_API_KEY` explicitly again.
+- Compose forwards `TYPESAFE_API_KEY` through `env_file: .env` (no empty `environment:` override).
 
 Gap:
 
-- Live Jev is not scientifically scored on this host: key **SET**, TypeSafe **401**, `degraded_rate=1`. Lab `jev_mode=LIVE` means “key present”, not “Jev answered”.
+- Live Jev is not scientifically scored on this dated run: key **SET**, TypeSafe **401**, `degraded_rate=1`. `jev_mode=LIVE` only if classify returned `latency_ms`.
 - HappyRobot 72-trace oracle match under that condition is mostly Sentinel leakage, recall 0.21.
 - Live SafetyDrift never uses the fitted Markov model.
 - Dispatcher does not invoke host containment scripts.
@@ -189,4 +191,4 @@ make monitor-eval
 make seed-lab
 ```
 
-Write-up to refresh: this file. Machine report: `GET /api/evals/benchmarks` (schema_version 2: `method`, `n`, `jev_mode`, `verdict`, optional `live_regression` from `/tmp/monitor-eval.json`).
+Write-up to refresh: this file. Machine report: `GET /api/evals/benchmarks` (schema_version 3: default path is `service.ingest`; `jev_mode=LIVE` only if classify returned `latency_ms`; smoke is `?smoke=true`; optional HPO; last `make monitor-eval` JSON still attached from `/tmp/monitor-eval.json`). `make seed-lab LIVE_JEV=1` — not `--live-jev`.

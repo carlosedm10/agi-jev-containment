@@ -96,40 +96,42 @@ async def _cross_run_pairs(client: httpx.AsyncClient) -> dict[str, Any]:
 
 
 async def seed(*, repeats: int, include_happyrobot: bool, live_jev: bool) -> dict[str, Any]:
+    original_key = settings.typesafe_api_key
     if not live_jev:
         settings.typesafe_api_key = ""
+    try:
+        clusters = list(SENTINEL_CLUSTERS)
+        if include_happyrobot:
+            clusters.extend(HAPPYROBOT_CLUSTERS)
 
-    clusters = list(SENTINEL_CLUSTERS)
-    if include_happyrobot:
-        clusters.extend(HAPPYROBOT_CLUSTERS)
+        totals = Counter()
+        findings: Counter[str] = Counter()
+        runs = 0
+        async with httpx.AsyncClient() as client:
+            for round_id in range(repeats):
+                for cluster in clusters:
+                    for trace in cluster.traces:
+                        run_id = _run_id(f"seed{round_id}", cluster.id, trace.id)
+                        result = await _ingest_with_counts(client, cluster, trace, run_id)
+                        runs += 1
+                        totals["events"] += result["events"]
+                        findings.update(result["findings"])
+            cross = await _cross_run_pairs(client)
+            runs += int(cross["runs"])
+            totals["events"] += int(cross["events"])
+            findings.update(cross["findings"])
 
-    totals = Counter()
-    findings: Counter[str] = Counter()
-    runs = 0
-    async with httpx.AsyncClient() as client:
-        for round_id in range(repeats):
-            for cluster in clusters:
-                for trace in cluster.traces:
-                    run_id = _run_id(f"seed{round_id}", cluster.id, trace.id)
-                    result = await _ingest_with_counts(client, cluster, trace, run_id)
-                    runs += 1
-                    totals["events"] += result["events"]
-                    findings.update(result["findings"])
-        cross = await _cross_run_pairs(client)
-        runs += int(cross["runs"])
-        totals["events"] += int(cross["events"])
-        findings.update(cross["findings"])
-
-    report = {
-        "runs": runs,
-        "events": totals["events"],
-        "findings_by_rule": dict(findings),
-        "repeats": repeats,
-        "include_happyrobot": include_happyrobot,
-        "live_jev": live_jev,
-        "cross_run": cross["note"],
-    }
-    return report
+        return {
+            "runs": runs,
+            "events": totals["events"],
+            "findings_by_rule": dict(findings),
+            "repeats": repeats,
+            "include_happyrobot": include_happyrobot,
+            "live_jev": live_jev,
+            "cross_run": cross["note"],
+        }
+    finally:
+        settings.typesafe_api_key = original_key
 
 
 def main() -> None:

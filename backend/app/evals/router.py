@@ -98,8 +98,18 @@ def get_benchmarks() -> dict[str, Any]:
 
 
 @router.post("/benchmarks")
-async def start_benchmarks() -> dict[str, Any]:
-    status = await benchmarks.start_job()
+async def start_benchmarks(
+    repeats: int = Query(default=3, ge=1, le=5),
+    smoke: bool = Query(default=False),
+    hpo: bool = Query(default=False),
+    corpus: str = Query(default="sentinel"),
+) -> dict[str, Any]:
+    status = await benchmarks.start_job(
+        repeats=repeats,
+        smoke=smoke,
+        hpo=hpo,
+        corpus=corpus,
+    )
     return {"status": status, "report": benchmarks.load_report()}
 
 

@@ -164,7 +164,7 @@
       </div>
       <div class="gauge">
         <h2>Jarvis — the judge</h2>
-        <div id="jevAsleep" class="asleep">JEV ASLEEP (no key / 401 / timeout)</div>
+        <div id="jevAsleep" class="asleep">Jev idle</div>
         <div class="thermo" id="thermo"></div>
         <div class="tiny">intent <b id="jevIntent">—</b></div>
         <div class="tiny">confidence</div>
@@ -292,7 +292,8 @@
       if (reason === "http_401") el.textContent = "Jev rejected (401)";
       else if (reason === "no_key") el.textContent = "JEV ASLEEP (no key)";
       else if (reason === "timeout") el.textContent = "JEV ASLEEP (timeout)";
-      else el.textContent = "JEV ASLEEP (no key / 401 / timeout)";
+      else if (reason) el.textContent = "JEV ASLEEP (" + reason + ")";
+      else el.textContent = "Jev idle";
       el.style.display = "block";
     }
     function resetGauges() {

@@ -191,3 +191,9 @@ def test_settings_strip_wrapped_quotes_from_api_keys():
     loaded = Settings(typesafe_api_key='"abc"', helmcode_api_key="'xyz'")
     assert loaded.typesafe_api_key == "abc"
     assert loaded.helmcode_api_key == "xyz"
+
+
+def test_settings_ignore_empty_env_api_key(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "")
+    loaded = Settings(_env_file=None)
+    assert loaded.typesafe_api_key == ""

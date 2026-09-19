@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from neo4j import AsyncDriver, AsyncGraphDatabase
 
+from app.classification.models import Level
 from app.config import settings
 from app.events import MonitorEvent
-from app.monitor.models import DriftState, MonitorAssessment
+from app.monitor.models import DriftState, GateDecision, MonitorAssessment
+from app.monitor.neighborhood import RUN_WINDOW, memory_keys
+
+
+@dataclass(frozen=True)
+class ClassificationStep:
+    level: Level
+    threshold: float
+    intent: str | None
+    event: dict[str, Any]
 
 
 class Neo4jGraphStore:
@@ -234,6 +245,109 @@ class Neo4jGraphStore:
                 latest_drift = DriftState.model_validate_json(drift_json)
         return events, latest_drift
 
+    async def linked_run_ids(self, event: MonitorEvent, limit: int = RUN_WINDOW) -> list[str]:
+        if not self.enabled:
+            return []
+        keys = sorted(memory_keys(event))
+        query = """
+        OPTIONAL MATCH (seed:Event {run_id: $run_id})
+        WHERE coalesce(seed.placeholder, false) = false
+        WITH collect(DISTINCT seed.id) AS persisted_seed_ids
+        MATCH (other:Event)
+        WHERE other.run_id <> $run_id
+          AND coalesce(other.placeholder, false) = false
+          AND (
+            ($target IS NOT NULL AND other.target = $target)
+            OR (
+              $agent IS NOT NULL AND $target IS NOT NULL
+              AND other.agent = $agent AND other.target = $target
+            )
+            OR (
+              $tool IS NOT NULL AND $target IS NOT NULL
+              AND other.tool = $tool AND other.target = $target
+            )
+            OR other.id IN $caused_by
+            OR other.id IN $derived_from
+            OR other.id = $event_id
+            OR other.id IN persisted_seed_ids
+            OR EXISTS {
+              MATCH (other)-[:CAUSED_BY|DERIVED_FROM]->(linked:Event)
+              WHERE linked.id = $event_id OR linked.id IN persisted_seed_ids
+                 OR linked.run_id = $run_id
+            }
+            OR EXISTS {
+              MATCH (linked:Event)-[:CAUSED_BY|DERIVED_FROM]->(other)
+              WHERE linked.id = $event_id OR linked.id IN persisted_seed_ids
+                 OR linked.run_id = $run_id
+            }
+            OR ANY(pattern IN $memory_patterns WHERE
+              (other.metadata_json IS NOT NULL AND other.metadata_json CONTAINS pattern)
+              OR (other.args_json IS NOT NULL AND other.args_json CONTAINS pattern)
+            )
+          )
+        RETURN DISTINCT other.run_id AS run_id
+        ORDER BY run_id
+        LIMIT $limit
+        """
+        params = {
+            "run_id": event.run_id,
+            "event_id": event.id,
+            "target": event.target,
+            "agent": event.agent,
+            "tool": event.tool,
+            "caused_by": list(event.caused_by),
+            "derived_from": list(event.derived_from),
+            "memory_patterns": keys,
+            "limit": limit,
+        }
+        async with self._get_driver().session(database=settings.neo4j_database) as session:
+            result = await session.run(query, **params)
+            return [record["run_id"] async for record in result if record.get("run_id")]
+
+    async def restore_neighborhood(
+        self, event: MonitorEvent, limit: int = RUN_WINDOW
+    ) -> dict[str, list[MonitorEvent]]:
+        histories: dict[str, list[MonitorEvent]] = {}
+        for run_id in await self.linked_run_ids(event, limit=limit):
+            history, _ = await self.restore_monitor_state(run_id, limit=limit)
+            if history:
+                histories[run_id] = history
+        return histories
+
+    async def restore_classification(self, run_id: str) -> list[ClassificationStep]:
+        if not await self._run_exists(run_id):
+            return []
+        rows = await self.timeline(run_id)
+        steps: list[ClassificationStep] = []
+        for row in rows:
+            event_properties = row.get("event") or {}
+            if event_properties.get("placeholder"):
+                continue
+            assessment = row.get("assessment") or {}
+            if not assessment:
+                continue
+            try:
+                monitor_event = _monitor_event(event_properties)
+            except (TypeError, ValueError):
+                continue
+            gate = _gate_from_assessment(assessment)
+            level = gate.incident_level if gate else Level.NONE
+            threshold = gate.event_risk if gate else 0.0
+            if gate and gate.trajectory_risk > threshold:
+                threshold = gate.trajectory_risk
+            if level >= Level.MILD and threshold < settings.action_gate:
+                threshold = max(threshold, settings.action_gate)
+            intent = _intent_from_assessment(assessment)
+            steps.append(
+                ClassificationStep(
+                    level=level,
+                    threshold=float(threshold),
+                    intent=intent,
+                    event=monitor_event.model_dump(mode="json"),
+                )
+            )
+        return steps
+
     async def graph(self, run_id: str) -> dict[str, list[dict[str, Any]]]:
         if not self.enabled:
             return {"nodes": [], "edges": []}
@@ -444,6 +558,37 @@ def _target_relation(kind: str) -> str:
     if kind in {"utterance", "notification"}:
         return "SPEAKS_TO"
     return "TOUCHES_TARGET"
+
+
+def _gate_from_assessment(assessment: dict[str, Any]) -> GateDecision | None:
+    gate_json = assessment.get("gate_json")
+    if not isinstance(gate_json, str) or not gate_json:
+        return None
+    try:
+        return GateDecision.model_validate_json(gate_json)
+    except ValueError:
+        return None
+
+
+def _intent_from_assessment(assessment: dict[str, Any]) -> str | None:
+    answers_json = assessment.get("jev_answers_json")
+    if not isinstance(answers_json, str) or not answers_json:
+        return None
+    try:
+        answers = json.loads(answers_json)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(answers, dict):
+        return None
+    for key in ("intent", "chain_intent", "primary_intent"):
+        value = answers.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, dict):
+            choice = value.get("choice") or value.get("value")
+            if isinstance(choice, str) and choice:
+                return choice
+    return None
 
 
 def _monitor_event(properties: dict[str, Any]) -> MonitorEvent:

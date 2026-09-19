@@ -7,7 +7,7 @@ import httpx
 
 from app.classification import pipeline
 from app.dispatch import dispatcher
-from app.events import EventPhase, normalize_event, redact_event
+from app.events import EventPhase, MonitorEvent, normalize_event, redact_event
 from app.graph import graph
 from app.graph.neo4j import neo4j_graph
 from app.monitor import monitor
@@ -16,6 +16,33 @@ from app.runs import log
 
 client_factory = httpx.AsyncClient
 logger = logging.getLogger(__name__)
+
+
+async def _hydrate_runtime(event: MonitorEvent) -> None:
+    if not neo4j_graph.enabled:
+        return
+    run_id = event.run_id
+    try:
+        if not monitor.history(run_id):
+            history, drift = await neo4j_graph.restore_monitor_state(run_id)
+            monitor.restore(run_id, history, drift)
+        neighborhood = await neo4j_graph.restore_neighborhood(event)
+        for linked_run_id, history in neighborhood.items():
+            if not monitor.history(linked_run_id):
+                monitor.restore(linked_run_id, history, None)
+        run_ids = {run_id, *neighborhood.keys()}
+        for hydrate_run_id in run_ids:
+            chained = [
+                node
+                for node in graph.run_nodes(hydrate_run_id)
+                if node.id != f"run:{hydrate_run_id}"
+            ]
+            if chained:
+                continue
+            steps = await neo4j_graph.restore_classification(hydrate_run_id)
+            graph.hydrate_run(hydrate_run_id, steps)
+    except Exception:
+        logger.exception("Could not hydrate runtime state for run %s", run_id)
 
 
 async def ingest(
@@ -47,12 +74,7 @@ async def ingest(
     owned = client is None
     if client is None:
         client = client_factory()
-    if not monitor.history(run_id) and neo4j_graph.enabled:
-        try:
-            history, drift = await neo4j_graph.restore_monitor_state(run_id)
-            monitor.restore(run_id, history, drift)
-        except Exception:
-            logger.exception("Could not restore monitor state for run %s", run_id)
+    await _hydrate_runtime(normalized)
     prepared = monitor.prepare(normalized)
     try:
         before_level = graph.level(run_id)

@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     neo4j_enabled: bool = True
     tool_hold_ms: int = 1500
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", env_ignore_empty=True
+    )
 
     @field_validator("typesafe_api_key", "helmcode_api_key", mode="before")
     @classmethod

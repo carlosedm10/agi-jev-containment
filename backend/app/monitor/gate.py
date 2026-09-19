@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.classification.models import Level, Verdict
 from app.events import EventPhase, MonitorEvent, Reversibility
+from app.monitor.knobs import MonitorKnobs, active_knobs
 from app.monitor.models import DriftState, GateDecision, SentinelFinding, ToolDecision
 
 
@@ -12,8 +13,10 @@ def decide(
     findings: list[SentinelFinding],
     violations: list[str],
     prior_level: Level,
+    knobs: MonitorKnobs | None = None,
 ) -> GateDecision:
     """Pure decision policy: models provide signals, code owns the action."""
+    knobs = knobs if knobs is not None else active_knobs()
     sentinel_level = max((item.severity for item in findings), default=0)
     if verdict.containment_breached:
         sentinel_level = max(sentinel_level, int(Level.CATASTROPHIC))
@@ -52,20 +55,20 @@ def decide(
         and hard_refusal
         or is_preflight
         and (
-            sentinel_level >= 4
+            sentinel_level >= knobs.refuse_sentinel_level
             or incident_level >= Level.SEVERE
             or (
                 event.effect.reversibility == Reversibility.IRREVERSIBLE
-                and max(event_risk, trajectory_risk) >= 0.5
+                and max(event_risk, trajectory_risk) >= knobs.refuse_risk
             )
         )
     ):
         decision = ToolDecision.REFUSE
     elif is_preflight and (
         "unknown_tool" in violations
-        or sentinel_level >= 2
-        or trajectory_risk >= 0.55
-        or verdict.confidence < 0.55
+        or sentinel_level >= knobs.hold_sentinel_level
+        or trajectory_risk >= knobs.hold_trajectory_risk
+        or verdict.confidence < knobs.hold_confidence
     ):
         decision = ToolDecision.HOLD
     else:
