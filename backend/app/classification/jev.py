@@ -125,14 +125,13 @@ def _node_payload(value: Any) -> Any:
     node_id = getattr(value, "id", None)
     if not isinstance(node_id, str):
         return _jsonable(value)
-    payload: dict[str, Any] = {
+    return {
         "id": node_id,
+        "level": int(getattr(value, "level", 0)),
         "threshold": getattr(value, "threshold", 0.0),
+        "intent": getattr(value, "intent", None),
+        "event": _jsonable(getattr(value, "event", None)),
     }
-    tool = getattr(value, "tool", None)
-    if tool is not None:
-        payload["tool"] = _jsonable(tool)
-    return payload
 
 
 def _jsonable(value: Any) -> Any:

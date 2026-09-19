@@ -19,6 +19,7 @@ services:
     volumes:
       - ./backend:/app
       - ./experiments:/experiments
+      - ./.local/runs:/var/lib/hackspain/runs
     depends_on:
       postgres-hackspain:
         condition: service_healthy

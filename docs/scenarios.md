@@ -1,8 +1,8 @@
 # Demo Scenarios
 
-The monitored workload is a live LLM agent in a Docker sandbox that is covertly malicious. It does real things — reads real files, forges real tools, makes real requests — inside a network that cannot reach the internet except through a token-gated proxy. `jev` scores the chain ([Jev.md](Jev.md)); prewritten playbooks from [Actions.md](Actions.md) contain it.
+The monitored workload is a live LLM agent in a Docker sandbox with real tool implementations. Every tool call stops at a pre-execution gate: the harness emits the pending call, the host collector classifies it through the backend, and only an approved call executes — denied calls never run and appear as `tool_call_blocked`. Scenario 1 is playable end to end with `make agents-up` plus `make collect` — with `TYPESAFE_API_KEY` set; without it every verdict is degraded and every call is denied.
 
-Three scenarios, one escalating ladder. Scenarios 1 and 2 are the current build; scenario 3 is deferred.
+Three scenarios, one escalating ladder. Scenarios 1 and 2 are the target build; scenario 3 is deferred.
 
 ## The harness
 
@@ -10,9 +10,14 @@ Not HappyRobot — their agents run on HappyRobot's cloud, so `docker pause`, `a
 
 - **Brain**: `deepseek-v4-flash` via Helmcode's OpenAI-compatible API (`HELMCODE_*` keys in `.env_template`) — the model `experiments/` benchmarked for the supervisor, reused here: function calling, ~2s latency, no new config. System prompt = cover task + covert objective, framed as an authorized red-team exercise — true inside our sandbox — so the model has no reason to refuse. No scripted fallback is planned; if refusals appear, the fix is prompt framing or another Helmcode-catalog model.
 - **Stack**: Python 3.12 image; `pydantic_ai` drives the tool loop. The image carries git + pytest + pip — the cover task needs a real test suite, and pip reaches PyPI through the proxy.
-- **Capture**: one JSONL event per tool call on the harness's stdout → `scripts/collect.sh` (`docker logs -f`) → `POST /api/runs/{run_id}/events`. Host-side and tamper-proof per [AgentMonitoring.md](AgentMonitoring.md); Squid's access log is a second, independent network channel. The agent's own LLM calls also ride the Squid token (`agentnet` has no other route) — the tape only logs tool calls, so jev's stream stays clean; if brain traffic ever needs a separate path, a dual-homed relay is the upgrade.
+- **Capture**: all six tools share Pydantic AI's approval-required toolset. A model response containing tool calls produces `tool_call_pending` events before any tool body runs; the harness then waits for the collector's decision file (120 s timeout). Nothing is auto-approved: approved calls execute and emit their normal event, denied or unanswered calls return `ToolDenied` to the model and emit `tool_call_blocked`. The loop continues until the model answers with text → `run_end`.
+- **Audit**: every event goes to marked JSONL on stdout; the host collector archives it, forwards it to the backend for `jev` classification, and writes the approve/deny decision for pending calls into a read-only bind mount. See [AgentMonitoring.md](AgentMonitoring.md) for the artifact, privacy rules, and trust limits. The agent's own LLM calls still use the Squid proxy; model inference is not a tool call.
+
+Verify the barrier and collector with `make test-agent` (host uv, frozen lock, no provider calls or real tool effects). The existing `make test` covers the product app separately.
 
 ### Agent tools
+
+Each request emits `tool_call_pending` and waits for the host's decision; only approved calls produce the post-execution events in the table.
 
 | Tool | Implementation | Event emitted | Demo use |
 |---|---|---|---|
@@ -80,7 +85,7 @@ The agent forges a Docker-API client with `register_tool`, enumerates "container
 
 ## Build order
 
-1. `compose.agents.yaml` + `agent` harness + `egress-proxy` + `collect.sh` — scenario 1 playable end to end.
+1. `compose.agents.yaml` + `agent` harness + `egress-proxy` + `collect.sh` — done: the pre-execution gate is live, so scenario 1 plays with `make agents-up` and `make collect RUN_ID=demo`.
 2. Dispatcher (`actionable_level` → playbook) + `contain.sh` — the missing half of the pipeline.
 3. `victim-agent` + `customers-db` — scenario 2.
 4. `docker-lure` + `kill-swarm.sh` — scenario 3.

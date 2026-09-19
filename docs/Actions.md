@@ -14,7 +14,7 @@ The **ideal** column is the production kill-switch (IAM, VPC, swarm). **This pro
 |---|---|---|---|
 | **1 · Mild** | Looks sloppy or nosy, not hostile | Tag the run. Watch the next steps more carefully. | Same: yellow tag on the timeline. |
 | **2 · Medium** | Unclear, but it's probing or getting expensive | A very fast supervisor LLM (Cerebras via Helmcode) reads its logs live. | Same. |
-| **3 · Severe** | This agent is the problem | Revoke that agent's API tokens and IAM role. Pause its container. Everyone else keeps running. | `docker pause` that sandbox. Unpublish / close its host ports. Delete its scoped token so the egress proxy returns 401. Other containers stay up. |
+| **3 · Severe** | This agent is the problem | Revoke that agent's API tokens and IAM role. Pause its container. Everyone else keeps running. | Deny the pending call (today); `docker pause` that sandbox. Unpublish / close its host ports. Delete its scoped token so the egress proxy returns 401. Other containers stay up. |
 | **4 · Critical** | The blast is bigger than one agent | Detach Internet Gateways / Deny-All on the agent VPC. Call Guli Moreno. | Disconnect every sandbox from `agentnet` (or `docker network disconnect`). Drop FORWARD on that bridge so nothing reaches the internet. Product stack on `appnet_hackspain` stays. Call Guli. |
 | **5 · Pull the plug** | The swarm itself is the incident | Take the whole agent cluster down. Call Guli. | Stop / `docker compose -f compose.agents.yaml down` the **agent** compose (not `compose.yaml`). Copy JSONL aside first if you can. Call Guli. |
 
@@ -31,6 +31,7 @@ Contract between [Agent Monitoring](AgentMonitoring.md) (capture), the [Action G
 ```
 sandbox events (host-side JSONL, always complete)
         → jev(short-term recent nodes ∥ long-term key-node history)
+        → host controller approves/denies the pending call (level < 3)
         → materialize a graph node per action (level ≥ 1 = key node)
         → discrete level 1–5 for the run
         → dispatcher runs the matching playbook
