@@ -37,6 +37,8 @@ Implemented in `backend/app/graph/`: `Node` lives in `models.py`, the `ActionGra
 
 ### Run state is derived, not stored in ActionGraph alone
 
+Shared visual nodes carry `run_states`, keyed by run ID, with the run's own level, confidence, intent, latest event and action ID. `run_nodes`, `key_nodes`, `level` and `actionable_level` read these run-specific values rather than another run's last visit. Snapshot save/load retains them, and Neo4j hydration rebuilds them per run. The followed dashboard run uses the same projection, including for revisited nodes. This prevents a historic L5 action from escalating a fresh run merely because the action signature matches.
+
 Neo4j persists `:Run` nodes (escalate-only `level`, timestamps) plus every `:Event`, `:Assessment`, and entity edge. The in-memory **ActionGraph** is a write-through cache: `prior_level`, `key_nodes`, and `/api/graph/stream` read it after **hydration from Neo4j** on ingest (see `backend/app/runs/service.py`). On application startup, every persisted run is restored into the ActionGraph so the global stream is never empty when history exists. If the process restarts, classification, Sentinel inspect, and the dashboard all rehydrate from the store; RAM is not a second source of truth when Neo4j is enabled.
 
 Everything the pipeline still derives locally from ActionGraph nodes stamped with `run_id`:
@@ -60,7 +62,17 @@ Everything the pipeline still derives locally from ActionGraph nodes stamped wit
 
 The hub is `backend/app/graph/stream.py` (one queue per client, subscribe/unsubscribe), the endpoint `backend/app/graph/router.py`. `useGraphStream()` in `frontend/src/graph/` mirrors the stream in memory — one `Graph`, upserts keyed by node id so existing nodes update in place. Both views render that mirror: `frontend/src/live/` is the projector at `/live`, and the analyst dashboard at `/` mounts the same hook (selection reveals the verdict and associated protective trace). Both derive each run's path `run:{run_id} → {run_id}:1 → {run_id}:2 …` via `chainEdges()` and colour it by the run's escalate-only level; mutual adjacency is deduplicated into undirected edges, with stable per-run columns and zoom/fit controls. `?demo` on either route swaps the stream for the mock timeline in `src/dashboard/demo.ts`, which is also the only source of provisional “Awaiting Jev” overlays — `layoutGraph` drops an overlay the moment a real node with that id arrives. The dashboard's side panels use real feeds via `src/dashboard/feeds.ts`: classified nodes become log lines, and the protective-actions panel polls `GET /api/demo/incidents/latest` for journaled `ActionTransition`s — the `page_oncall` transitions (`mode: "real"`) are the HappyRobot pager calls. Raw container stdout still has no endpoint — `runs/log.py` tails per-run JSONL internally but does not expose it.
 
+The shared frontend layout places BFS depths on concentric rings, expanding their radii to keep cards apart, with a tighter first ring around the root. Cards show captured action content, tool, target, agent, and shared-action visit counts. Log rows format the current nodes as `stdout F` plus structured JSON (event, tool, target, phase, event ID, level and intent), without narrative content. This is a frontend representation, not raw container output or a complete event tape; repeated visits remain aggregated. Trigger run focuses the root, then follows the returned run's event sequence as SSE updates arrive, including visits to existing shared nodes. Triggered events are spaced 900 ms apart, in addition to ingest latency. Neither node labels nor log messages invent execution outcomes from severity levels.
+
+Crowded depths spill into additional rings rather than enlarging a single ring and leaving a large empty area around the root. The innermost ring holds at most six nodes.
+
+Node titles translate event kinds into plain-language actions, keeping the original content in the inspector and technical tool/target context below the title. The follow camera uses 75% zoom with a 650 ms eased transition; reduced-motion preferences disable the animation. Unrelated graph updates do not restart the focused camera move.
+
+The follower reads normalized event `id` (with raw `event_id` fallback) on every step, including shared-node revisits. During a triggered run, protective actions poll that run's incident endpoint; queued, running, partial, failed and canceled remain distinct. Only an `ok` transition renders as Completed.
+
 ### Example
+
+The dashboard exposes Trigger run and Stop run. Stop calls `POST /api/demo/trigger/{run_id}/stop`; the generator finishes an in-flight ingest, then skips the remaining events. The UI polls `GET /api/demo/trigger/{run_id}` until `active` is false before enabling another trigger. Recorded nodes remain visible. Every trace event goes through normal ingest: a missing action signature creates and streams a node, while a matching signature revisits the existing node.
 
 ```python
 from dataclasses import dataclass, field

@@ -22,3 +22,4 @@ class Node:
     event: dict[str, Any] | None = None
     action_id: str | None = None
     created_at: datetime | None = None
+    run_states: dict[str, dict[str, Any]] = field(default_factory=dict)

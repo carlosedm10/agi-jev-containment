@@ -7,6 +7,7 @@ import httpx
 
 from app.actions.models import DispatchAccepted
 from app.classification import pipeline
+from app.classification.models import Level, Verdict
 from app.dispatch import dispatcher
 from app.events import EventPhase, MonitorEvent, normalize_event, redact_event
 from app.graph import graph
@@ -47,7 +48,11 @@ async def _hydrate_runtime(event: MonitorEvent) -> None:
 
 
 async def ingest(
-    run_id: str, event: dict[str, Any], client: httpx.AsyncClient | None = None
+    run_id: str,
+    event: dict[str, Any],
+    client: httpx.AsyncClient | None = None,
+    *,
+    demo_level: int | None = None,
 ) -> dict[str, Any]:
     normalized = redact_event(normalize_event(run_id, event))
     normalized, is_new = log.append_event(normalized)
@@ -79,11 +84,21 @@ async def ingest(
     prepared = monitor.prepare(normalized)
     try:
         before_level = graph.level(run_id)
-        verdict = await pipeline.evaluate(
-            client,
-            run_id,
-            normalized_payload,
-            monitor_context=prepared.context,
+        # Only the server-owned demo trigger supplies this; never read it from event metadata.
+        verdict = (
+            Verdict(
+                level=Level(demo_level),
+                confidence=1.0,
+                intent="scripted_demo",
+                model="scripted-demo",
+            )
+            if demo_level is not None
+            else await pipeline.evaluate(
+                client,
+                run_id,
+                normalized_payload,
+                monitor_context=prepared.context,
+            )
         )
     finally:
         if owned:
@@ -103,7 +118,7 @@ async def ingest(
     node_id = node.id
 
     incident_level = int(assessment.gate.incident_level)
-    if not verdict.degraded and incident_level >= 1:
+    if incident_level >= 1:
         accepted = await dispatch_classified(run_id, incident_level, verdict.intent)
         if accepted is not None and accepted.planned_actions:
             graph.update(node_id, action_id=accepted.planned_actions[0].action_id)

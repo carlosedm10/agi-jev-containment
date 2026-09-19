@@ -16,6 +16,7 @@ from app.actions.pager import HappyRobotPager
 from app.actions.service import ActionService
 from app.config import settings
 from app.evals import trace_generator
+from app.evals.demo_chains import CHAINS, build_chain, chain_levels
 from app.runs import service as runs_service
 
 router = APIRouter()
@@ -91,9 +92,7 @@ async def dispatch_incident(
 ) -> DispatchResponse:
     accepted = await service.dispatch(incident_id, request)
     was_accepted = accepted is not None
-    response.status_code = (
-        status.HTTP_202_ACCEPTED if was_accepted else status.HTTP_200_OK
-    )
+    response.status_code = status.HTTP_202_ACCEPTED if was_accepted else status.HTTP_200_OK
     return DispatchResponse(
         accepted=was_accepted,
         state=service.get_state(incident_id),
@@ -130,33 +129,68 @@ class TriggerResponse(BaseModel):
     event_count: int
 
 
+@router.get("/scenarios")
+def scenarios() -> list[dict]:
+    return [
+        {
+            "id": key,
+            "title": title,
+            "steps": [step["content"] for step in steps],
+            "levels": chain_levels(key),
+            "simulation": True,
+        }
+        for key, (title, steps) in CHAINS.items()
+    ]
+
+
+# ponytail: process-local demo controls; use a shared job store for multiple API workers.
+_trigger_stops: dict[str, asyncio.Event] = {}
+
+
+@router.get("/trigger/{run_id}")
+async def trigger_status(run_id: str) -> dict[str, bool]:
+    return {"active": run_id in _trigger_stops}
+
+
+@router.post("/trigger/{run_id}/stop")
+async def stop_trigger(run_id: str) -> dict[str, bool]:
+    stop = _trigger_stops.get(run_id)
+    if stop is not None:
+        stop.set()
+    return {"active": stop is not None}
+
+
 @router.post("/trigger", response_model=TriggerResponse)
 async def trigger_run(
     body: TriggerRequest,
     background: BackgroundTasks,
 ) -> TriggerResponse:
-    scenario = body.scenario
-    if scenario is not None and scenario not in trace_generator._TRIGGERS:
+    scenario = body.scenario or "exfil"
+    if scenario not in CHAINS:
         raise HTTPException(status_code=400, detail=f"Unknown scenario: {scenario}")
 
     run_id = f"trigger-{uuid.uuid4().hex[:8]}"
-    events, *_ = trace_generator.build_run(
-        run_id,
-        agent_pool=[],
-        channel_pool=[],
-        derived_pool=[],
-        min_cover=5,
-        max_cover=8,
-        scenario=scenario,
-    )
+    events = build_chain(run_id, scenario)
+
+    stop = asyncio.Event()
+    _trigger_stops[run_id] = stop
 
     async def _ingest() -> None:
-        async with httpx.AsyncClient() as client:
-            for event in events:
-                trace_generator.normalize_event_payload(event)
-                await runs_service.ingest(run_id, event, client)
-                if body.delay_ms:
-                    await asyncio.sleep(body.delay_ms / 1000)
+        try:
+            async with httpx.AsyncClient() as client:
+                for event, level in zip(events, chain_levels(scenario), strict=True):
+                    if stop.is_set():
+                        break
+                    trace_generator.normalize_event_payload(event)
+                    await runs_service.ingest(run_id, event, client, demo_level=level)
+                    await get_action_service().wait_for_actions(run_id)
+                    if body.delay_ms:
+                        try:
+                            await asyncio.wait_for(stop.wait(), body.delay_ms / 1000)
+                        except TimeoutError:
+                            pass
+        finally:
+            _trigger_stops.pop(run_id, None)
 
     background.add_task(_ingest)
     return TriggerResponse(

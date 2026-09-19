@@ -8,7 +8,7 @@ import threading
 from collections import defaultdict
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,29 +19,31 @@ from app.graph.models import Node
 from app.graph.neo4j import ClassificationStep
 
 
-def _signature(
-    event: dict[str, Any] | None, run_id: str, seq: int
-) -> str:
+def _signature(event: dict[str, Any] | None, run_id: str, seq: int) -> str:
     """Stable action signature used to collapse repeated/related actions into one graph node.
 
-    We reuse a node only when the action is semantically specific: kind plus at
-    least one of tool, target, or args. Generic events (only a kind/event name)
-    fall back to a per-run sequence id so unrelated actions stay distinct and
-    legacy/unit-test appends keep stable ids.
+    We reuse a node when the action is semantically specific: kind plus at
+    least one of tool, target, args, or content. Including content lets
+    natural-language actions such as policy_decision or handoff collapse when
+    their text is identical, which greatly reduces the demo graph while keeping
+    unrelated actions distinct.
     """
     if isinstance(event, dict):
         kind = event.get("kind") or event.get("event")
         tool = event.get("tool")
         target = event.get("target") or event.get("path") or event.get("dst") or event.get("cmd")
         args = event.get("args")
-        if kind and (tool or target or args):
+        content = event.get("content")
+        has_content = isinstance(content, str) and content
+        if kind and (tool or target or args or has_content):
             key = json.dumps(
-                {"kind": kind, "tool": tool, "target": target, "args": args},
+                {"kind": kind, "tool": tool, "target": target, "args": args, "content": content},
                 sort_keys=True,
                 default=str,
             )
             return hashlib.sha256(key.encode()).hexdigest()[:12]
     return f"evt-{run_id}:{seq}"
+
 
 _UPDATABLE_FIELDS = frozenset({"level", "threshold", "intent", "event", "action_id"})
 
@@ -294,21 +296,28 @@ class ActionGraph:
                 self._signature_index[sig] = node
             else:
                 node = existing
+                if node.run_id is not None and node.run_id not in node.run_states:
+                    node.run_states[node.run_id] = _run_state(node)
                 node.run_ids.add(run_id)
                 node.visit_count += 1
+                prior = node.run_states.get(run_id, {})
+                node.run_id = run_id
                 node.event = event
-                if action_id is not None:
-                    node.action_id = action_id
-                if level_value > node.level:
-                    node.level = level_value
-                    node.intent = intent
-                    node.threshold = threshold
+                node.action_id = action_id
+                node.level = Level(max(level_value, prior.get("level", 0)))
+                node.intent = prior.get("intent") if prior.get("level", 0) > level_value else intent
+                node.threshold = (
+                    prior.get("threshold", threshold)
+                    if prior.get("level", 0) > level_value
+                    else threshold
+                )
                 if tail is not node:
                     self._safe_connect(tail, node)
                 self._register_event_id(node)
                 self._link_causal(node)
                 self._mark_upsert(node)
 
+            node.run_states[run_id] = _run_state(node)
             self._run_tails[run_id] = node
             self._run_visits[run_id].append(node.id)
             return node
@@ -325,7 +334,12 @@ class ActionGraph:
                 if node is None or node.id in seen:
                     continue
                 seen.add(node.id)
-                ordered.append(node)
+                state = node.run_states.get(run_id)
+                ordered.append(
+                    replace(node, run_id=run_id, **{**state, "level": Level(state["level"])})
+                    if state
+                    else node
+                )
             return ordered
 
     def key_nodes(self, run_id: str) -> list[Node]:
@@ -371,14 +385,12 @@ class ActionGraph:
             if node is None:
                 raise ValueError(f"node id does not exist: {node_id!r}")
             with self._batch():
-                old_event_id = (
-                    node.event.get("id") if isinstance(node.event, dict) else None
-                )
+                old_event_id = node.event.get("id") if isinstance(node.event, dict) else None
                 for name, value in fields.items():
                     setattr(node, name, value)
-                new_event_id = (
-                    node.event.get("id") if isinstance(node.event, dict) else None
-                )
+                if node.run_id in node.run_states:
+                    node.run_states[node.run_id] = _run_state(node)
+                new_event_id = node.event.get("id") if isinstance(node.event, dict) else None
                 if old_event_id != new_event_id:
                     if old_event_id is not None and self._event_index.get(old_event_id) is node:
                         del self._event_index[old_event_id]
@@ -440,6 +452,7 @@ class ActionGraph:
                     run_ids=run_ids,
                     visit_count=visit_count,
                     signature=row.get("signature"),
+                    run_states=row.get("run_states", {}),
                     level=Level(row.get("level", 0)),
                     intent=row.get("intent"),
                     event=row.get("event"),
@@ -536,6 +549,7 @@ def _node_payload(node: Node) -> dict[str, Any]:
         "event": node.event,
         "action_id": node.action_id,
         "created_at": node.created_at.isoformat() if node.created_at else None,
+        "run_states": {run_id: dict(state) for run_id, state in node.run_states.items()},
     }
 
 
@@ -553,6 +567,8 @@ def _node_row(node: Node) -> dict[str, Any]:
         row["visit_count"] = node.visit_count
     if node.signature is not None:
         row["signature"] = node.signature
+    if node.run_states:
+        row["run_states"] = node.run_states
     if node.level != Level.NONE:
         row["level"] = int(node.level)
     if node.intent is not None:
@@ -564,6 +580,16 @@ def _node_row(node: Node) -> dict[str, Any]:
     if node.created_at is not None:
         row["created_at"] = node.created_at.isoformat()
     return row
+
+
+def _run_state(node: Node) -> dict[str, Any]:
+    return {
+        "level": int(node.level),
+        "threshold": node.threshold,
+        "intent": node.intent,
+        "event": node.event,
+        "action_id": node.action_id,
+    }
 
 
 def _validate_threshold(threshold: float) -> float:

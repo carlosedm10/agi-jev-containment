@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import time
 from collections.abc import Callable
 from typing import Any
@@ -66,9 +67,27 @@ class HappyRobotPager:
         action_taken: str,
         transition: PagerTransition,
     ) -> None:
+        started = time.monotonic()
+        run_id = None
+        original_transition = transition
+
+        async def traced(status, detail=None, error_code=None, *, call_status=None):
+            context = f"elapsed_ms={round((time.monotonic() - started) * 1000)}"
+            if run_id:
+                context += f" provider_run_id={run_id}"
+            await original_transition(
+                status,
+                detail=f"{context} {detail or ''}".strip(),
+                error_code=error_code,
+                call_status=call_status,
+            )
+
+        transition = traced
         try:
             self._validate()
-            await transition("running", call_status="queued")
+            await transition(
+                "running", detail="stage=webhook_request attempt=1", call_status="queued"
+            )
             client = self._client or self._client_factory()
             owns_client = self._client is None
             try:
@@ -79,23 +98,25 @@ class HappyRobotPager:
                     intent or "critical agent activity",
                     action_taken or f"Escalated level {level} response",
                     0,
+                    transition,
                 )
-                result = await self._poll_call(client, run_id, transition)
-                await self._report_terminal(result, transition)
+                await transition("running", detail="stage=webhook_accepted", call_status="queued")
+                result, detail = await self._poll_call(client, run_id, transition)
+                await self._report_terminal(result, transition, detail)
             finally:
                 if owns_client:
                     await client.aclose()
         except PagerError as exc:
             await transition(
                 "failed",
-                detail=str(exc),
+                detail=f"stage=error {exc}",
                 error_code=exc.error_code,
                 call_status="failed",
             )
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             await transition(
                 "failed",
-                detail=str(exc),
+                detail=f"stage=error type={type(exc).__name__}",
                 error_code="happyrobot_error",
                 call_status="failed",
             )
@@ -126,7 +147,13 @@ class HappyRobotPager:
         intent: str,
         action_taken: str,
         call_attempt: int,
+        transition: PagerTransition,
     ) -> str:
+        from app.evals.demo_chains import observed_context
+        from app.runs import log
+
+        # ponytail: fixed demo chains have at most six steps; bounded recent tape for paging.
+        context = observed_context(log.tail(incident_id, 64))
         payload = {
             "tipo_emergencia": f"{intent} (level {level}, run {incident_id})",
             "pautas": voice_pautas(action_taken),
@@ -134,7 +161,8 @@ class HappyRobotPager:
             "nombre_contacto": self._name,
             "telefono": self._phone,
             "nodos": (
-                f"{(intent or 'actividad peligrosa').replace('_', ' ')}. "
+                (context + ". " if context else "")
+                + f"{(intent or 'actividad peligrosa').replace('_', ' ')}. "
                 f"Nivel {level}. {action_taken.rstrip('.')}."
             ),
         }
@@ -143,19 +171,14 @@ class HappyRobotPager:
             "POST",
             self._hook_url,
             json=payload,
+            transition=transition,
             request_headers={
-                "Idempotency-Key": self._idempotency_key(
-                    incident_id, level, call_attempt
-                )
+                "Idempotency-Key": self._idempotency_key(incident_id, level, call_attempt)
             },
         )
         body = response.json()
         data = body.get("data") if isinstance(body, dict) else None
-        run_id = (
-            body.get("run_id") or body.get("id")
-            if isinstance(body, dict)
-            else None
-        )
+        run_id = body.get("run_id") or body.get("id") if isinstance(body, dict) else None
         if not run_id and isinstance(data, dict):
             run_id = data.get("run_id") or data.get("id")
         if not run_id:
@@ -167,10 +190,12 @@ class HappyRobotPager:
         client: httpx.AsyncClient,
         run_id: str,
         transition: PagerTransition,
-    ) -> CallResult:
+    ) -> tuple[CallResult, str]:
         deadline = time.monotonic() + self._poll_timeout
         previous_status = "queued"
+        poll = 0
         while time.monotonic() < deadline:
+            poll += 1
             run = self._data(
                 (await self._request(client, "GET", f"{self._api_base}/runs/{run_id}")).json()
             )
@@ -184,15 +209,34 @@ class HappyRobotPager:
             sessions = self._items(sessions_payload)
             session = sessions[0] if sessions else None
             result = map_call(run, session, output)
+            evidence = {
+                "stage": "call_state",
+                "poll": poll,
+                "run_status": run.get("status"),
+                "call_status": result.call_status,
+            }
+            for key in (
+                "id",
+                "session_id",
+                "status",
+                "duration",
+                "sip_code",
+                "call_end_event",
+                "call_connected_at",
+            ):
+                value = (output or {}).get(key, (session or {}).get(key))
+                if isinstance(value, (str, int, float, bool)):
+                    evidence[f"call_{key}" if key in {"id", "status"} else key] = value
+            detail = json.dumps(evidence, separators=(",", ":"))
             if result.call_status in {"queued", "ringing", "answered"}:
                 if result.call_status != previous_status:
-                    await transition("running", call_status=result.call_status)
+                    await transition("running", detail=detail, call_status=result.call_status)
                     previous_status = result.call_status
                 if self._poll_interval:
                     await asyncio.sleep(self._poll_interval)
                 continue
-            return result
-        raise PagerError("HappyRobot call polling timed out", "pager_timeout")
+            return result, detail
+        raise PagerError(f"HappyRobot call polling timed out after {poll} polls", "pager_timeout")
 
     async def _call_output(
         self,
@@ -230,6 +274,7 @@ class HappyRobotPager:
         method: str,
         url: str,
         request_headers: dict[str, str] | None = None,
+        transition: PagerTransition | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
         headers = {
@@ -241,6 +286,12 @@ class HappyRobotPager:
             response = await client.request(method, url, headers=headers, **kwargs)
             if response.status_code < 500 or attempt == 1:
                 break
+            if transition is not None:
+                await transition(
+                    "running",
+                    detail=f"stage=webhook_retry http_status={response.status_code} attempt=2",
+                    call_status="queued",
+                )
         if response.status_code >= 500:
             raise PagerError(
                 f"HappyRobot returned HTTP {response.status_code}",
@@ -259,15 +310,18 @@ class HappyRobotPager:
         return hashlib.sha256(material).hexdigest()
 
     @staticmethod
-    async def _report_terminal(result: CallResult, transition: PagerTransition) -> None:
+    async def _report_terminal(
+        result: CallResult, transition: PagerTransition, detail: str
+    ) -> None:
         if result.call_status == "hung_up":
-            await transition("ok", call_status="hung_up")
+            await transition("ok", detail=detail, call_status="hung_up")
             return
         error_code = result.error_code or (
             "no_pickup" if result.call_status == "no_pickup" else "happyrobot_call_failed"
         )
         await transition(
             "failed",
+            detail=detail,
             error_code=error_code,
             call_status=result.call_status,
         )

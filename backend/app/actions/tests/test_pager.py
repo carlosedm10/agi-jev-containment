@@ -147,10 +147,7 @@ class HappyRobotStub:
             status = self.hook_statuses[min(self.hook_calls - 1, len(self.hook_statuses) - 1)]
             if status != 200:
                 return httpx.Response(status, json={"error": "temporary"})
-            successful_calls = sum(
-                item == 200
-                for item in self.hook_statuses[: self.hook_calls]
-            )
+            successful_calls = sum(item == 200 for item in self.hook_statuses[: self.hook_calls])
             body = self.hook_body or {"data": {"run_id": f"run-{successful_calls}"}}
             return httpx.Response(200, json=body)
 
@@ -184,6 +181,7 @@ async def run_pager(
     poll_timeout: float = 1,
     intent: str = "sandbox_escape",
     action_taken: str = "Contained all live runs",
+    trace_details: list[str] | None = None,
 ) -> list[tuple[str, str | None, str | None]]:
     transitions: list[tuple[str, str | None, str | None]] = []
 
@@ -195,6 +193,8 @@ async def run_pager(
         call_status: str | None = None,
     ) -> None:
         transitions.append((status, call_status, error_code))
+        if trace_details is not None and detail is not None:
+            trace_details.append(detail)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(stub))
     pager = HappyRobotPager(
@@ -222,18 +222,20 @@ async def run_pager(
 
 def answered_then_hung_up_stub() -> HappyRobotStub:
     return HappyRobotStub(
-        [[
-            (
-                {"status": "running"},
-                {"status": "active", "call_connected_at": "now"},
-                None,
-            ),
-            (
-                {"status": "completed"},
-                {"status": "completed", "call_connected_at": "now"},
-                None,
-            ),
-        ]]
+        [
+            [
+                (
+                    {"status": "running"},
+                    {"status": "active", "call_connected_at": "now"},
+                    None,
+                ),
+                (
+                    {"status": "completed"},
+                    {"status": "completed", "call_connected_at": "now"},
+                    None,
+                ),
+            ]
+        ]
     )
 
 
@@ -262,9 +264,28 @@ async def test_reports_answered_then_hung_up():
 
     assert transitions == [
         ("running", "queued", None),
+        ("running", "queued", None),
         ("running", "answered", None),
         ("ok", "hung_up", None),
     ]
+
+
+async def test_call_payload_uses_only_recorded_chain_steps(tmp_path, monkeypatch):
+    from app.evals.demo_chains import build_chain
+    from app.events import normalize_event
+    from app.runs import log
+
+    monkeypatch.setattr("app.runs.log.settings.run_log_dir", str(tmp_path))
+    for event in build_chain("incident-1", "exfil")[:4]:
+        log.append_event(normalize_event("incident-1", event))
+    stub = answered_then_hung_up_stub()
+    await run_pager(stub)
+    context = stub.payloads[0]["nodos"]
+    assert "Quote context leak" in context
+    assert "CHI-DAL quote stays in draft. No rate write." in context
+    assert "4. Read credentials" in context
+    assert "5." not in context
+    assert "external endpoint" not in context
 
 
 async def test_retries_webhook_once_after_5xx():
@@ -331,7 +352,54 @@ async def test_exhausted_webhook_5xx_reports_specific_failure():
     transitions = await run_pager(stub)
 
     assert stub.hook_calls == 2
-    assert transitions == [("running", "queued", None), ("failed", "failed", "happyrobot_5xx")]
+    assert transitions == [
+        ("running", "queued", None),
+        ("running", "queued", None),
+        ("failed", "failed", "happyrobot_5xx"),
+    ]
+
+
+async def test_call_trace_includes_retry_provider_id_timing_and_terminal_evidence():
+    stub = HappyRobotStub(
+        [
+            [
+                (
+                    {"status": "running"},
+                    {"id": "session-1", "status": "active", "call_connected_at": "now"},
+                    None,
+                ),
+                (
+                    {"status": "completed"},
+                    {
+                        "id": "session-1",
+                        "duration": 12,
+                        "call_connected_at": "now",
+                        "sip_code": 200,
+                    },
+                    None,
+                ),
+            ]
+        ],
+        hook_statuses=[503, 200],
+    )
+    details = []
+    await run_pager(stub, trace_details=details)
+    trace = "\n".join(details)
+    for expected in [
+        "stage=webhook_request",
+        "stage=webhook_retry",
+        "http_status=503",
+        "stage=webhook_accepted",
+        "provider_run_id=run-1",
+        "elapsed_ms=",
+        "session-1",
+        '"duration":12',
+        '"sip_code":200',
+        '"call_status":"hung_up"',
+    ]:
+        assert expected in trace
+    for private in ["secret", "+34600000000", "/hooks/page", "Authorization"]:
+        assert private not in trace
 
 
 async def test_polling_timeout_reports_specific_failure():
@@ -352,9 +420,7 @@ async def test_missing_run_id_reports_specific_failure():
 
 
 async def test_l5_payload_keeps_level_and_uses_defensive_fallbacks():
-    stub = HappyRobotStub(
-        [[({"status": "completed"}, {"failure_reason": "invalid number"}, None)]]
-    )
+    stub = HappyRobotStub([[({"status": "completed"}, {"failure_reason": "invalid number"}, None)]])
 
     await run_pager(stub, level=5, intent="", action_taken="")
 
@@ -372,9 +438,7 @@ def test_pager_watch_imports_under_system_python_without_backend_package():
     host_repo_root = Path(__file__).resolve().parents[4]
     script = host_repo_root / "scripts" / "pager_watch.py"
     if not script.is_file():
-        pytest.skip(
-            f"host-only smoke: repo script is unavailable at {script}"
-        )
+        pytest.skip(f"host-only smoke: repo script is unavailable at {script}")
 
     result = subprocess.run(
         [str(system_python), str(script), "--help"],

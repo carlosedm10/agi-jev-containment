@@ -96,6 +96,7 @@ def populate(
     derived_pool: list[str] = []
     agent_pool: list[str] = []
     channel_pool: list[str] = []
+    signature_pool: set[tuple[Any, ...]] = set()
 
     created: list[str] = []
     event_count = 0
@@ -111,6 +112,7 @@ def populate(
             min_cover,
             max_cover,
             scenario=scenario,
+            signature_pool=signature_pool,
         )
 
         final_level = 0
