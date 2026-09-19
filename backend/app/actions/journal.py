@@ -93,6 +93,16 @@ class ActionJournal:
             if pager_actions
             else "idle"
         )
+        latest_pager = (
+            max(pager_actions, key=lambda action: action.timestamp)
+            if pager_actions
+            else None
+        )
+        call_status = (
+            latest_pager.call_status
+            if latest_pager is not None and latest_pager.call_status is not None
+            else "idle"
+        )
         updated_at = max((record.timestamp for record in [*records, *recovered]), default=None)
         return IncidentActionState(
             incident_id=incident_id,
@@ -100,6 +110,7 @@ class ActionJournal:
             rows=rows,
             actions=actions,
             pager_status=pager_status,
+            call_status=call_status,
             updated_at=updated_at,
         )
 
@@ -153,6 +164,7 @@ class ActionJournal:
                     status="failed",
                     detail="Backend restarted before the action completed.",
                     error_code="interrupted",
+                    call_status="failed" if planned.is_pager else None,
                 )
                 latest[planned.action_id] = transition
                 recovered.append(transition)
