@@ -154,7 +154,7 @@
 }
 
 .dashboard-grid {
-  height: max(650px, calc(100dvh - 32px));
+  height: max(650px, calc(100dvh - 96px));
 }
 
 @media (max-width: 1023px) {
