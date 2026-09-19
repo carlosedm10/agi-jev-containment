@@ -3,6 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import App from "@/App";
+import { DEMO_INTERVAL, useDemo } from "@/dashboard/demo";
 import { FakeEventSource } from "@/graph/fake-event-source";
 import {
   RECONNECT_DELAY_MS,
@@ -151,18 +152,96 @@ describe("useGraphStream", () => {
 });
 
 describe("App", () => {
-  test("streams the graph without painting anything", () => {
+  test("renders a mock dashboard without opening the backend stream", () => {
     mount(<App />);
-    emit("snapshot", { revision: 1, root: "root", nodes: [node("root")] });
-    emit("update", {
-      revision: 2,
-      root: "root",
-      upsert_nodes: [node("r1:1", ["root"])],
-      removed_node_ids: [],
-    });
+    expect(FakeEventSource.instances).toHaveLength(0);
+    expect(container.textContent).toContain("Agent activity");
+    expect(container.textContent).toContain("Protective actions");
+    expect(container.textContent).toContain("Container logs");
+    expect(container.textContent).not.toContain("Eyes on every action");
+    expect(container.textContent).not.toContain("Follow live");
+    expect(container.textContent).not.toContain(
+      "Links show activity associations",
+    );
+    expect(container.querySelector('[aria-label="Graph legend"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Session summary"]'),
+    ).toBeNull();
+    expect(container.querySelector('input[type="search"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Filter container logs"]'),
+    ).toBeNull();
+    expect(container.querySelector('[aria-label="Replay demo"]')).toBeNull();
+    const headers = Array.from(
+      container.querySelectorAll("header h2"),
+      (header) => header.textContent?.trim(),
+    );
+    expect(headers).toEqual([
+      "Agent activity",
+      "Protective actions",
+      "Container logs",
+    ]);
+    const node = container.querySelector<HTMLDivElement>(
+      '.react-flow__node[data-id="atlas:3"]',
+    )!;
+    expect(node.style.pointerEvents).toBe("all");
+    act(() => node.click());
+    expect(
+      container.querySelector('[aria-label="Selected action analysis"]')
+        ?.textContent,
+    ).toContain("Repeated boundary probing");
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Close analysis"]')!
+        .click(),
+    );
+    expect(
+      container.querySelector('[aria-label="Selected action analysis"]'),
+    ).toBeNull();
+  });
 
-    expect(FakeEventSource.last.url).toBe(STREAM_URL);
-    expect(container.innerHTML).toBe("");
-    expect(document.body.textContent).toBe("");
+  test("restarts the test run and clears old activity and selection", () => {
+    mount(<App />);
+    act(() =>
+      container
+        .querySelector<HTMLDivElement>('.react-flow__node[data-id="atlas:3"]')!
+        .click(),
+    );
+    expect(
+      container.querySelector('[aria-label="Selected action analysis"]'),
+    ).not.toBeNull();
+    const restart = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Restart test run"]',
+    );
+    expect(restart).not.toBeNull();
+    act(() => restart!.click());
+    expect(container.querySelectorAll(".react-flow__node")).toHaveLength(3);
+    expect(
+      container.querySelector('[aria-label="Selected action analysis"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Protective actions"]')?.textContent,
+    ).toContain("Waiting for Jev");
+    expect(
+      container.querySelector('[aria-label="Container logs"]')?.textContent,
+    ).not.toContain("Boundary probing detected");
+    expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
+  test("automatically adds pending activity without playback controls", async () => {
+    let frame: ReturnType<typeof useDemo> | undefined;
+    function DemoProbe() {
+      frame = useDemo();
+      return null;
+    }
+    mount(<DemoProbe />);
+    expect(frame?.graph.nodes.size).toBe(7);
+    expect(frame?.pending).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, DEMO_INTERVAL + 100));
+    });
+    expect(frame?.graph.nodes.size).toBe(7);
+    expect(frame?.pending?.id).toBe("scout:2");
+    expect(FakeEventSource.instances).toHaveLength(0);
   });
 });
