@@ -43,7 +43,7 @@ make build/up → compose → uvicorn (reload) + bun dev + postgres
               → Alembic uses DATABASE_URL on the compose hostname
 ```
 
-GitHub Actions copies `.env_template` to `.env`, then calls Make targets for build, lint, tests and the live `monitor-eval`; `TYPESAFE_API_KEY` comes from GitHub Secrets.
+GitHub Actions copies `.env_template` to `.env`, then `make build`, `make lint`, and `make test`. Live Jev (`make monitor-eval`) stays a local command: GitHub runners cannot reach TypeSafe reliably, so it is not a required check.
 
 ### The principles that matter
 
@@ -91,7 +91,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **There are two graph representations during migration**: the ActionGraph used by classification is an undirected in-memory chain isolated by `run_id`; the persistent Neo4j monitoring graph is directed (`HAS_EVENT`, `NEXT`, causal and entity edges) and is the source intended for visualization.
 - **The tape and the graphs are different things**: JSONL keeps each normalized event for short-term context, replay and recovery; the ActionGraph keeps classified chain nodes for Jev; Neo4j keeps the persistent directed event/entity/assessment graph. Their exact frontend boundary is [RealtimeGraphAPI.md](RealtimeGraphAPI.md).
 - **Frontend tests are DOM tests, not typechecks**: `bun test` mounts the hook in happy-dom against a fake `EventSource` — it proves snapshots and updates are applied, that a revision gap reconnects, and that the page stays blank. `bun run lint` (`tsc --noEmit`) still owns typechecking; `make test` no longer just re-runs it.
-- **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty).
+- **Tests are offline**: every unit test drives clients through `httpx.MockTransport`, so `make test` passes with no API keys. `make monitor-eval` is the local live Jev runner; CI does not call it.
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
 - **L4/L5 paging is designed as parallel notification, not authorization**: the dispatcher records `page_oncall` beside containment actions, but execution is still pending. A missing pager integration must never block infrastructure containment.
 

@@ -32,11 +32,7 @@ class CompactMarkovModel:
                     max(elevated, 1) if next_maximum >= 2 else 0,
                 )
                 targets[next_band] = targets.get(next_band, 0.0) + band_advance
-                next_breadth = (
-                    (maximum, min(6, elevated + 1))
-                    if maximum >= 2
-                    else state
-                )
+                next_breadth = (maximum, min(6, elevated + 1)) if maximum >= 2 else state
                 targets[next_breadth] = targets.get(next_breadth, 0.0) + breadth_advance
                 used = sum(targets.values())
                 targets[state] = targets.get(state, 0.0) + max(0.0, 1.0 - used)

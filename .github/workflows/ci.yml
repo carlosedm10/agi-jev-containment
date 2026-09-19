@@ -23,7 +23,6 @@ env:
   # builds fall back to a local cache dir configured in compose.yaml).
   CACHE_FROM: type=gha
   CACHE_TO: type=gha,mode=max
-  TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
 
 jobs:
   ci:
@@ -49,6 +48,3 @@ jobs:
 
       - name: Test
         run: make test
-
-      - name: Live monitor regression
-        run: make monitor-eval

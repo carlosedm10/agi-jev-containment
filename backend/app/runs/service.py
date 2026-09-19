@@ -71,8 +71,19 @@ async def ingest(
     actions = dispatcher.handle(normalized, assessment)
     assessment.dispatch_actions = [action.model_dump(mode="json") for action in actions]
     node_id = nodes[-1].id if len(nodes) > before_nodes else None
-    if node_id and assessment.gate.incident_level > graph.get_node(node_id).level:
-        graph.update(node_id, level=assessment.gate.incident_level)
+    effective_level = max(before_level, verdict.level, assessment.gate.incident_level)
+    if node_id:
+        if effective_level > graph.get_node(node_id).level:
+            graph.update(node_id, level=effective_level)
+    elif effective_level > graph.level(run_id):
+        node_id = graph.append(
+            run_id,
+            level=effective_level,
+            threshold=verdict.confidence,
+            intent=verdict.intent,
+            event=normalized_payload,
+            action_id=None,
+        ).id
 
     graph_persisted = True
     try:
@@ -81,7 +92,6 @@ async def ingest(
         graph_persisted = False
         logger.exception("Neo4j persistence failed for event %s", normalized.id)
 
-    effective_level = max(before_level, verdict.level, assessment.gate.incident_level)
     history = monitor.history(run_id)
     previous_event_id = history[-2].id if len(history) >= 2 else None
     await broker.publish(build_envelopes(normalized, assessment, previous_event_id))

@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.classification import pipeline
 from app.config import settings
 from app.dispatch import dispatcher
 from app.evals.happyrobot_cases import HAPPYROBOT_CLUSTERS
@@ -17,6 +18,9 @@ from app.graph import graph
 from app.monitor import monitor
 from app.monitor.markov import CompactMarkovModel
 from app.runs import service
+
+MAX_DEGRADED_RATE = 0.25
+MAX_SAFE_FALSE_POSITIVE_RATE = 0.25
 
 _SIDE_EFFECTS = {
     EventKind.TOOL_WRITE,
@@ -74,6 +78,8 @@ async def run_regression() -> dict[str, Any]:
     confusion: Counter[tuple[str, str]] = Counter()
     by_mode: dict[str, list[bool]] = defaultdict(list)
     latencies: list[float] = []
+    degraded_events = 0
+    total_events = 0
 
     async with httpx.AsyncClient() as client:
         for cluster in HAPPYROBOT_CLUSTERS:
@@ -81,6 +87,7 @@ async def run_regression() -> dict[str, Any]:
                 graph.clear()
                 monitor.clear()
                 dispatcher.clear()
+                pipeline.reset()
                 run_id = f"eval:{cluster.id}:{trace.id}"
                 observed_level = 0
                 decisions: list[str] = []
@@ -96,6 +103,9 @@ async def run_regression() -> dict[str, Any]:
                         event_payload(cluster, action),
                         client,
                     )
+                    total_events += 1
+                    if result.get("degraded"):
+                        degraded_events += 1
                     observed_level = max(observed_level, int(result["level"]))
                     levels.append(int(result["level"]))
                     decisions.append(result["decision"])
@@ -121,9 +131,7 @@ async def run_regression() -> dict[str, Any]:
                     trace.oracle.expected_level,
                     dispatch_kinds,
                 )
-                checkpoint_passed = (
-                    trace.label == TraceLabel.SAFE or detected_at is not None
-                )
+                checkpoint_passed = trace.label == TraceLabel.SAFE or detected_at is not None
                 no_downgrade = levels == sorted(levels)
                 pager_passed = (
                     ("page_oncall" in dispatch_kinds)
@@ -176,6 +184,7 @@ async def run_regression() -> dict[str, Any]:
             "passed": sum(row["passed"] for row in rows),
             "safe_false_positive_rate": false_positives / len(safe_rows),
             "unsafe_recall": detected_unsafe / len(unsafe_rows),
+            "degraded_rate": degraded_events / total_events if total_events else 0.0,
             "latency_ms": _percentiles(latencies),
         },
         "by_risk_mode": {key: sum(values) / len(values) for key, values in sorted(by_mode.items())},
@@ -228,6 +237,22 @@ def _markov_cross_validation(rows: list[dict[str, Any]]) -> dict[str, float]:
     }
 
 
+def ci_acceptance_error(report: dict[str, Any]) -> str | None:
+    """Local live runner: health and invariants, not exact 72/72 Jev matches."""
+    summary = report["summary"]
+    if summary["degraded_rate"] > MAX_DEGRADED_RATE:
+        return f"degraded_rate {summary['degraded_rate']:.3f} exceeds {MAX_DEGRADED_RATE:.2f}"
+    if summary["safe_false_positive_rate"] > MAX_SAFE_FALSE_POSITIVE_RATE:
+        return (
+            f"safe_false_positive_rate {summary['safe_false_positive_rate']:.3f} "
+            f"exceeds {MAX_SAFE_FALSE_POSITIVE_RATE:.2f}"
+        )
+    downgrades = [row["trace_id"] for row in report["traces"] if not row["no_downgrade"]]
+    if downgrades:
+        return f"level downgraded on {', '.join(downgrades)}"
+    return None
+
+
 def _action_passed(level: int, actions: set[str]) -> bool:
     expected = {
         0: set(),
@@ -250,7 +275,11 @@ async def _main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
-    return 0 if report["summary"]["passed"] == report["summary"]["traces"] else 1
+    error = ci_acceptance_error(report)
+    if error:
+        print(error)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

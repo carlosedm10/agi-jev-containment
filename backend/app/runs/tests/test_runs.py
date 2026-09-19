@@ -164,6 +164,23 @@ class TestPostEvents:
         assert body["node_id"] is None
         assert (tape_dir / "demo.jsonl").exists()
 
+    async def test_sentinel_elevation_sticks_when_jev_is_degraded(
+        self, client: AsyncClient, fresh, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "typesafe_api_key", "")
+
+        first = await client.post(
+            "/api/runs/demo/events",
+            json={"event": "tool_write", "tool": "forge_payment"},
+        )
+        second = await client.post("/api/runs/demo/events", json={"event": "file_read"})
+
+        assert first.json()["degraded"] is True
+        assert first.json()["level"] == 3
+        assert second.json()["degraded"] is True
+        assert second.json()["level"] == 3
+        assert graph.level("demo") == Level.SEVERE
+
     async def test_malformed_body_without_event_is_422(self, client: AsyncClient, fresh):
         response = await client.post("/api/runs/demo/events", json={"path": "/app/.env"})
 

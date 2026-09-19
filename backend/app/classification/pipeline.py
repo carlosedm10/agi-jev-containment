@@ -11,6 +11,10 @@ from app.config import settings
 _UNSURE_STREAKS: dict[str, int] = {}
 
 
+def reset() -> None:
+    _UNSURE_STREAKS.clear()
+
+
 async def evaluate(
     client: httpx.AsyncClient,
     run_id: str,

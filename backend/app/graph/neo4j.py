@@ -192,6 +192,12 @@ class Neo4jGraphStore:
                     source_id=source_id,
                 )
 
+    async def _run_exists(self, run_id: str) -> bool:
+        query = "MATCH (run:Run {id: $run_id}) RETURN run.id AS id"
+        async with self._get_driver().session(database=settings.neo4j_database) as session:
+            result = await session.run(query, run_id=run_id)
+            return await result.single() is not None
+
     async def timeline(self, run_id: str) -> list[dict[str, Any]]:
         if not self.enabled:
             return []
@@ -208,6 +214,8 @@ class Neo4jGraphStore:
     async def restore_monitor_state(
         self, run_id: str, limit: int = 100
     ) -> tuple[list[MonitorEvent], DriftState | None]:
+        if not await self._run_exists(run_id):
+            return [], None
         rows = await self.timeline(run_id)
         recent = rows[-limit:]
         events: list[MonitorEvent] = []
