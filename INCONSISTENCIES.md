@@ -9,9 +9,7 @@ Tracked flaws that are knowingly left in place. Resolve an entry by fixing it, t
 ## Referenced but never written
 
 - [docs/Actions.md](docs/Actions.md) references containment scripts that do not exist in this repo: `scripts/contain.sh`, `scripts/cut-egress.sh`, `scripts/kill-swarm.sh`.
-- [docs/Actions.md](docs/Actions.md) references `compose.agents.yaml` (the agent-side compose that would run on `agentnet`) — never written.
-- No `agentnet` network exists; the product compose stack only defines `appnet_hackspain`. The L4 playbook's "cut agentnet egress" has no local target yet.
-- [docs/scenarios.md](docs/scenarios.md) references pieces that do not exist: the `agent` harness (6 tools, JSONL stdout), `scripts/collect.sh`, `egress-proxy` (Squid + per-run tokens), `egressnet`, `victim-agent`, `customers-db`, and `docker-lure`.
+- [docs/scenarios.md](docs/scenarios.md) references pieces that do not exist: `victim-agent`, `customers-db`, and `docker-lure` services; the dispatcher that maps `actionable_level` to a playbook.
 
 ## Not built
 

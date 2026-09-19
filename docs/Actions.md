@@ -31,7 +31,7 @@ Contract between [Agent Monitoring](AgentMonitoring.md) (capture), the [Action G
 ```
 sandbox events (host-side JSONL, always complete)
         → jev(short-term recent nodes ∥ long-term key-node history)
-        → if level ≥ 1: materialize / update graph node
+        → materialize a graph node per action (level ≥ 1 = key node)
         → discrete level 1–5 for the run
         → dispatcher runs the matching playbook
         → graph node records {level, score, intent, action_id}

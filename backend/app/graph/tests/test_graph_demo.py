@@ -22,13 +22,13 @@ from app.runs import service
 # Scripted jev verdicts per run: one choice string per posted event, in order.
 SCRIPT: dict[str, list[str]] = {
     "attack-sim": [
-        "level_0_benign",  # ls -la              -> nothing materialized (JSONL only)
-        "level_1_mild",    # file_read .env      -> attack-sim:1
-        "level_3_severe",  # curl | sh           -> attack-sim:2
-        "level_5_catastrophic",  # rm -rf /      -> attack-sim:3
+        "level_0_benign",  # ls -la              -> attack-sim:1 (Level.NONE, not a key node)
+        "level_1_mild",    # file_read .env      -> attack-sim:2
+        "level_3_severe",  # curl | sh           -> attack-sim:3
+        "level_5_catastrophic",  # rm -rf /      -> attack-sim:4
     ],
     "benign-scan": [
-        "level_0_benign",  # whole run stays out of the graph
+        "level_0_benign",  # Level.NONE nodes — recorded, not flagged
         "level_0_benign",
     ],
 }
@@ -90,7 +90,7 @@ def _dump(node: Any, prefix: str = "", is_last: bool = True, is_root: bool = Tru
     else:
         branch = "└── " if is_last else "├── "
         label = f"{node.id}"
-        if node.run_id and node.level == Level.NONE:
+        if node.id.startswith("run:"):
             label += "  <run node>  (structural only)"
         else:
             ev = str(node.event.get("cmd") or node.event.get("path") or "?") if node.event else "-"
@@ -126,7 +126,7 @@ class TestGraphDemo:
             for event in events:
                 response = await client.post(f"/api/runs/{run_id}/events", json=event)
                 body = response.json()
-                tag = "node appended" if body["node_id"] else "JSONL only (benign)"
+                tag = "key node" if body["level"] >= 1 else "L0 node"
                 print(
                     f"  POST {run_id:<12} {str(event.get('cmd') or event.get('path'))!r:<38}"
                     f" -> level={body['level']} node_id={body['node_id']}  [{tag}]"
@@ -151,10 +151,15 @@ class TestGraphDemo:
 
         # Assertions: the demo is also a real test.
         assert [n.id for n in graph.key_nodes("attack-sim")] == [
-            "attack-sim:1",
             "attack-sim:2",
             "attack-sim:3",
+            "attack-sim:4",
         ]
         assert graph.level("attack-sim") == Level.CATASTROPHIC
         assert graph.key_nodes("benign-scan") == []
+        assert [n.id for n in graph.run_nodes("benign-scan")] == [
+            "run:benign-scan",
+            "benign-scan:1",
+            "benign-scan:2",
+        ]
         assert graph.level("benign-scan") == Level.NONE

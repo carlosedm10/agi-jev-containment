@@ -3,6 +3,8 @@
 .env.local
 .env.*.local
 .local/
+# Bait file for the agent sandbox — planted fake secrets, tracked on purpose.
+!agent/workspace/.env
 
 # Python
 __pycache__/

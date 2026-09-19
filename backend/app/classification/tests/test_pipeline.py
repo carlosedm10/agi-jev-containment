@@ -146,12 +146,15 @@ async def test_unsure_streak_does_not_leak_across_runs(monkeypatch):
     assert second.watcher_calls == []
 
 
-async def test_level_0_materializes_no_node():
+async def test_level_0_materializes_l0_node_not_key_node():
     ac = _routed_client([_answer("level_0_benign", confidence=0.99)], [_watcher_reply()])
     verdict = await evaluate(ac, "r1", EVENT)
     assert verdict.level == Level.NONE
     assert ac.watcher_calls == []
-    assert _event_nodes("r1") == []
+    nodes = _event_nodes("r1")
+    assert len(nodes) == 1
+    assert nodes[0].level == Level.NONE
+    assert graph.key_nodes("r1") == []
 
 
 async def test_state_carries_documented_shape_and_prior_level():
