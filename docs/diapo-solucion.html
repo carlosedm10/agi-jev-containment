@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>La solución propuesta</title>
+  <style>
+    :root {
+      --bg: #f3f1eb;
+      --tile: #e3e1db;
+      --ink: #1a1a1a;
+      --muted: #6a6a6a;
+      --box: #45423d;
+      --box-text: #f6f4ef;
+      --panel: #f4f1d4;
+      --chip: #e6e4de;
+      --chip-line: #7aa7d9;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #d8d6d0;
+    }
+    .stage {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+    .slide {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 1920px;
+      height: 1080px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", Helvetica, sans-serif;
+      transform-origin: center center;
+    }
+    .tile {
+      position: absolute;
+      width: 138px;
+      height: 138px;
+      background: var(--tile);
+    }
+    .t1 { left: 0; top: 0; }
+    .t2 { right: 0; top: 0; }
+    .t3 { left: 0; top: 276px; }
+    .t4 { left: 0; bottom: 0; }
+    .t5 { left: 276px; bottom: 0; }
+    .t6 { left: 690px; bottom: 0; }
+    h1 {
+      position: absolute;
+      left: 122px;
+      top: 86px;
+      margin: 0;
+      width: 760px;
+      font-size: 58px;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+    }
+    ul {
+      position: absolute;
+      left: 158px;
+      top: 340px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      width: 520px;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+    li { margin: 0 0 34px; padding-left: 34px; position: relative; }
+    li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 13px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--ink);
+    }
+    .chips {
+      position: absolute;
+      left: 28px;
+      bottom: 52px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-end;
+      z-index: 2;
+    }
+    .chip {
+      width: 148px;
+      padding: 12px 8px;
+      background: var(--chip);
+      color: var(--muted);
+      font-size: 20px;
+      text-align: center;
+    }
+    .chip.on {
+      background: var(--bg);
+      color: var(--ink);
+      outline: 2px solid var(--chip-line);
+    }
+    .diagram {
+      position: absolute;
+      left: 900px;
+      top: 40px;
+      width: 960px;
+      height: 900px;
+      background: var(--panel);
+    }
+    svg { width: 100%; height: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="slide" id="slide" role="img" aria-label="La solución propuesta">
+      <div class="tile t1"></div>
+      <div class="tile t2"></div>
+      <div class="tile t3"></div>
+      <div class="tile t4"></div>
+      <div class="tile t5"></div>
+      <div class="tile t6"></div>
+      <h1>La solución propuesta</h1>
+      <ul>
+        <li>El grafo</li>
+        <li>Los dos tipos de memoria</li>
+        <li>El clasificador y el scoring</li>
+      </ul>
+      <div class="chips">
+        <span class="chip">Neo4j</span>
+        <span class="chip">Jev</span>
+        <span class="chip">Helmcode</span>
+        <span class="chip">Docker</span>
+        <span class="chip on">HappyRobot</span>
+      </div>
+      <div class="diagram">
+        <svg viewBox="0 0 960 968" fill="none">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+            </marker>
+          </defs>
+          <g font-family="Avenir Next, Segoe UI, Helvetica, sans-serif">
+            <rect x="310" y="36" width="340" height="58" fill="#45423d"/>
+            <text x="480" y="74" text-anchor="middle" fill="#f6f4ef" font-size="26">Agent request</text>
+
+            <path d="M 480 94 V 128 H 210 V 154" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+            <path d="M 480 128 H 750 V 154" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+
+            <rect x="70" y="158" width="280" height="86" fill="#45423d"/>
+            <text x="210" y="196" text-anchor="middle" fill="#f6f4ef" font-size="24">SafetyDrift</text>
+            <text x="210" y="224" text-anchor="middle" fill="#f6f4ef" font-size="18">(short term)</text>
+
+            <rect x="610" y="158" width="280" height="86" fill="#45423d"/>
+            <text x="750" y="196" text-anchor="middle" fill="#f6f4ef" font-size="24">Sentinel</text>
+            <text x="750" y="224" text-anchor="middle" fill="#f6f4ef" font-size="18">(long term)</text>
+
+            <path d="M 210 244 V 280 H 480 V 306" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+            <path d="M 750 244 V 280 H 480" stroke="#1a1a1a" stroke-width="1.8"/>
+
+            <rect x="270" y="310" width="420" height="58" fill="#45423d"/>
+            <text x="480" y="348" text-anchor="middle" fill="#f6f4ef" font-size="26">Jev + gate</text>
+
+            <path d="M 480 368 V 400" stroke="#1a1a1a" stroke-width="1.8"/>
+            <path d="M 176 400 H 784" stroke="#1a1a1a" stroke-width="1.8"/>
+            <path d="M 176 400 V 424" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+            <path d="M 328 400 V 424" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+            <path d="M 480 400 V 424" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+            <path d="M 632 400 V 424" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+            <path d="M 784 400 V 424" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+
+            <rect x="150" y="428" width="52" height="40" fill="#fffdf2" stroke="#d9d4c2"/>
+            <text x="176" y="454" text-anchor="middle" fill="#1a1a1a" font-size="16">L1</text>
+            <rect x="302" y="428" width="52" height="40" fill="#f6efc4" stroke="#e3d9a6"/>
+            <text x="328" y="454" text-anchor="middle" fill="#1a1a1a" font-size="16">L2</text>
+            <rect x="454" y="428" width="52" height="40" fill="#efd15c" stroke="#d4b84a"/>
+            <text x="480" y="454" text-anchor="middle" fill="#1a1a1a" font-size="16">L3</text>
+            <rect x="606" y="428" width="52" height="40" fill="#e79b32" stroke="#c98428"/>
+            <text x="632" y="454" text-anchor="middle" fill="#1a1a1a" font-size="16">L4</text>
+            <rect x="758" y="428" width="52" height="40" fill="#e0564c" stroke="#c4473e"/>
+            <text x="784" y="454" text-anchor="middle" fill="#1a1a1a" font-size="16">L5</text>
+
+            <g transform="translate(824 430)" stroke="#1a1a1a" stroke-width="2.4" fill="none">
+              <path d="M 0 22 C 0 10 16 10 16 22"/>
+              <path d="M 16 22 V 8"/>
+              <path d="M 34 6 L 54 26"/>
+              <path d="M 54 6 L 34 26"/>
+            </g>
+
+            <text x="252" y="502" text-anchor="middle" fill="#1a1a1a" font-size="16">ALLOW · HOLD</text>
+            <text x="708" y="502" text-anchor="middle" fill="#1a1a1a" font-size="16">REFUSE</text>
+
+            <path d="M 176 468 V 516 H 252 V 548" stroke="#1a1a1a" stroke-width="1.8"/>
+            <path d="M 328 468 V 516 H 252" stroke="#1a1a1a" stroke-width="1.8"/>
+            <path d="M 252 548 V 572" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+
+            <path d="M 480 468 V 516 H 708" stroke="#1a1a1a" stroke-width="1.8"/>
+            <path d="M 632 468 V 516" stroke="#1a1a1a" stroke-width="1.8"/>
+            <path d="M 784 468 V 516 H 708 V 572" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+
+            <rect x="92" y="576" width="320" height="58" fill="#45423d"/>
+            <text x="252" y="614" text-anchor="middle" fill="#f6f4ef" font-size="26">Tool call</text>
+            <path d="M 252 634 V 660" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+            <rect x="92" y="664" width="320" height="58" fill="#45423d"/>
+            <text x="252" y="702" text-anchor="middle" fill="#f6f4ef" font-size="26">Result</text>
+
+            <rect x="548" y="576" width="320" height="146" fill="#45423d"/>
+            <text x="708" y="640" text-anchor="middle" fill="#f6f4ef" font-size="26">Playbook</text>
+            <text x="708" y="676" text-anchor="middle" fill="#f6f4ef" font-size="18">L3 pause · L4 cut · L5 cable</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <script>
+    const slide = document.getElementById("slide");
+    function fit() {
+      const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      slide.style.transform = "translate(-50%, -50%) scale(" + s + ")";
+    }
+    fit();
+    window.addEventListener("resize", fit);
+  </script>
+</body>
+</html>
