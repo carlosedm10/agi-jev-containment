@@ -7,7 +7,7 @@ On every new event, `jev` re-reads **short-term and long-term context in paralle
 * **Short-term** — the most recent nodes. A burst of dangerous nodes one after another, in a short window, is itself a risk signal.
 * **Long-term** — the key-node history of the run. A later node that is only mildly bad still inherits extra weight if the run already had real problems, even if thirty harmless events sat in between.
 
-How `jev` rewrites, promotes, or weights those nodes is `jev`'s job. We always hand it both contexts; we do not freeze old scores on our side.
+How `jev` rewrites, promotes, or weights those nodes is `jev`'s job. We always hand it both contexts; we do not freeze old scores on our side. Request schema and how the two contexts map to `state`: [Jev.md](Jev.md).
 
 * Dynamic: Starts empty and supports adding nodes at runtime.
 * Sparse: a node is materialized only when `jev` returns level ≥ 1. Below that, the event exists only in JSONL.

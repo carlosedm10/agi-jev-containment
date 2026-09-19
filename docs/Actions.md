@@ -18,7 +18,7 @@ The graph does not store every click. It only keeps nodes that already look like
 
 ## For agents
 
-Contract between [Agent Monitoring](AgentMonitoring.md) (capture), the [Action Graph](Graph.md) (the chain), `jev` (intent → level), and the dispatcher (level → playbook). Classification is fast and almost deterministic. Containment is a prewritten script.
+Contract between [Agent Monitoring](AgentMonitoring.md) (capture), the [Action Graph](Graph.md) (the chain), `jev` (intent → level — see [Jev.md](Jev.md) for the request schema), and the dispatcher (level → playbook). Classification is fast and almost deterministic. Containment is a prewritten script.
 
 ### Pipeline
 
