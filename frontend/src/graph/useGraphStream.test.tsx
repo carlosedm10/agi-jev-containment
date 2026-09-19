@@ -182,10 +182,6 @@ describe("App", () => {
       container.querySelector('.react-flow__node[data-id="r1:1"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[aria-label="Protective actions"]')
-        ?.textContent,
-    ).toContain("Read file");
-    expect(
       container.querySelector('[aria-label="Container logs"]')?.textContent,
     ).toContain("Read file");
 
@@ -208,6 +204,64 @@ describe("App", () => {
       container.querySelectorAll('.react-flow__node[data-id="r1:1"]'),
     ).toHaveLength(1);
     expect(container.textContent).toContain("L3");
+  });
+
+  test("renders protective actions from the incident feed", async () => {
+    const incident = {
+      incident_id: "r1",
+      accepted_level: 4,
+      rows: { 1: "idle", 2: "idle", 3: "ok", 4: "running", 5: "idle" },
+      actions: [
+        {
+          kind: "action_transition",
+          incident_id: "r1",
+          level: 4,
+          action_id: "r1:contain_all_runs",
+          name: "contain_all_runs",
+          ladder_level: 3,
+          mode: "simulated",
+          status: "ok",
+          timestamp: "2026-01-01T00:00:01Z",
+          detail: null,
+          error_code: null,
+          call_status: null,
+        },
+        {
+          kind: "action_transition",
+          incident_id: "r1",
+          level: 4,
+          action_id: "r1:page_oncall:l4",
+          name: "page_oncall",
+          ladder_level: null,
+          mode: "real",
+          status: "running",
+          timestamp: "2026-01-01T00:00:02Z",
+          detail: null,
+          error_code: null,
+          call_status: "ringing",
+        },
+      ],
+      pager_status: "running",
+      call_status: "ringing",
+      updated_at: "2026-01-01T00:00:02Z",
+    };
+    const nativeFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(incident))) as unknown as typeof fetch;
+    try {
+      mount(<App />);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      const panel = container.querySelector(
+        '[aria-label="Protective actions"]',
+      );
+      expect(panel?.textContent).toContain("contain_all_runs");
+      expect(panel?.textContent).toContain("page_oncall");
+      expect(panel?.textContent).toContain("HappyRobot");
+    } finally {
+      globalThis.fetch = nativeFetch;
+    }
   });
 
   test("renders a mock dashboard without opening the backend stream", () => {

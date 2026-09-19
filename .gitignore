@@ -6,6 +6,10 @@
 # Bait file for the agent sandbox — planted fake secrets, tracked on purpose.
 !agent/workspace/.env
 
+# Live pager snapshot for the ladder (written by scripts/pager_watch.py)
+assets/quiver/pager-status.json
+assets/quiver/pager-status.json.tmp
+
 # Python
 __pycache__/
 *.pyc

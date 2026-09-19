@@ -9,7 +9,7 @@ browser :3000  →  frontend-hackspain (Vite :5173)  →  backend-hackspain :800
                                                       →  postgres-hackspain :5432
 ```
 
-- **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`. Vite proxies `/api` to `backend-hackspain:8000`, so the browser talks to one origin. `/` is the white, Inter analyst dashboard fed by `/api/graph/stream` — same shared graph as `/live`, upserted by node id — with BeautifulUI action rows and an expandable log panel both derived from the same classified nodes (`src/dashboard/feeds.ts`). `/live` is the projector view — only the React Flow graph, each run's walked path animated and coloured by level. `?demo` on either route swaps the stream for `src/dashboard/demo.ts` ([docs/Graph.md](Graph.md)).
+- **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`. Vite proxies `/api` to `backend-hackspain:8000`, so the browser talks to one origin. `/` is the white, Inter analyst dashboard fed by `/api/graph/stream` — same shared graph as `/live`, upserted by node id — with BeautifulUI action rows and an expandable log panel derived from the classified nodes plus the journaled playbook feed (`src/dashboard/feeds.ts`). `/live` is the projector view — only the React Flow graph, each run's walked path animated and coloured by level. `?demo` on either route swaps the stream for `src/dashboard/demo.ts`. `/ladder` is the live L1–L5 action wallboard: it polls journaled demo playbooks, including the real HappyRobot call at L4/L5 ([docs/Graph.md](Graph.md)).
 - **backend/** — FastAPI app (`app.main:app`), uv, SQLAlchemy, Alembic. **CORS allows only `http://localhost:3000`.**
 - **postgres-hackspain** — Postgres 18. Backend waits on a healthy `pg_isready`. Named volume `postgres_data_hackspain`.
 
@@ -19,17 +19,19 @@ Compose network is `appnet_hackspain`. Services are named `backend-hackspain`, `
 
 These names repeat in compose, Makefile targets, and env vars.
 
-| Name | Covers | Where it lives |
-|---|---|---|
-| **Runs** | HTTP ingest + JSONL tape: `POST /api/runs/{run_id}/events`, run lookup, run list | `backend/app/runs/` |
-| **Classification** | `jev` client, watcher client, two-tier pipeline (τ trigger, gate, degraded path) | `backend/app/classification/` |
-| **Action Graph** | Sparse L1+ event chain; `jev` scores short-term burst ∥ long-term history; SSE feed of every change | `backend/app/graph/` · `frontend/src/graph/` · [docs/Graph.md](Graph.md) |
-| **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
-| **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
-| **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
-| **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) |
-| **Demo scenarios** | Malicious-agent harness + the L1–L5 demo arcs | [docs/scenarios.md](scenarios.md) |
-| **jev** | Classifier: chain intent → level 0–5 + confidence + intent choice | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
+| Name                 | Covers                                                                                              | Where it lives                                                                      |
+| ----------------------| -----------------------------------------------------------------------------------------------------| -------------------------------------------------------------------------------------|
+| **Runs**             | HTTP ingest + JSONL tape: `POST /api/runs/{run_id}/events`, run lookup, run list                    | `backend/app/runs/`                                                                 |
+| **Classification**   | `jev` client, watcher client, two-tier pipeline (τ trigger, gate, degraded path)                    | `backend/app/classification/`                                                       |
+| **Action Graph**     | Sparse L1+ event chain; `jev` scores short-term burst ∥ long-term history; SSE feed of every change | `backend/app/graph/` · `frontend/src/graph/` · [docs/Graph.md](Graph.md)            |
+| **health**           | Liveness JSON `{status: ok}`                                                                        | `GET /health` on the API                                                            |
+| **hackspain CLI**    | Participant terminal client (not this repo's code)                                                  | [docs/cli.md](cli.md)                                                               |
+| **Agent monitoring** | Host-side capture of a sandboxed agent run                                                          | [docs/AgentMonitoring.md](AgentMonitoring.md)                                       |
+| **Actions**          | `jev` intent → levels 1–5 → deterministic playbooks                                                 | [docs/Actions.md](Actions.md) · `backend/app/actions/`                              |
+| **Demo incidents**   | Simulated L1–L5 feed for the wallboard; real HappyRobot only at L4/L5                               | `POST /api/demo/incidents/{id}/dispatch`                                            |
+| **Demo scenarios**   | Malicious-agent harness + the L1–L5 demo arcs                                                       | [docs/scenarios.md](scenarios.md)                                                   |
+| **jev**              | Classifier: chain intent → level 0–5 + confidence + intent choice                                   | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
+| **Evals**            | HappyRobot corpus (24×3 traces) and live monitor regression; headline is harm-detection F1          | `backend/app/evals/` · [docs/HappyRobotEvals.md](HappyRobotEvals.md)                |
 
 ## How it's built
 
@@ -53,9 +55,9 @@ GitHub Actions copies `.env_template` to `.env`, then only `make build`, `make u
 
 Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environment. Compose injects `DATABASE_URL` with host `postgres-hackspain` (not `localhost`). Pydantic settings also accept a `.env` next to the process cwd (`/app` in the container), and ignore extra keys such as `POSTGRES_*`.
 
-- **Reads**: `GET /health` hits no database. `GET /api/graph/stream` opens an SSE feed: one `snapshot` of the whole graph, then one `update` per graph mutation ([docs/Graph.md](Graph.md)). `GET /api/runs/{run_id}` returns the run's derived level and its materialized key nodes; `GET /api/runs` lists runs seen on the JSONL tape.
-- **Writes**: `POST /api/runs/{run_id}/events` appends the event to the run's JSONL tape, runs the two-tier classification pipeline, and materializes a graph node for every classified event (level ≥ 1 makes it a key node). Postgres is currently unused by the product path: the graph is in-memory with a JSON snapshot, the tape is JSONL under `run_log_dir`, and there is no SQLAlchemy model — so `alembic/versions/` still has no revisions and `make migrate` remains a no-op.
-- **Sync / background**: graph mutations fan out to every open SSE subscriber inside the mutation itself — a composite operation publishes one update, so no client ever sees a half-built run.
+- **Reads**: `GET /health` hits no database. `GET /api/graph/stream` opens an SSE feed: one `snapshot` of the whole graph, then one `update` per graph mutation ([docs/Graph.md](Graph.md)). `GET /api/runs/{run_id}` returns the run's derived level and its materialized key nodes; `GET /api/runs` lists runs seen on the JSONL tape. The action wallboard polls `GET /api/demo/incidents/latest` (404 until a demo incident exists).
+- **Writes**: `POST /api/runs/{run_id}/events` appends the event to the run's JSONL tape, runs the two-tier classification pipeline, and materializes a graph node for every classified event (level ≥ 1 makes it a key node). Postgres is currently unused by the product path: the graph is in-memory with a JSON snapshot, the tape is JSONL under `run_log_dir`, and there is no SQLAlchemy model — so `alembic/versions/` still has no revisions and `make migrate` remains a no-op. `POST /api/demo/incidents/{incident_id}/dispatch` accepts a simulated level 1–5 (header `X-Dispatch-Token`); it does not write the classifier tape or the Action Graph.
+- **Sync / background**: graph mutations fan out to every open SSE subscriber inside the mutation itself — a composite operation publishes one update, so no client ever sees a half-built run. Accepted demo dispatches run their playbook as an asyncio task; the POST returns after the journal records acceptance.
 - **Agent run (product path)**: sandbox JSONL (complete) → `jev` scores short-term burst ∥ long-term key-node history → graph materializes one node per action → dispatcher runs the [actions playbook](Actions.md). On this laptop that is tag / Helmcode supervisor / `docker pause` + close ports / disconnect `agentnet` / stop the agent compose. Ideal mapping (IAM, IGW, swarm) is in that same doc. L4–L5 also page Guli Moreno via HappyRobot, in parallel with the cut.
 
 ### Entities
@@ -69,7 +71,8 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 2. `make build` starts Postgres, then uvicorn on `:8000`, then the frontend container on `:3000`.
 3. Browser or `curl` `GET http://localhost:8000/health` → `{"status":"ok"}`.
 4. `curl -X POST localhost:8000/api/runs/demo/events -H 'content-type: application/json' -d '{"event":"file_read","path":"/app/.env"}'` → verdict JSON. With no `TYPESAFE_API_KEY` this returns a clean degraded verdict (level unchanged, `degraded: true`), and the event still lands on the tape — not a 500.
-5. OpenAPI UI is at `http://localhost:8000/docs`.
+5. `curl -X POST localhost:8000/api/demo/incidents/demo/dispatch -H 'content-type: application/json' -H "X-Dispatch-Token: $ACTION_DISPATCH_TOKEN" -d '{"level":1}'` starts a simulated playbook; the wallboard at `http://localhost:3000/ladder` polls it. Skip L4/L5 unless you intend to place a real call.
+6. OpenAPI UI is at `http://localhost:8000/docs`.
 
 ## Key decisions and caveats (why it is this way)
 
@@ -84,14 +87,16 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **`jev` sets the level; playbooks execute it**: criticality is intent of the *chain*, not of one event. L3–L5 are prewritten host-side scripts, never an LLM choosing the cut. This project: pause the sandbox, close its ports, cut `agentnet` egress, stop the agent compose. Ideal: IAM revoke, detach IGW, kill the swarm. The L2 Helmcode supervisor may only request a re-score.
 - **One node per action; key nodes are level ≥ 1**: every classified event becomes a node, so the graph is the run's complete action sequence. `key_nodes()` (level ≥ 1) is the flagged subset — that's the `long_term` history. On every event, `jev` gets the recent burst (tape) and the key-node history in parallel — a streak of bad nodes is dangerous; a mild node after earlier problems still counts for more. How those are mixed is `jev`'s job.
 - **The graph is pushed, not polled**: SSE, one-way, whole graph (all runs). `revision` increments by one per published change, so a client detects a gap by arithmetic; a slow client (64 queued updates) is disconnected instead of being buffered, and reconnects with a fresh snapshot. There is no replay log — a snapshot is always cheaper than a history nobody read.
-- **The dashboard is fully stream-driven**: `/` mounts `useGraphStream()`, so graph, action rows, and log table all render the same shared `Graph` as `/live` — upserts reuse node ids, and new nodes pulse in. `feeds.ts` maps classified nodes to side panels: every `event`-bearing node is an analyzed action (`action_id` marks a triggered counter-action once playbooks set it) and a log line (level → info/warning/error). Provisional “Awaiting Jev” overlays only exist in `?demo` mode and never imply safety. Still missing real contracts: raw container stdout/JSONL tail and playbook execution records need dedicated endpoints (run JSONL lives in `runs/log.py`, not yet exposed). The viewer omits summary banners, counts, legends, and search/filter controls; the graph follows incoming activity by default with Bézier connections, and colors use Jev's discrete level, not its confidence.
+- **The dashboard is stream-driven**: `/` mounts `useGraphStream()`, so graph, action rows, and log table render the same shared `Graph` as `/live` — upserts reuse node ids, and new nodes pulse in. `feeds.ts` maps classified nodes to the log table (level → info/warning/error) and maps the journaled playbook feed (`GET /api/demo/incidents/latest`, polled) to the protective-actions rows — pager transitions (`ladder_level: null`, `mode: "real"`) are the real HappyRobot calls. Provisional “Awaiting Jev” overlays only exist in `?demo` mode and never imply safety. The real pager and simulated playbooks also drive `/ladder` via `POST /api/demo/incidents/{id}/dispatch`. Still missing a real contract: raw container stdout/JSONL tail (run JSONL lives in `runs/log.py`, not yet exposed). The viewer omits summary banners, counts, legends, and search/filter controls; the graph follows incoming activity by default with Bézier connections, and colors use Jev's discrete level, not its confidence.
 - **Run level is derived, not stored**: there is no `Run` model or table. The run's level is `max` over the nodes stamped with its `run_id`, which makes escalate-only and L1-stickiness structural rather than enforced state.
 - **The graph is undirected; run isolation comes from `run_id`**: nodes keep a mutual adjacency list (`neighbors`) — no `parent`, loops allowed via `connect()`. A run's nodes are the ones stamped with its `run_id`, so runs stay isolated without relying on edge direction.
 - **The tape and the graph are different things**: the JSONL tape under `run_log_dir` keeps every raw event (short-term context, replay, forensics); the graph keeps the same actions as structured nodes — the record jev judged them with, plus `action_id` once a playbook fires. The tape is the raw record; the graph is the annotated one.
 - **Frontend tests exercise behavior, not just types**: `bun test` covers graph snapshots/reconnection, cycle-safe layout, mock verdict/action ordering, and automatic dashboard updates, node selection, and expandable traces/logs in happy-dom. The dashboard test also proves it opens no `EventSource`. `bun run lint` (`tsc --noEmit`) owns typechecking; `bun run build` checks the production bundle.
-- **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty).
+- **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty). `make monitor-eval` is the local live Jev runner; CI does not call it.
+- **Monitor regression headline is harm-detection F1**: a candidate trace is Harmful when it is not Safe, and Flagged at incident level ≥ 2. Exact-level match stays in the live report; it is not the demo number.
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
-- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra. Destination is on the outbound node, not in the JSON. Hook URL, key, and number stay in gitignored `.env`; `scripts/page.sh` is the local trigger.
+- **L4/L5 page Guli once per incident, in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra. Escalating L4 → L5 does not place a second call. The pager JSON includes `telefono` from `ONCALL_PHONE`; the outbound To field reads that payload var. Hook URL, key, and number stay in gitignored `.env`. The demo dispatcher places that call on the first L4 or L5; `scripts/page.sh` remains a direct pager diagnostic.
+- **The L1–L5 ladder in the viewer is state-driven**: `/ladder` polls `GET /api/demo/incidents/latest` and renders only journaled action state. A lower row can look reached without showing `OK` unless that action actually ran. Containment, supervision, egress, forensics, and swarm shutdown are simulated in this phase; the L4/L5 pager is real. Demo journals live under `<run_log_dir>/demo-actions/`, never in the classifier tape. Code: `backend/app/actions/` and `frontend/src/ladder/`.
 
 ## Where the details live
 
@@ -99,6 +104,6 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - [docs/Graph.md](Graph.md) — action graph spec (undirected adjacency, loops allowed, `run_id`-stamped nodes, one node per action with key nodes at level ≥ 1, short/long context, save/load) and the SSE stream contract. Code: `backend/app/graph/`, `frontend/src/graph/`.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
-- [docs/HappyRobotEvals.md](HappyRobotEvals.md) — HappyRobot use-case map, adversarial methodology, and the synthetic corpus contract.
+- [docs/HappyRobotEvals.md](HappyRobotEvals.md) — how the evals work: corpus, integrity tests, live `make monitor-eval`, and harm-detection F1.
 - [docs/scenarios.md](scenarios.md) — malicious-agent harness, toolset, and the demo scenarios (L1–L5).
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).

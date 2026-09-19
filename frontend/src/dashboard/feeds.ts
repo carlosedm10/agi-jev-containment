@@ -2,6 +2,9 @@ import type { Log } from "@/components/ui/interactive-logs-table";
 import type { SafeAction } from "@/dashboard/demo";
 import { eventText } from "@/dashboard/graph-layout";
 import type { Graph, GraphNode } from "@/graph/protocol";
+import { ACTION_STATUS_LABEL, CALL_LABEL } from "@/ladder/copy";
+import type { ActionTransition, IncidentState } from "@/ladder/types";
+import { actionModeLabel } from "@/ladder/wallboard";
 
 function classified(graph: Graph): GraphNode[] {
   return Array.from(graph.nodes.values())
@@ -9,34 +12,35 @@ function classified(graph: Graph): GraphNode[] {
     .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
 }
 
-function eventDetails(node: GraphNode) {
-  const details: { label: string; meta: string }[] = [];
-  for (const key of ["summary", "tool", "kind"] as const) {
-    const value = node.event?.[key];
-    if (typeof value === "string" && value.length > 0) {
-      details.push({ label: key, meta: value });
-    }
-  }
-  return details;
-}
-
-export function actionsFromGraph(graph: Graph): SafeAction[] {
-  return classified(graph).map((node) => ({
-    id: node.id,
-    nodeId: node.id,
-    title: eventText(node, ["label", "kind", "event"], node.id),
-    source: node.action_id === null ? "Monitor" : "Host playbook",
-    status: "done",
-    level: node.level,
-    startedAt: node.created_at ?? "",
+export function actionsFromIncident(incident: IncidentState): SafeAction[] {
+  const latest = new Map<string, ActionTransition>();
+  for (const action of incident.actions) latest.set(action.action_id, action);
+  return [...latest.values()].map((action) => ({
+    id: action.action_id,
+    nodeId: `run:${incident.incident_id}`,
+    title: action.name,
+    source: action.ladder_level === null ? "HappyRobot" : "Host playbook",
+    status:
+      action.status === "queued" || action.status === "running"
+        ? "running"
+        : action.status === "failed" || action.status === "canceled"
+          ? "failed"
+          : "done",
+    level: action.level,
+    startedAt: action.timestamp,
     details: [
-      { label: "Intent", meta: node.intent ?? "—" },
-      { label: "Confidence", meta: `${Math.round(node.threshold * 100)}%` },
-      { label: "Run", meta: node.run_id ?? "—" },
-      ...(node.action_id === null
+      { label: "Status", meta: ACTION_STATUS_LABEL[action.status] },
+      { label: "Mode", meta: actionModeLabel(action.mode) },
+      ...(action.ladder_level === null
         ? []
-        : [{ label: "Response trace", meta: node.action_id }]),
-      ...eventDetails(node),
+        : [{ label: "Ladder level", meta: `L${action.ladder_level}` }]),
+      ...(action.call_status === null
+        ? []
+        : [{ label: "Call", meta: CALL_LABEL[action.call_status] }]),
+      ...(action.detail === null ? [] : [{ label: "Detail", meta: action.detail }]),
+      ...(action.error_code === null
+        ? []
+        : [{ label: "Error", meta: action.error_code }]),
     ],
   }));
 }

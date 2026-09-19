@@ -4,7 +4,7 @@ When an agent starts doing something we don't like, we don't sit down to discuss
 
 Levels only go up. A human clears them. Levels 4 and 5 call Guli *while* the cut happens — the call is a heads-up, not permission.
 
-The graph does not store every click. It only keeps nodes that already look like a problem (level 1+). Each new step, `jev` looks at two things at once: the **recent burst** and the **long memory**. Details in [Graph.md](Graph.md).
+The graph stores one node per classified action. Key nodes are the flagged subset (level ≥ 1). Each new step, `jev` looks at two things at once: the **recent burst** and the **long memory**. Details in [Graph.md](Graph.md).
 
 ## Ideal vs this project
 
@@ -37,17 +37,17 @@ sandbox events (host-side JSONL, always complete)
         → graph node records {level, score, intent, action_id}
 ```
 
-Events below level 1 stay in JSONL only. `jev` is the only component allowed to *set* a level. The L2 supervisor LLM may annotate and *request* a re-score; it cannot execute L3–L5 itself.
+Unclassified (degraded) events stay in JSONL only. `jev` is the only component allowed to *set* a level. The L2 supervisor LLM may annotate and *request* a re-score; it cannot execute L3–L5 itself.
 
 ### Hard rules
 
 1. **Chain, not event.** A single `curl` is noise. `curl` + reading `.env` + posting the contents is intent. On every new event, `jev` re-reads short-term and long-term context in parallel.
-2. **Sparse graph.** Only level ≥ 1 becomes a node. JSONL is the full tape.
+2. **One node per action.** Every classified event becomes a graph node. Level ≥ 1 is a key node. Unclassified (degraded) events stay tape-only.
 3. **Levels only escalate.** A run never auto-downgrades. A human clears it from the viewer.
 4. **L1 is sticky.** Later `jev` calls for that `run_id` get `prior_level=1` (lower bar to L2+).
-5. **Kill path is host-side.** Idempotent: re-firing the same level on the same `run_id` is a no-op. L4/L5 page Guli **in parallel** with the cut — missing `ONCALL_PHONE` still executes infra.
+5. **Kill path is host-side.** Idempotent: re-firing the same level on the same `run_id` is a no-op. L4/L5 page Guli **once per incident, in parallel** with the cut — missing `ONCALL_PHONE` still executes infra. Escalating L4 → L5 does not place a second call.
 
-`jev` also writes a score in `[0.0, 1.0]` onto the graph node's `threshold`. Prefer `jev`'s discrete `level` when both are present. Bands if you only have a score: `[0, 0.20)` → 1, `[0.20, 0.40)` → 2, `[0.40, 0.60)` → 3, `[0.60, 0.80)` → 4, `[0.80, 1.00]` → 5. Below a level, the event is JSONL only.
+`jev` also writes a score in `[0.0, 1.0]` onto the graph node's `threshold`. Prefer `jev`'s discrete `level` when both are present. Bands if you only have a score: `[0, 0.20)` → 1, `[0.20, 0.40)` → 2, `[0.40, 0.60)` → 3, `[0.60, 0.80)` → 4, `[0.80, 1.00]` → 5.
 
 ```json
 {
@@ -130,28 +130,41 @@ Rollback: recreate agent containers from known images, empty workspaces. New `ru
 
 ### Levels 4 and 5 — page Guli Moreno
 
-Not a sixth level. A side-effect of L4 and L5. Number in `ONCALL_PHONE`, never in git. Outbound HappyRobot voice (`template: voice-agent`). Pager egress is not on `agentnet`. Infra does not wait for pickup; missing env = log error + still cut.
+Not a sixth level. A side-effect of the first L4 or L5 on an incident. Number in `ONCALL_PHONE`, never in git. Outbound HappyRobot voice (`template: voice-agent`). Pager egress is not on `agentnet`. Infra does not wait for pickup; missing env = log error + still cut.
 
-The To-number lives on the outbound node, not in the POST body. Hook URL, API key, and number stay in gitignored `.env`. Local fire: `scripts/page.sh`. After changing who gets the call, confirm the run's `to` before anyone picks up.
+Destination is `telefono` in the POST (`ONCALL_PHONE` in gitignored `.env`). The outbound To field reads that payload var. Hook URL and API key stay in `.env`. The demo dispatcher fires this on the first L4 or L5, without waiting for simulated containment, and never places a second outbound call on that incident. `scripts/page.sh` is a direct diagnostic: it POSTs the hook and can poll via `scripts/pager_watch.py`. After changing who gets the call, confirm the run's `to` before anyone picks up.
 
 ```
 POST $HAPPYROBOT_HOOK_URL
 Authorization: Bearer $HAPPYROBOT_API_KEY
 {
   "tipo_emergencia": "{intent} (level {level}, run {run_id})",
-  "pautas": "{action_taken}. Abra {viewer_url}.",
+  "pautas": "{action_taken}. Speak slowly; keep them on the line at least a minute.",
   "nivel_gravedad": "crítico",
-  "nombre_contacto": "$ONCALL_NAME"
+  "nombre_contacto": "$ONCALL_NAME",
+  "telefono": "$ONCALL_PHONE"
 }
 ```
 
-Voice: identify as the pager, say `{action_taken}`, ask him to open `{viewer_url}`. Retry once on no pickup. Do not roll infra back.
+Voice: identify as the pager, say the AGI escaped its sandbox, say `{action_taken}` in plain language. Speak slowly and keep the callee on the line for at least a minute; do not hang up until they confirm. Do not send him to the viewer — that UI is for the room, not the phone. Do not retry the outbound call. Do not roll infra back.
 
 ---
 
+### Demo adapter (this phase)
+
+The wallboard is driven by a simulated incident feed, not by `jev`. Another service POSTs an already-decided level:
+
+```
+POST /api/demo/incidents/{incident_id}/dispatch
+X-Dispatch-Token: $ACTION_DISPATCH_TOKEN
+{"level": 3, "intent": "optional", "rationale": "optional"}
+```
+
+Levels only increase per incident; duplicates and lower levels are no-ops. The journal under `<run_log_dir>/demo-actions/` is separate from the classifier tape. L1–L3 (and the infra half of L4/L5) are simulated. L4/L5 also place the real HappyRobot call in parallel. React at `/ladder` polls `GET /api/demo/incidents/latest`. This adapter does not set run level on the Action Graph.
+
 ### Dispatcher
 
-Host-side, every time `jev` returns a level greater than the run's stored level.
+Host-side production path, every time `jev` returns a level greater than the run's stored level. Not wired yet; the demo adapter above is what the viewer uses today.
 
 ```
 on_jev(run, result):
