@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
 import { MotionConfig } from "framer-motion";
 
@@ -6,15 +6,46 @@ import { Button } from "@/components/ui/button";
 import { InteractiveLogsTable } from "@/components/ui/interactive-logs-table";
 import { ActivityPanel } from "@/dashboard/ActivityPanel";
 import { GraphPanel } from "@/dashboard/GraphPanel";
-import { LEVEL_LABELS, useDemo } from "@/dashboard/demo";
+import {
+  LEVEL_LABELS,
+  useDemo,
+  type DemoLog,
+  type PendingAction,
+  type SafeAction,
+} from "@/dashboard/demo";
+import { actionsFromIncident, logsFromGraph } from "@/dashboard/feeds";
+import { eventText } from "@/dashboard/graph-layout";
+import { useIncidentFeed } from "@/dashboard/useIncidentFeed";
+import type { Graph } from "@/graph/protocol";
+import {
+  useGraphStream,
+  type GraphStreamStatus,
+} from "@/graph/useGraphStream";
 import { cn } from "@/lib/utils";
 
-export default function App() {
-  const demo = useDemo();
+const EMPTY_GRAPH: Graph = { revision: 0, root: null, nodes: new Map() };
+
+type DashboardProps = {
+  graph: Graph;
+  pending: PendingAction | null;
+  actions: SafeAction[];
+  logs: DemoLog[];
+  status: GraphStreamStatus | null;
+  onRestart?: () => void;
+};
+
+function Dashboard({
+  graph,
+  pending,
+  actions,
+  logs,
+  status,
+  onRestart,
+}: DashboardProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const selected = selectedNodeId ? demo.graph.nodes.get(selectedNodeId) : null;
+  const selected = selectedNodeId ? graph.nodes.get(selectedNodeId) : null;
   const pendingSelected =
-    selectedNodeId === demo.pending?.id ? demo.pending : null;
+    selectedNodeId === pending?.id ? pending : null;
   const inspectorTitle =
     pendingSelected?.label ??
     String(selected?.event?.label ?? selected?.id ?? "");
@@ -23,27 +54,40 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <main
         id="dashboard"
+        aria-label={
+          status === null
+            ? "Agent safety dashboard · simulated data"
+            : "Agent safety dashboard"
+        }
         className="mx-auto min-h-dvh max-w-[1920px] bg-white p-4 text-zinc-900"
       >
-        <h1 className="sr-only">Agent safety dashboard · simulated data</h1>
-        <div
-          key={demo.run}
-          className="dashboard-grid grid gap-4 lg:grid-cols-[1.05fr_1fr]"
+        <header
+          aria-label="AngryRobot"
+          className="mb-2 flex h-14 items-center justify-center"
         >
+          <h1>
+            <img
+              src="/angry-robot-wordmark.svg"
+              alt="AngryRobot"
+              width={110}
+              height={48}
+              className="h-12 w-auto"
+            />
+          </h1>
+        </header>
+        <div className="dashboard-grid grid gap-2 lg:grid-cols-2">
           <section
             aria-label="Action graph and analysis"
             className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border shadow-xs"
           >
             <div className="min-h-0 flex-1">
               <GraphPanel
-                graph={demo.graph}
-                pending={demo.pending}
+                graph={graph}
+                pending={pending}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={setSelectedNodeId}
-                onRestart={() => {
-                  setSelectedNodeId(null);
-                  demo.restart();
-                }}
+                onRestart={onRestart}
+                status={status}
               />
             </div>
             {(selected || pendingSelected) && (
@@ -65,10 +109,13 @@ export default function App() {
                 <p className="text-xs leading-relaxed text-zinc-600">
                   {pendingSelected
                     ? "Awaiting Jev. No safety verdict or protective action has been assigned to this event."
-                    : String(
-                        selected?.event?.summary ??
-                          "Structural graph node. This groups the session or run; it is not a safety verdict.",
-                      )}
+                    : selected?.event
+                      ? eventText(
+                          selected,
+                          ["summary", "label", "kind", "event"],
+                          "Classified action.",
+                        )
+                      : "Structural graph node. This groups the session or run; it is not a safety verdict."}
                 </p>
                 {selected?.event && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
@@ -102,9 +149,9 @@ export default function App() {
               </section>
             )}
           </section>
-          <div className="grid min-h-0 min-w-0 grid-rows-[minmax(250px,0.95fr)_minmax(280px,1fr)] gap-4">
+          <div className="grid min-h-0 min-w-0 grid-rows-[minmax(250px,0.95fr)_minmax(280px,1fr)] gap-2">
             <ActivityPanel
-              actions={demo.actions}
+              actions={actions}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
             />
@@ -112,11 +159,50 @@ export default function App() {
               aria-label="Container log viewer"
               className="min-h-0 min-w-0 overflow-hidden rounded-xl border shadow-xs"
             >
-              <InteractiveLogsTable logs={demo.logs} />
+              <InteractiveLogsTable logs={logs} />
             </section>
           </div>
         </div>
       </main>
     </MotionConfig>
   );
+}
+
+function DemoDashboard() {
+  const demo = useDemo();
+  return (
+    <Dashboard
+      key={demo.run}
+      graph={demo.graph}
+      pending={demo.pending}
+      actions={demo.actions}
+      logs={demo.logs}
+      status={null}
+      onRestart={demo.restart}
+    />
+  );
+}
+
+function StreamDashboard() {
+  const { graph, status } = useGraphStream();
+  const incident = useIncidentFeed();
+  const view = graph ?? EMPTY_GRAPH;
+  const actions = useMemo(
+    () => (incident === null ? [] : actionsFromIncident(incident)),
+    [incident],
+  );
+  const logs = useMemo(() => logsFromGraph(view), [view]);
+  return (
+    <Dashboard
+      graph={view}
+      pending={null}
+      actions={actions}
+      logs={logs}
+      status={status}
+    />
+  );
+}
+
+export default function App({ demo = false }: { demo?: boolean }) {
+  return demo ? <DemoDashboard /> : <StreamDashboard />;
 }

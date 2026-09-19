@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>hackspain — L1–L5 live</title>
+<style>
+  :root { font-family: system-ui, sans-serif; }
+  body { margin: 0; background: #0b1220; color: #e8eef8; }
+  main { max-width: 880px; margin: 0 auto; padding: 28px 20px 64px; }
+  h1 { font-size: 1.35rem; margin: 0 0 8px; }
+  .lede { color: #9aa8bf; max-width: 62ch; margin: 0 0 20px; }
+  .wrap { background: #041b39; border-radius: 16px; overflow: hidden; }
+  svg { display: block; width: 100%; height: auto; }
+  .row { opacity: 0.32; transition: opacity .25s ease, filter .25s ease; }
+  .row.reached { opacity: 1; }
+  .row.current { filter: drop-shadow(0 0 6px var(--c)); }
+  .row.failed { filter: drop-shadow(0 0 6px #ff4d4d); }
+  .glyph { transform-box: fill-box; transform-origin: center; }
+  .pager { opacity: 0; }
+  .pager.live { opacity: 1; }
+  .pager.ringing .wave { transform-box: fill-box; transform-origin: center; animation: ring 1.2s ease-out infinite; }
+  .pager.ringing .wave:nth-child(2) { animation-delay: .4s; }
+  .pager.ringing .handset { animation: shake .35s ease-in-out infinite; transform-origin: 18px 18px; }
+  .pager.answered .handset { fill: #3ddc97; }
+  .pager.no_pickup .handset, .pager.hung_up .handset { fill: #9aa8bf; }
+  .pager.hung_up .handset { transform-origin: 18px 18px; transform: rotate(110deg); }
+  @keyframes ring { from { opacity: .9; transform: scale(.7); } to { opacity: 0; transform: scale(1.45); } }
+  @keyframes shake { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+  fieldset { border: 1px solid #24324a; border-radius: 12px; padding: 10px 12px 12px; margin: 14px 0 0; }
+  legend { padding: 0 6px; color: #c5d0e0; font-size: .85rem; }
+  button { margin: 4px 6px 0 0; background: #132038; color: #e8eef8; border: 1px solid #2b3d5a; border-radius: 8px; padding: 6px 10px; font: 600 13px system-ui; cursor: pointer; }
+  button.on { background: #fda80c; color: #041b39; border-color: #fda80c; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .note { color: #9aa8bf; font-size: .85rem; margin: 8px 0 0; }
+  .live { display: none; margin: 0 0 16px; padding: 8px 12px; border: 1px solid #3ddc97; border-radius: 8px; color: #3ddc97; font-size: .85rem; }
+  .live.on { display: block; }
+</style>
+<main>
+  <h1>hackspain · escalera L1–L5</h1>
+  <p class="lede">Clica una acción: se enciende su nivel y los de abajo (solo se escala). En L4/L5 el teléfono es independiente de si <code>ejecutar_contencion</code> fue OK — la llamada no autoriza el corte. Con <code>scripts/page.sh</code> abierto, esta página lee <code>pager-status.json</code> y sigue ringing / cogida / colgada y el resultado de la tool.</p>
+  <p id="live" class="live"></p>
+  <div class="wrap">
+    <svg id="ladder" viewBox="0 0 640 360" role="img" aria-label="Escalera L1 a L5"></svg>
+  </div>
+  <form id="controls" onsubmit="return false"></form>
+</main>
+<script>
+const ROWS = [
+  { n: 5, action: "kill_agent_swarm", title: "Pull the plug", detail: "kill-swarm.sh · forensics copy", color: "#F72843" },
+  { n: 4, action: "cut_environment_egress", title: "Cut the internet", detail: "cut-egress.sh · page Guli", color: "#F61D33" },
+  { n: 3, action: "contain_agent", title: "Freeze this agent", detail: "pause · close ports · drop token", color: "#FC3538" },
+  { n: 2, action: "supervise", title: "Supervisor", detail: "Helmcode tails the JSONL", color: "#FF8820" },
+  { n: 1, action: "tag", title: "Watch", detail: "tag the run · L1 sticky", color: "#FBDC2B" },
+];
+const ACTION_LEVEL = { tag: 1, supervise: 2, contain_agent: 3, cut_environment_egress: 4, kill_agent_swarm: 5 };
+const STEP_LABEL = { idle: "", running: "RUNNING", ok: "OK", partial: "PARTIAL", failed: "FAILED" };
+const CALL_LABEL = { idle: "", ringing: "LLAMANDO", answered: "COGIDA", no_pickup: "NO COGE", hung_up: "COLGADA" };
+const STEP_FILL = { idle: "#6b7c94", running: "#fff", ok: "#3DDC97", partial: "#FBDC2B", failed: "#FF6B6B" };
+const CALL_FILL = { idle: "#6b7c94", ringing: "#FBDC2B", answered: "#3DDC97", no_pickup: "#9aa8bf", hung_up: "#9aa8bf" };
+
+const state = { level: 0, contain: "idle", call: "idle", live: false, runId: "", hrStatus: "" };
+const CALLS = ["idle","ringing","answered","no_pickup","hung_up"];
+const CONTAINS = ["idle","running","ok","partial","failed"];
+let lastLive = "";
+
+function steps() {
+  const s = {};
+  for (let n = 1; n <= 5; n++) {
+    s[n] = state.level > n ? "ok" : state.level === n ? "running" : "idle";
+  }
+  if (state.level >= 3) s[3] = state.contain === "idle" ? "running" : state.contain;
+  return s;
+}
+function call() {
+  if (state.level < 4) return "idle";
+  return state.call === "idle" ? "ringing" : state.call;
+}
+function glyph(n, c) {
+  if (n === 1) return `<path d="M8 8h14l6 10-6 10H8V8zm6 6a4 4 0 1 1 0 8 4 4 0 0 1 0-8z" fill="${c}"/>`;
+  if (n === 2) return `<ellipse cx="18" cy="18" rx="12" ry="8" fill="none" stroke="${c}" stroke-width="2"/><circle cx="18" cy="18" r="4" fill="${c}"/>`;
+  if (n === 3) return `<rect x="10" y="8" width="6" height="20" rx="1" fill="${c}"/><rect x="20" y="8" width="6" height="20" rx="1" fill="${c}"/>`;
+  if (n === 4) return `<circle cx="18" cy="18" r="11" fill="none" stroke="${c}" stroke-width="2"/><path d="M7 29 L29 7" stroke="${c}" stroke-width="2.4"/>`;
+  return `<path d="M10 14h8v4h4l6 4v6H10V14zm18 10h6" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>`;
+}
+
+function render() {
+  const st = steps();
+  const c = call();
+  const pagerLive = state.level >= 4 && c !== "idle";
+  document.getElementById("ladder").innerHTML = `<rect width="640" height="360" fill="#041B39"/>` + ROWS.map((row, i) => {
+    const y = 22 + i * 66;
+    const reached = state.level >= row.n;
+    const current = state.level === row.n;
+    const status = st[row.n];
+    const cls = ["row", reached ? "reached" : "", current ? "current" : "", status === "running" ? "running" : "", status === "failed" ? "failed" : ""].join(" ");
+    const pager = (current && row.n >= 4) ? `
+      <g class="pager ${pagerLive ? "live" : ""} ${c}" transform="translate(500 8)">
+        <circle class="wave" cx="18" cy="18" r="14" fill="none" stroke="#FBDC2B" stroke-width="1.4"/>
+        <circle class="wave" cx="18" cy="18" r="14" fill="none" stroke="#FBDC2B" stroke-width="1.4" opacity=".5"/>
+        <path class="handset" d="M12 11c2-2 5-2 7 0l2 2-3 3c-1 0-3 1-4 2s-2 3-2 4l-3-3c-2-2-2-5 0-7z" fill="#FBDC2B"/>
+        <text x="44" y="24" fill="${CALL_FILL[c]}" font="600 9px system-ui" font-family="system-ui" font-size="9" font-weight="700">${CALL_LABEL[c]}</text>
+      </g>` : "";
+    return `<g class="${cls}" style="--c:${row.color}" transform="translate(16 ${y})" data-action="${row.action}">
+      <rect class="hit" width="608" height="56" rx="10" fill="#001637" stroke="${row.color}" stroke-width="${current ? 1.6 : 0.8}" style="cursor:pointer"/>
+      <rect width="54" height="56" rx="10" fill="${row.color}" pointer-events="none"/>
+      <text x="27" y="34" text-anchor="middle" fill="#041B39" font-family="system-ui" font-size="16" font-weight="700" pointer-events="none">L${row.n}</text>
+      <g class="glyph" transform="translate(70 10)" pointer-events="none">${glyph(row.n, row.color)}</g>
+      <text x="118" y="24" fill="#fff" font-family="system-ui" font-size="15" font-weight="650" pointer-events="none">${row.title}</text>
+      <text x="118" y="42" fill="#9aa8bf" font-family="system-ui" font-size="11" pointer-events="none">${row.detail}</text>
+      <text x="${row.n >= 4 ? 430 : 520}" y="33" fill="${STEP_FILL[status]}" font-family="system-ui" font-size="9" font-weight="700" pointer-events="none">${STEP_LABEL[status]}</text>
+      ${pager}
+    </g>`;
+  }).join("");
+
+  document.querySelectorAll(".hit").forEach((el) => {
+    el.addEventListener("click", () => selectAction(el.parentNode.dataset.action));
+  });
+
+  const form = document.getElementById("controls");
+  form.innerHTML = `
+    <fieldset>
+      <legend>Acción / nivel</legend>
+      ${[0,1,2,3,4,5].map((n) => `<button type="button" data-k="level" data-v="${n}" class="${state.level===n?"on":""}">${n===0?"L0 idle":"L"+n}</button>`).join("")}
+    </fieldset>
+    <fieldset>
+      <legend>ejecutar_contencion (L3+)</legend>
+      ${["idle","running","ok","partial","failed"].map((s) => `<button type="button" data-k="contain" data-v="${s}" class="${state.contain===s?"on":""}" ${state.level<3?"disabled":""}>${s}</button>`).join("")}
+    </fieldset>
+    <fieldset>
+      <legend>Llamada a Guli (L4/L5)</legend>
+      ${["idle","ringing","answered","no_pickup","hung_up"].map((s) => `<button type="button" data-k="call" data-v="${s}" class="${c===s?"on":""}" ${state.level<4?"disabled":""}>${s}</button>`).join("")}
+      <p class="note">Infra no espera. Retry una vez si no coge. No rollback.</p>
+    </fieldset>`;
+  form.querySelectorAll("button").forEach((b) => b.addEventListener("click", onCtrl));
+}
+
+function selectAction(action) {
+  const n = ACTION_LEVEL[action];
+  state.level = n;
+  if (n < 3) state.contain = "idle";
+  else if (state.contain === "idle") state.contain = "running";
+  if (n < 4) state.call = "idle";
+  else if (state.call === "idle") state.call = "ringing";
+  render();
+}
+
+function onCtrl(e) {
+  const k = e.currentTarget.dataset.k;
+  const v = e.currentTarget.dataset.v;
+  if (k === "level") {
+    const n = Number(v);
+    state.level = n;
+    if (n < 3) state.contain = "idle";
+    else if (state.contain === "idle") state.contain = "running";
+    if (n < 4) state.call = "idle";
+    else if (state.call === "idle") state.call = "ringing";
+  } else {
+    state[k] = v;
+  }
+  render();
+}
+
+function applyLive(payload) {
+  if (!payload || payload.source !== "happyrobot") return false;
+  const blob = JSON.stringify(payload);
+  if (blob === lastLive) return true;
+  lastLive = blob;
+  const n = Number(payload.level);
+  if (Number.isInteger(n) && n >= 0 && n <= 5) state.level = n;
+  if (CALLS.includes(payload.call)) state.call = payload.call;
+  if (CONTAINS.includes(payload.contain)) state.contain = payload.contain;
+  state.live = true;
+  state.runId = payload.run_id || "";
+  state.hrStatus = payload.hr_status || "";
+  const chip = document.getElementById("live");
+  chip.classList.add("on");
+  chip.textContent = `LIVE HappyRobot · ${payload.call} · contain ${payload.contain} · ${payload.run_id || ""}`;
+  render();
+  return true;
+}
+
+async function pollPager() {
+  try {
+    const res = await fetch(`pager-status.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    applyLive(await res.json());
+  } catch (_) { /* file:// or no watcher yet — keep demo buttons */ }
+}
+
+render();
+pollPager();
+setInterval(pollPager, 800);
+</script>
+</html>

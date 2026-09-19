@@ -152,12 +152,135 @@ describe("useGraphStream", () => {
 });
 
 describe("App", () => {
-  test("renders a mock dashboard without opening the backend stream", () => {
+  test("streams the shared graph and reuses upserted nodes", () => {
     mount(<App />);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.last.url).toBe(STREAM_URL);
+    expect(container.textContent).toContain("CONNECTING");
+    expect(
+      container.querySelector('[aria-label="Restart test run"]'),
+    ).toBeNull();
+
+    emit("snapshot", {
+      revision: 1,
+      root: "root",
+      nodes: [
+        node("root", ["run:r1"]),
+        { ...node("run:r1", ["root", "r1:1"]), run_id: "r1" },
+        {
+          ...node("r1:1", ["run:r1"]),
+          run_id: "r1",
+          level: 2,
+          threshold: 0.9,
+          event: { label: "Read file" },
+          created_at: "2026-01-01T00:00:01Z",
+        },
+      ],
+    });
+    expect(container.textContent).toContain("LIVE");
+    expect(
+      container.querySelector('.react-flow__node[data-id="r1:1"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Container logs"]')?.textContent,
+    ).toContain("Read file");
+
+    emit("update", {
+      revision: 2,
+      root: "root",
+      upsert_nodes: [
+        {
+          ...node("r1:1", ["run:r1"]),
+          run_id: "r1",
+          level: 3,
+          threshold: 0.9,
+          event: { label: "Read file" },
+          created_at: "2026-01-01T00:00:01Z",
+        },
+      ],
+      removed_node_ids: [],
+    });
+    expect(
+      container.querySelectorAll('.react-flow__node[data-id="r1:1"]'),
+    ).toHaveLength(1);
+    expect(container.textContent).toContain("L3");
+  });
+
+  test("renders protective actions from the incident feed", async () => {
+    const incident = {
+      incident_id: "r1",
+      accepted_level: 4,
+      rows: { 1: "idle", 2: "idle", 3: "ok", 4: "running", 5: "idle" },
+      actions: [
+        {
+          kind: "action_transition",
+          incident_id: "r1",
+          level: 4,
+          action_id: "r1:contain_all_runs",
+          name: "contain_all_runs",
+          ladder_level: 3,
+          mode: "simulated",
+          status: "ok",
+          timestamp: "2026-01-01T00:00:01Z",
+          detail: null,
+          error_code: null,
+          call_status: null,
+        },
+        {
+          kind: "action_transition",
+          incident_id: "r1",
+          level: 4,
+          action_id: "r1:page_oncall:l4",
+          name: "page_oncall",
+          ladder_level: null,
+          mode: "real",
+          status: "running",
+          timestamp: "2026-01-01T00:00:02Z",
+          detail: null,
+          error_code: null,
+          call_status: "ringing",
+        },
+      ],
+      pager_status: "running",
+      call_status: "ringing",
+      updated_at: "2026-01-01T00:00:02Z",
+    };
+    const nativeFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(incident))) as unknown as typeof fetch;
+    try {
+      mount(<App />);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      const panel = container.querySelector(
+        '[aria-label="Protective actions"]',
+      );
+      expect(panel?.textContent).toContain("contain_all_runs");
+      expect(panel?.textContent).toContain("page_oncall");
+      expect(panel?.textContent).toContain("HappyRobot");
+    } finally {
+      globalThis.fetch = nativeFetch;
+    }
+  });
+
+  test("renders a mock dashboard without opening the backend stream", () => {
+    mount(<App demo />);
     expect(FakeEventSource.instances).toHaveLength(0);
     expect(container.textContent).toContain("Agent activity");
     expect(container.textContent).toContain("Protective actions");
     expect(container.textContent).toContain("Container logs");
+    expect(
+      container.querySelector('header img[src="/angry-robot.svg"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('header[aria-label="AngryRobot"]')?.className,
+    ).toContain("justify-center");
+    expect(
+      container
+        .querySelector('header h1 img[alt="AngryRobot"]')
+        ?.getAttribute("src"),
+    ).toBe("/angry-robot-wordmark.svg");
     expect(container.textContent).not.toContain("Eyes on every action");
     expect(container.textContent).not.toContain("Follow live");
     expect(container.textContent).not.toContain(
@@ -201,7 +324,7 @@ describe("App", () => {
   });
 
   test("restarts the test run and clears old activity and selection", () => {
-    mount(<App />);
+    mount(<App demo />);
     act(() =>
       container
         .querySelector<HTMLDivElement>('.react-flow__node[data-id="atlas:3"]')!

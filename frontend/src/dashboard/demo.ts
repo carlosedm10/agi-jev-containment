@@ -205,10 +205,10 @@ const actionSpecs = [
       [15, "On-call responder connected", "00:02"],
       [
         16,
-        "Pager: “Agent network isolated. Open the incident viewer.”",
+        "Pager: “The AGI escaped its sandbox. We are cutting internet access. No need to authorize the cut.”",
         "00:04",
       ],
-      [17, "Responder: “Acknowledged. I am reviewing the trace.”", "00:06"],
+      [17, "Responder: “Acknowledged.”", "00:06"],
       [18, "Call ended; containment remains in place", "Delivered"],
     ],
   },
