@@ -13,6 +13,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres-hackspain:5432/${POSTGRES_DB:-hackspain}
       - UV_PROJECT_ENVIRONMENT=/opt/venv
+      - PYTHONPATH=/app
     ports:
       - "8000:8000"
     volumes:
