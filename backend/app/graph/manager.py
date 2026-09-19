@@ -114,7 +114,7 @@ class ActionGraph:
         for listener in list(self._listeners):
             try:
                 listener(update)
-            except Exception:  # noqa: BLE001 - a broken sink must not break mutations
+            except Exception:
                 logger.exception("Graph stream listener failed at revision %s", update.revision)
 
     def _mark_upsert(self, node: Node) -> None:

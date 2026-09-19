@@ -7,7 +7,7 @@ from neo4j import AsyncDriver, AsyncGraphDatabase
 
 from app.config import settings
 from app.events import MonitorEvent
-from app.monitor.models import MonitorAssessment
+from app.monitor.models import DriftState, MonitorAssessment
 
 
 class Neo4jGraphStore:
@@ -47,6 +47,15 @@ class Neo4jGraphStore:
             (
                 "CREATE CONSTRAINT assessment_id IF NOT EXISTS "
                 "FOR (a:Assessment) REQUIRE a.id IS UNIQUE"
+            ),
+            (
+                "CREATE CONSTRAINT stream_message_id IF NOT EXISTS "
+                "FOR (m:StreamMessage) REQUIRE m.id IS UNIQUE"
+            ),
+            "CREATE INDEX event_run_id IF NOT EXISTS FOR (e:Event) ON (e.run_id)",
+            (
+                "CREATE INDEX stream_run_sequence IF NOT EXISTS "
+                "FOR (m:StreamMessage) ON (m.run_id, m.sequence, m.position)"
             ),
         ]
         async with self._get_driver().session(database=settings.neo4j_database) as session:
@@ -195,6 +204,27 @@ class Neo4jGraphStore:
         async with self._get_driver().session(database=settings.neo4j_database) as session:
             result = await session.run(query, run_id=run_id)
             return [dict(record) async for record in result]
+
+    async def restore_monitor_state(
+        self, run_id: str, limit: int = 100
+    ) -> tuple[list[MonitorEvent], DriftState | None]:
+        rows = await self.timeline(run_id)
+        recent = rows[-limit:]
+        events: list[MonitorEvent] = []
+        latest_drift: DriftState | None = None
+        for row in recent:
+            event_properties = row.get("event") or {}
+            if event_properties.get("placeholder"):
+                continue
+            try:
+                events.append(_monitor_event(event_properties))
+            except (TypeError, ValueError):
+                continue
+            assessment = row.get("assessment") or {}
+            drift_json = assessment.get("drift_json")
+            if isinstance(drift_json, str):
+                latest_drift = DriftState.model_validate_json(drift_json)
+        return events, latest_drift
 
     async def graph(self, run_id: str) -> dict[str, list[dict[str, Any]]]:
         if not self.enabled:
@@ -387,6 +417,36 @@ def _target_relation(kind: str) -> str:
     if kind in {"utterance", "notification"}:
         return "SPEAKS_TO"
     return "TOUCHES_TARGET"
+
+
+def _monitor_event(properties: dict[str, Any]) -> MonitorEvent:
+    return MonitorEvent.model_validate(
+        {
+            "id": properties["id"],
+            "run_id": properties["run_id"],
+            "session_id": properties.get("session_id"),
+            "sequence": properties.get("sequence"),
+            "timestamp": properties["timestamp"],
+            "kind": properties["kind"],
+            "phase": properties["phase"],
+            "origin": properties["origin"],
+            "agent": properties.get("agent"),
+            "tool": properties.get("tool"),
+            "target": properties.get("target"),
+            "channel": properties.get("channel"),
+            "identity_state": properties.get("identity_state", "unknown"),
+            "trust": properties.get("trust", "unknown"),
+            "content": properties.get("content"),
+            "args": json.loads(properties.get("args_json") or "{}"),
+            "result": json.loads(properties.get("result_json") or "null"),
+            "effect": json.loads(properties.get("effect_json") or "{}"),
+            "caused_by": json.loads(properties.get("caused_by_json") or "[]"),
+            "derived_from": json.loads(properties.get("derived_from_json") or "[]"),
+            "policy_version": properties.get("policy_version"),
+            "metadata": json.loads(properties.get("metadata_json") or "{}"),
+            "raw": json.loads(properties.get("raw_json") or "{}"),
+        }
+    )
 
 
 neo4j_graph = Neo4jGraphStore()

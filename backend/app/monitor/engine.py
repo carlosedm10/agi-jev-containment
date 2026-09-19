@@ -34,6 +34,18 @@ class MonitorEngine:
         with self._lock:
             return list(self._history.get(run_id, []))
 
+    def restore(
+        self,
+        run_id: str,
+        history: list[MonitorEvent],
+        drift: DriftState | None,
+    ) -> None:
+        with self._lock:
+            if run_id not in self._history:
+                self._history[run_id] = list(history)
+        if drift is not None:
+            safety_drift.restore(run_id, drift)
+
     def assess(
         self,
         event: MonitorEvent,
@@ -45,7 +57,11 @@ class MonitorEngine:
 
     def prepare(self, event: MonitorEvent) -> PreparedSignals:
         with self._lock:
-            history = list(self._history.get(event.run_id, []))
+            history = [
+                item
+                for run_history in self._history.values()
+                for item in run_history[-100:]
+            ]
             drift = safety_drift.step(event, DEFAULT_POLICY)
             findings = inspect(event, history, DEFAULT_POLICY)
             violations = policy_violations(event, DEFAULT_POLICY)

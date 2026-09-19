@@ -182,6 +182,22 @@ class TestPostEvents:
 
         assert response.status_code == 200
 
+    async def test_duplicate_event_id_is_not_reclassified(
+        self, client: AsyncClient, fresh, tape_dir, mock_jev, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "typesafe_api_key", "test")
+        jev = mock_jev(["level_1_mild"])
+        monkeypatch.setattr(service, "client_factory", lambda: jev)
+        payload = {"event": "file_read", "event_id": "stable-event"}
+
+        first = await client.post("/api/runs/demo/events", json=payload)
+        second = await client.post("/api/runs/demo/events", json=payload)
+
+        assert first.json()["duplicate"] is False
+        assert second.json()["duplicate"] is True
+        assert len(jev.calls) == 1
+        assert len(log.tail("demo", 100)) == 1
+
 
 class TestGetRuns:
     async def test_get_run_before_any_event(self, client: AsyncClient, fresh):

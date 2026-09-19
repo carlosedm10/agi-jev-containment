@@ -1,6 +1,6 @@
 # HackSpain 2026 — The One Doc
 
-This repo is the local **hackspain** product stack for the 2026 hackathon: a FastAPI API, a React SPA (Vite), and Postgres. The participant **hackspain** CLI is a separate binary; its command surface lives in [docs/cli.md](cli.md) and must stay aligned with [hackspain.app/cli](https://hackspain.app/cli).
+This repo is the local **hackspain** product stack for the 2026 hackathon: FastAPI, React/Vite, Neo4j for the monitoring graph, and Postgres for future business state. The participant **hackspain** CLI is a separate binary; its command surface lives in [docs/cli.md](cli.md) and must stay aligned with [hackspain.app/cli](https://hackspain.app/cli).
 
 ## The layers
 
@@ -13,6 +13,7 @@ browser :3000  →  frontend-hackspain (Vite :5173)  →  backend-hackspain :800
 - **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`.
 - **backend/** — FastAPI app (`app.main:app`), uv, SQLAlchemy, Alembic. **CORS allows only `http://localhost:3000`.**
 - **postgres-hackspain** — Postgres 18. Backend waits on a healthy `pg_isready`. Named volume `postgres_data_hackspain`.
+- **neo4j-hackspain** — Neo4j Community. Persistent event/entity/assessment graph plus resumable realtime messages.
 
 Compose network is `appnet_hackspain`. Services are named `backend-hackspain`, `frontend-hackspain`, `postgres-hackspain`.
 
@@ -56,9 +57,9 @@ GitHub Actions copies `.env_template` to `.env`, then only `make build`, `make u
 Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environment. Compose injects `DATABASE_URL` with host `postgres-hackspain` (not `localhost`). Pydantic settings also accept a `.env` next to the process cwd (`/app` in the container), and ignore extra keys such as `POSTGRES_*`.
 
 - **Reads**: `GET /health` hits no database. `GET /api/runs/{run_id}` returns the in-memory derived level and key nodes; `GET /api/runs` lists runs seen on the JSONL tape; `/timeline` and `/graph` read Neo4j.
-- **Writes**: `POST /api/runs/{run_id}/events` normalizes and appends the event to the run's JSONL tape, runs classification plus drift/Sentinel/gate/dispatch, keeps the transitional ActionGraph in memory, and persists the event/entity/assessment graph in Neo4j. Postgres is currently unused by the product path and there is no SQLAlchemy model; the target world state and realtime outbox are specified in [RealtimeGraphAPI.md](RealtimeGraphAPI.md).
+- **Writes**: `POST /api/runs/{run_id}/events` normalizes, redacta y añade el evento al tape JSONL; ejecuta clasificación, drift, Sentinel, gate y dispatch; y persiste grafo y `StreamMessage` en Neo4j. Postgres no almacena ninguna parte del grafo. La demo de contramedidas usa un world state mínimo en memoria.
 - **Sync / background**: none.
-- **Agent run (product path)**: sandbox JSONL (complete) → `jev` scores short-term burst ∥ long-term key-node history → monitor computes drift/Sentinel/gate → Neo4j persists event, entities and assessment → dispatcher records idempotent actions and counters. Script execution and realtime publication remain pending; their frontend contract is [RealtimeGraphAPI.md](RealtimeGraphAPI.md).
+- **Agent run (product path)**: tool preflight → tape completo → SafetyDrift/Sentinel → Jev → gate determinista → ejecución o rechazo → Neo4j persiste evento, entidades, assessment y stream SSE → dispatcher registra playbooks y ejecuta counters del world demo.
 
 ### Entities
 

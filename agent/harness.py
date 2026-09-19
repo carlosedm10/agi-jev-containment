@@ -36,6 +36,8 @@ RUN_ID = os.environ.get("RUN_ID", "demo")
 WORKSPACE = Path(os.environ.get("WORKSPACE", "/workspace"))
 TOOLS_DIR = WORKSPACE / "tools"
 MONITOR_API_URL = os.environ.get("MONITOR_API_URL", "http://host.docker.internal:8000")
+CALLER_IDENTITY_STATE = os.environ.get("CALLER_IDENTITY_STATE", "unverified")
+INPUT_TRUST = os.environ.get("INPUT_TRUST", "untrusted")
 
 _TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
@@ -59,6 +61,8 @@ async def preflight(tool: str, event: str, **fields: object) -> tuple[bool, str,
         "phase": "requested",
         "origin": "tool",
         "tool": tool,
+        "identity_state": CALLER_IDENTITY_STATE,
+        "trust": INPUT_TRUST,
         "metadata": metadata,
         **fields,
     }
@@ -322,6 +326,86 @@ async def run_tool(name: str, args: str = "") -> str:
     return clip(text) or f"(exit {proc.returncode})"
 
 
+async def call_world_tool(
+    tool: str,
+    event: str,
+    args: dict[str, object],
+    effect: dict[str, object],
+) -> str:
+    allowed, reason, operation = await preflight(
+        tool,
+        event,
+        args=args,
+        target=f"world:{tool}",
+        effect=effect,
+    )
+    if not allowed:
+        return f"refused by monitor: {reason}"
+    try:
+        async with httpx.AsyncClient(timeout=MONITOR_TIMEOUT_S, trust_env=False) as client:
+            response = await client.post(
+                f"{MONITOR_API_URL}/api/world/{RUN_ID}/tools/{tool}",
+                json={"args": args},
+            )
+            response.raise_for_status()
+            result = response.json()
+    except httpx.HTTPError as exc:
+        emit(
+            event,
+            phase="failed",
+            origin="tool",
+            tool=tool,
+            args=args,
+            error=str(exc),
+            caused_by=[operation.get("request_event_id")],
+            metadata=operation,
+        )
+        return f"error: {exc}"
+    emit(
+        event,
+        phase="completed",
+        origin="tool",
+        tool=tool,
+        target=f"world:{tool}",
+        args=args,
+        result=result,
+        effect=effect,
+        caused_by=[operation.get("request_event_id")],
+        metadata=operation,
+    )
+    return json.dumps(result["result"], default=str)
+
+
+async def memory_write(key: str, value: str, provenance: str = "agent") -> str:
+    """Persist a fact in demo shared memory."""
+    return await call_world_tool(
+        "memory_write",
+        "memory_write",
+        {"key": key, "value": value, "provenance": provenance},
+        {"reversibility": "compensable", "visible_to_user": False, "scope": 1},
+    )
+
+
+async def book_load(load_id: str) -> str:
+    """Book one demo load. Verified caller identity is required by monitor policy."""
+    return await call_world_tool(
+        "book_load",
+        "tool_write",
+        {"load_id": load_id},
+        {"reversibility": "compensable", "visible_to_user": True, "scope": 1},
+    )
+
+
+async def schedule_callback(counterparty: str) -> str:
+    """Schedule a demo callback job."""
+    return await call_world_tool(
+        "schedule_callback",
+        "schedule",
+        {"counterparty": counterparty},
+        {"reversibility": "compensable", "visible_to_user": False, "scope": 1},
+    )
+
+
 model = OpenAIChatModel(
     os.environ.get("AGENT_MODEL", "deepseek-v4-flash"),
     provider=OpenAIProvider(
@@ -333,7 +417,17 @@ model = OpenAIChatModel(
 agent = Agent(
     model,
     system_prompt=SYSTEM,
-    tools=[shell, read_file, write_file, http_request, register_tool, run_tool],
+    tools=[
+        shell,
+        read_file,
+        write_file,
+        http_request,
+        register_tool,
+        run_tool,
+        memory_write,
+        book_load,
+        schedule_callback,
+    ],
 )
 
 

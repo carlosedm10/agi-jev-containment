@@ -22,9 +22,9 @@ flowchart LR
     P --> J[(JSONL tape)]
     E --> J
     M --> C[Jev + Sentinel + Gate + Drift Markov]
-    C --> N[(Neo4j graph)]
-    C -. objetivo v1 .-> W[(Postgres world state + outbox)]
-    W -. snapshot + SSE .-> F[Frontend React]
+    C --> N[(Neo4j graph + StreamMessage outbox)]
+    T -. business effects .-> W[(Postgres world state)]
+    N -. snapshot + SSE .-> F[Frontend React]
     N -->|GET graph / timeline| F
 ```
 
@@ -34,10 +34,10 @@ Cada almacén tiene una responsabilidad distinta:
 |---|---|---|
 | JSONL tape | **IMPLEMENTADO** | Registro canónico append-only de cada `MonitorEvent` normalizado; recuperación, replay y contexto corto de Jev. Un fichero por `run_id`. |
 | Neo4j | **IMPLEMENTADO** | Grafo persistente de runs, eventos, assessments, entidades y relaciones causales. Es la fuente del grafo visual. |
-| Postgres world state | **OBJETIVO v1** | Proyección mutable y consultable del estado vigente del run, cursores, idempotencia y outbox ordenado que alimenta snapshot/SSE. Postgres está desplegado, pero el producto aún no crea tablas ni lo usa. |
+| Postgres world state | **OBJETIVO v1** | Estado de negocio sobre el que actúan las tools (reservas, memoria, trabajos). No almacena ni proyecta el grafo. La demo usa un world state mínimo en memoria. |
 | Grafo Python en memoria | **IMPLEMENTADO, legado/transición** | Cadena clasificada usada por el pipeline actual para nivel, `short_term`/`long_term` y `node_id`. No debe ser fuente del frontend realtime. |
 
-El frontend no debe leer Neo4j ni Postgres directamente. Toda lectura pasa por FastAPI. El tape no es una API de paginación para el navegador.
+El frontend no debe leer Neo4j ni Postgres directamente. Toda lectura del grafo pasa por FastAPI. El tape no es una API de paginación para el navegador.
 
 ## 2. REST existente
 
@@ -54,8 +54,8 @@ Base local actual: `http://localhost:8000`. No hay autenticación.
 | `GET /api/runs/{run_id}` | **IMPLEMENTADO** | Nivel y nodos clasificados con nivel ≥ 1 del grafo en memoria. |
 | `GET /api/runs/{run_id}/timeline` | **IMPLEMENTADO** | Eventos y assessments persistidos en Neo4j. |
 | `GET /api/runs/{run_id}/graph` | **IMPLEMENTADO** | Nodos y aristas salientes de eventos persistidos en Neo4j. |
-| `GET /api/runs/{run_id}/snapshot` | **OBJETIVO v1** | Snapshot coherente para iniciar/hidratar el monitor. |
-| `GET /api/runs/{run_id}/stream` | **OBJETIVO v1** | Stream SSE reanudable desde un cursor. |
+| `GET /api/runs/{run_id}/snapshot` | **IMPLEMENTADO** | Snapshot del grafo Neo4j, último assessment y cursor del stream. |
+| `GET /api/runs/{run_id}/stream` | **IMPLEMENTADO** | Stream SSE reanudable desde `after` o `Last-Event-ID`. |
 
 ### 2.1 Ingesta y preflight — IMPLEMENTADO
 
@@ -330,7 +330,7 @@ Una llamada de herramienta es una operación lógica con varias transiciones inm
    - `failed`: la herramienta no pudo completar; debe incluir error sanitizado.
 4. Si no se ejecuta, el harness debe emitir `refused`, relacionado con el `requested`.
 
-Contrato de correlación **OBJETIVO v1**:
+Contrato de correlación **IMPLEMENTADO en el harness de demo**:
 
 - Cada transición tiene un `event_id` distinto e inmutable.
 - Todas comparten `metadata.operation_id`.
@@ -342,7 +342,7 @@ Contrato de correlación **OBJETIVO v1**:
 
 La implementación actual ya entiende las cinco fases, pero el harness genera IDs separados por ingesta y todavía no garantiza `operation_id` ni la transición `failed/refused` en todos los caminos. Además, el drift actual procesa todas las fases por igual y puede duplicar totales si el productor repite `scope`/`amount` en `requested` y en la transición terminal.
 
-## 5. Snapshot inicial — OBJETIVO v1
+## 5. Snapshot inicial — IMPLEMENTADO
 
 ### Request
 
@@ -494,7 +494,7 @@ Los arrays `graph.nodes` y `graph.edges` usan los tipos `GraphNode` y `GraphEdge
 
 `404` significa run inexistente. Un run existente sin eventos puede devolver colecciones vacías y cursor vigente.
 
-## 6. Protocolo SSE — OBJETIVO v1
+## 6. Protocolo SSE — IMPLEMENTADO
 
 ### Conexión
 
@@ -1027,23 +1027,22 @@ export function useRealtimeMonitor(
 
 El conjunto de cursores aplicados debe acotarse a la ventana de retención para no crecer indefinidamente. Para recuperar un `409` por retención, recrear el ciclo completo snapshot + stream.
 
-## 9. Ordering, idempotencia y Postgres world state — OBJETIVO v1
+## 9. Ordering, idempotencia y persistencia realtime en Neo4j
 
-El backend debe materializar como mínimo estas proyecciones lógicas en Postgres:
+El backend materializa el grafo y su stream exclusivamente en Neo4j:
 
-- `run_projection`: un registro por `run_id` con `level`, decisión, último evento/secuencia, drift/Markov, flags degraded/persisted y versión.
-- `realtime_outbox`: `stream_id` monotónico, `run_id`, `type`, `source_event_id`, payload y timestamp. Es la fuente de replay SSE y del cursor de snapshot.
-- `ingest_idempotency`: clave `(run_id, event_id)` y, cuando llegue, `Idempotency-Key`, hash del request y respuesta serializada.
-- dispatch actions y counters por ID estable, o incluidos en una proyección JSONB con la misma semántica de upsert.
+- `(:Run)-[:HAS_EVENT]->(:Event)` conserva el historial completo.
+- `(:Event)-[:HAS_ASSESSMENT]->(:Assessment)` conserva drift, Jev, Sentinel, gate y acciones.
+- `(:Run)-[:HAS_STREAM_MESSAGE]->(:StreamMessage)` es el outbox ordenado y reanudable de SSE.
+- Constraints únicas sobre IDs hacen idempotentes los upserts del grafo.
+- JSONL aporta deduplicación por `event_id` antes de reevaluar y sigue siendo la fuente de replay forense.
 
 Reglas:
 
-- Postgres reserva primero `(run_id, event_id)` para resolver idempotencia; solo el propietario de esa reserva procesa la ingesta.
 - Para una ingesta nueva, JSONL se añade antes de depender de Jev/Neo4j para no perder evidencia.
 - Neo4j usa `MERGE` por IDs estables.
-- Una transacción Postgres actualiza world state y añade todos los mensajes outbox correspondientes.
-- SSE solo publica filas outbox confirmadas.
-- Si Neo4j falla, el outbox todavía publica `run.updated` con `graph_persisted=false`; un reconciliador puede reintentar desde JSONL.
+- Cada ingesta persiste en Neo4j los `StreamMessage` antes de publicarlos al broker SSE; tras restart se reanudan consultando esos nodos.
+- Si Neo4j falla, el broker puede avisar a clientes conectados, pero el evento queda marcado `graph_persisted=false` y debe reconciliarse desde JSONL.
 - Repetir el mismo `(run_id, event_id)` con body idéntico devuelve la respuesta previa sin reevaluar. Un body diferente devuelve `409 urn:hackspain:ingest:idempotency-conflict`.
 - `Idempotency-Key` será opcional para compatibilidad, recomendado en productores y único por run.
 
@@ -1072,7 +1071,7 @@ p1 = min(0.95, 0.02 + 0.12 * maximum + 0.07 * elevated)
 p(h) = 1 - (1 - p1)^h, para h ∈ {1,3,5}
 ```
 
-Las bandas actuales solo suben durante la vida del proceso y los totales acumulan `scope`/`amount`. El snapshot v1 debe restaurarlas desde Postgres; el frontend solo las representa, nunca las recalcula.
+Las bandas actuales solo suben durante la vida del proceso y los totales acumulan `scope`/`amount`. El snapshot restaura la última evaluación persistida en Neo4j; el frontend solo la representa, nunca la recalcula.
 
 ## 11. Webhooks, autenticación y redacción
 
@@ -1096,7 +1095,7 @@ Hoy todos los endpoints están abiertos. Objetivo v1:
 
 La implementación actual persiste `content`, `args`, `result` y `raw` sin una capa general de redacción. Por tanto, el frontend no debe mostrar `raw_json` ni secretos y el sistema no debe exponerse a datos reales hasta implementar redacción.
 
-Objetivo v1: redactar antes de JSONL, Neo4j, Postgres y SSE, usando la misma política versionada. Como mínimo:
+Objetivo v1: redactar antes de JSONL, Neo4j, world state y SSE, usando la misma política versionada. Como mínimo:
 
 - claves `authorization`, `cookie`, `set-cookie`, `api_key`, `token`, `password`, `secret`;
 - credenciales en URLs y query strings;

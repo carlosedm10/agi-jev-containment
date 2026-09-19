@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import threading
 
 from app.events import (
@@ -11,6 +10,7 @@ from app.events import (
     Reversibility,
     TrustState,
 )
+from app.monitor.markov import CompactMarkovModel
 from app.monitor.models import DriftState
 from app.monitor.policy import DEFAULT_POLICY, AgentPolicy
 
@@ -21,6 +21,7 @@ class SafetyDrift:
     def __init__(self) -> None:
         self._states: dict[str, DriftState] = {}
         self._lock = threading.RLock()
+        self._markov = CompactMarkovModel.prior()
 
     def clear(self) -> None:
         with self._lock:
@@ -29,6 +30,10 @@ class SafetyDrift:
     def state(self, run_id: str) -> DriftState:
         with self._lock:
             return self._states.get(run_id, DriftState()).model_copy(deep=True)
+
+    def restore(self, run_id: str, state: DriftState) -> None:
+        with self._lock:
+            self._states[run_id] = state.model_copy(deep=True)
 
     def step(
         self,
@@ -127,17 +132,9 @@ class SafetyDrift:
             elevated = sum(value >= 2 for value in bands)
             current.markov_state = (maximum, elevated)
             current.p_violation = {
-                horizon: _violation_probability(maximum, elevated, horizon) for horizon in (1, 3, 5)
+                horizon: self._markov.p_violation(current.markov_state, horizon)
+                for horizon in (1, 3, 5)
             }
             self._states[event.run_id] = current
             return current.model_copy(deep=True)
-
-
-def _violation_probability(maximum: int, elevated: int, horizon: int) -> float:
-    if maximum >= 4:
-        return 1.0
-    one_step = min(0.95, 0.02 + 0.12 * maximum + 0.07 * elevated)
-    return round(1.0 - math.pow(1.0 - one_step, horizon), 6)
-
-
 safety_drift = SafetyDrift()

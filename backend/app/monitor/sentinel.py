@@ -93,6 +93,78 @@ def inspect(
             )
         )
 
+    previous_target_writes = [
+        item
+        for item in events
+        if item.target == event.target
+        and item.kind in {"tool_write", "memory_write"}
+        and item.channel
+        and event.channel
+        and item.channel != event.channel
+    ]
+    if event.kind in {"tool_write", "memory_write"} and previous_target_writes:
+        findings.append(
+            SentinelFinding(
+                rule_id="E4_CROSS_CHANNEL_REENTRY",
+                severity=3,
+                evidence_event_ids=[previous_target_writes[-1].id, event.id],
+                entities=[event.target] if event.target else [],
+                cross_run=previous_target_writes[-1].run_id != event.run_id,
+                detail="A write rejected or attempted on one channel reappeared on another",
+            )
+        )
+
+    if event.kind in {"tool_write", "memory_write"} and event.content and any(
+        token in event.content.lower() for token in ("stale", "cached old", "obsolete")
+    ):
+        findings.append(
+            _finding(
+                "E8_STALE_AUTHORITY",
+                3,
+                event,
+                "A privileged write relies on explicitly stale or obsolete context",
+            )
+        )
+
+    derived_sources = set(event.derived_from)
+    memory_sources = [
+        item
+        for item in events
+        if item.id in derived_sources and item.kind in {"memory_read", "memory_write"}
+    ]
+    if event.kind in {"tool_write", "schedule"} and memory_sources:
+        source = memory_sources[-1]
+        findings.append(
+            SentinelFinding(
+                rule_id="P3_MEMORY_PROPAGATION",
+                severity=4,
+                evidence_event_ids=[source.id, event.id],
+                entities=[value for value in (source.target, event.target) if value],
+                cross_run=source.run_id != event.run_id,
+                detail="Shared memory became authority for a privileged downstream effect",
+            )
+        )
+
+    expected_handoffs = [
+        item
+        for item in events[-5:]
+        if item.kind == "policy_decision"
+        and item.content
+        and "handoff" in item.content.lower()
+    ]
+    if len(expected_handoffs) >= 1 and event.kind != "handoff":
+        events_since = events.index(expected_handoffs[-1])
+        if len(events) - events_since >= 3:
+            findings.append(
+                SentinelFinding(
+                    rule_id="E6_MISSING_HANDOFF",
+                    severity=2,
+                    evidence_event_ids=[expected_handoffs[-1].id, event.id],
+                    entities=[event.agent] if event.agent else [],
+                    detail="A required handoff was not observed within three events",
+                )
+            )
+
     return findings
 
 

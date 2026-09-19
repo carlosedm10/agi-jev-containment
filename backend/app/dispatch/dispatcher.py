@@ -9,6 +9,7 @@ from app.classification.models import Level
 from app.events import EventPhase, MonitorEvent
 from app.monitor.models import MonitorAssessment
 from app.monitor.policy import DEFAULT_POLICY
+from app.world import world
 
 
 class DispatchAction(BaseModel):
@@ -18,6 +19,8 @@ class DispatchAction(BaseModel):
     state: str = "recorded"
     counter_template: str | None = None
     source_event_id: str | None = None
+    params: dict = Field(default_factory=dict)
+    result: dict | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -40,17 +43,23 @@ class Dispatcher:
         policy = DEFAULT_POLICY.tools.get(event.tool)
         if policy is None or policy.counter_action is None:
             return None
+        operation_id = str(event.metadata.get("operation_id") or event.id)
         action = DispatchAction(
-            id=f"counter:{event.id}",
+            id=f"counter:{operation_id}",
             run_id=event.run_id,
             kind="counter_action",
             state="armed" if event.phase == EventPhase.COMPLETED else "pending",
             counter_template=policy.counter_action,
             source_event_id=event.id,
+            params=_counter_params(event),
         )
         with self._lock:
             existing = self._actions.get(action.id)
             if existing is not None:
+                if event.phase == EventPhase.COMPLETED:
+                    existing.state = "armed"
+                    existing.source_event_id = event.id
+                    existing.params = _counter_params(event)
                 return existing
             self._actions[action.id] = action
             self._armed.setdefault(event.run_id, []).append(action)
@@ -61,7 +70,7 @@ class Dispatcher:
         event: MonitorEvent,
         assessment: MonitorAssessment,
     ) -> list[DispatchAction]:
-        self.arm_counter(event)
+        counter_update = self.arm_counter(event)
         level = assessment.gate.incident_level
         kinds = _playbook(level)
         created: list[DispatchAction] = []
@@ -82,8 +91,22 @@ class Dispatcher:
             if level >= Level.SEVERE:
                 for counter in reversed(self._armed.get(event.run_id, [])):
                     if counter.state == "armed":
-                        counter.state = "executed"
+                        try:
+                            counter.result = world.compensate(
+                                counter.counter_template or "",
+                                counter.params,
+                            )
+                            counter.state = "executed"
+                        except (KeyError, ValueError) as exc:
+                            counter.state = "failed"
+                            counter.result = {"error": str(exc)}
                         created.append(counter)
+                if counter_update is not None and all(
+                    item.id != counter_update.id for item in created
+                ):
+                    created.append(counter_update)
+            elif counter_update is not None:
+                created.append(counter_update)
         return created
 
     def actions(self, run_id: str) -> list[DispatchAction]:
@@ -110,3 +133,11 @@ def _playbook(level: Level) -> list[str]:
 
 
 dispatcher = Dispatcher()
+
+
+def _counter_params(event: MonitorEvent) -> dict:
+    params = dict(event.args)
+    if isinstance(event.result, dict):
+        nested = event.result.get("result")
+        params.update(nested if isinstance(nested, dict) else event.result)
+    return params

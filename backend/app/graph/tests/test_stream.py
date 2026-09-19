@@ -10,6 +10,7 @@ import pytest
 
 from app.graph import ActionGraph, stream
 from app.graph.manager import GraphUpdate
+from app.graph.router import graph_stream
 from app.main import app  # noqa: F401 - mounts the graph router
 
 
@@ -81,7 +82,8 @@ class TestManagerSubscription:
         first, second = collector.updates
         assert _ids(first) == {"root"}
         assert _ids(second) == {"child", "root"}
-        assert second.upsert_nodes[1]["neighbors"] == ["child"]
+        by_id = {node["id"]: node for node in second.upsert_nodes}
+        assert by_id["root"]["neighbors"] == ["child"]
 
     async def test_connect_upserts_both_endpoints(self, g: ActionGraph):
         collector = Collector()
@@ -236,14 +238,15 @@ class TestStreamEndpoint:
     """Endpoint tests run against the singleton the router streams from, so
     revisions are asserted relative to the snapshot, never absolute."""
 
-    async def test_snapshot_then_live_updates(self, client, fresh_graph: ActionGraph):
+    async def test_snapshot_then_live_updates(self, fresh_graph: ActionGraph):
         fresh_graph.add_node("root", threshold=0.4)
-        async with client.stream("GET", "/api/graph/stream") as response:
+        response = await graph_stream()
+        lines = response.body_iterator
+        try:
             assert response.status_code == 200
             assert response.headers["content-type"].startswith("text/event-stream")
 
-            lines = response.aiter_lines()
-            event, data = await _read_event(lines)
+            event, data = _parse_chunk(await anext(lines))
             assert event == "snapshot"
             assert data["revision"] == fresh_graph.revision
             assert data["root"] == "root"
@@ -252,36 +255,63 @@ class TestStreamEndpoint:
 
             # A mutation after connecting arrives as an ordered update.
             fresh_graph.append("r1", level=2, threshold=0.8, intent="recon")
-            event, data = await _read_event(lines)
+            event, data = _parse_chunk(await anext(lines))
             assert event == "update"
             assert data["revision"] == base + 1
             assert {"root", "run:r1", "r1:1"} <= {n["id"] for n in data["upsert_nodes"]}
             assert data["root"] == "root"
+        finally:
+            await lines.aclose()
 
-    async def test_empty_graph_snapshot(self, client, fresh_graph: ActionGraph):
-        async with client.stream("GET", "/api/graph/stream") as response:
-            event, data = await _read_event(response.aiter_lines())
+    async def test_empty_graph_snapshot(self, fresh_graph: ActionGraph):
+        response = await graph_stream()
+        lines = response.body_iterator
+        try:
+            event, data = _parse_chunk(await anext(lines))
             assert event == "snapshot"
             assert data == {"revision": fresh_graph.revision, "root": None, "nodes": []}
+        finally:
+            await lines.aclose()
 
-    async def test_multiple_clients_each_get_updates(self, client, fresh_graph: ActionGraph):
-        async with (
-            client.stream("GET", "/api/graph/stream") as first,
-            client.stream("GET", "/api/graph/stream") as second,
-        ):
-            await _read_event(first.aiter_lines())
-            await _read_event(second.aiter_lines())
+    async def test_multiple_clients_each_get_updates(self, fresh_graph: ActionGraph):
+        first_response = await graph_stream()
+        second_response = await graph_stream()
+        first = first_response.body_iterator
+        second = second_response.body_iterator
+        try:
+            _parse_chunk(await anext(first))
+            _parse_chunk(await anext(second))
             base = fresh_graph.revision
 
             fresh_graph.add_node("root")
             for response in (first, second):
-                event, data = await _read_event(response.aiter_lines())
+                event, data = _parse_chunk(await anext(response))
                 assert event == "update"
                 assert data["revision"] == base + 1
                 assert [n["id"] for n in data["upsert_nodes"]] == ["root"]
+        finally:
+            await first.aclose()
+            await second.aclose()
 
-    async def test_disconnect_unsubscribes(self, client, fresh_graph: ActionGraph):
-        async with client.stream("GET", "/api/graph/stream") as response:
-            await _read_event(response.aiter_lines())
+    async def test_disconnect_unsubscribes(self, fresh_graph: ActionGraph):
+        response = await graph_stream()
+        lines = response.body_iterator
+        try:
+            _parse_chunk(await anext(lines))
             assert len(fresh_graph._listeners) == 1
+        finally:
+            await lines.aclose()
         assert fresh_graph._listeners == []
+
+
+def _parse_chunk(chunk: str | bytes) -> tuple[str, dict[str, Any]]:
+    if isinstance(chunk, bytes):
+        chunk = chunk.decode()
+    event = ""
+    data = ""
+    for line in chunk.splitlines():
+        if line.startswith("event: "):
+            event = line.removeprefix("event: ")
+        elif line.startswith("data: "):
+            data = line.removeprefix("data: ")
+    return event, json.loads(data)

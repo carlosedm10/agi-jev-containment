@@ -42,6 +42,11 @@ DEFAULT_POLICY = AgentPolicy(
             counter_action="cancel_booking",
             max_scope=1,
         ),
+        "schedule_callback": ToolPolicy(
+            effect=Reversibility.COMPENSABLE,
+            counter_action="unschedule",
+            max_scope=1,
+        ),
     },
     forbidden_tools=frozenset({"docker", "raw_socket"}),
 )

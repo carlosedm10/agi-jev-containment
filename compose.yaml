@@ -13,6 +13,9 @@ services:
     environment:
       - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres-hackspain:5432/${POSTGRES_DB:-hackspain}
       - NEO4J_URI=bolt://neo4j-hackspain:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-hackspain-local}
+      - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
       - UV_PROJECT_ENVIRONMENT=/opt/venv
       - PYTHONPATH=/app
     ports:

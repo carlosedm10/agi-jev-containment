@@ -41,10 +41,18 @@ async def ingest(
             "dispatch_actions": [],
             "jev_latency_ms": None,
             "duplicate": True,
+            "drift": None,
+            "findings": [],
         }
     owned = client is None
     if client is None:
         client = client_factory()
+    if not monitor.history(run_id) and neo4j_graph.enabled:
+        try:
+            history, drift = await neo4j_graph.restore_monitor_state(run_id)
+            monitor.restore(run_id, history, drift)
+        except Exception:
+            logger.exception("Could not restore monitor state for run %s", run_id)
     prepared = monitor.prepare(normalized)
     try:
         before_level = graph.level(run_id)
@@ -93,6 +101,8 @@ async def ingest(
         "dispatch_actions": assessment.dispatch_actions,
         "jev_latency_ms": verdict.latency_ms,
         "duplicate": False,
+        "drift": assessment.drift.model_dump(mode="json"),
+        "findings": [finding.model_dump(mode="json") for finding in assessment.findings],
     }
 
 
