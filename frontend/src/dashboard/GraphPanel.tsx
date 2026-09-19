@@ -111,13 +111,13 @@ export function GraphPanel({
         background: "#fcfcfc",
       }}
     >
-      <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b px-4">
-        <h2 className="text-sm font-semibold text-zinc-900">Agent activity</h2>
+      <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#b06a38] bg-[#d59566] px-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-[#1a1614]">Agent activity</h2>
         <div className="flex items-center gap-2">
           {pill && (
             <span
               aria-label="Stream status"
-              className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-0.5 font-mono text-[10px] tracking-widest text-zinc-600"
+              className="flex items-center gap-1.5 rounded-full border border-transparent bg-[#fdfcf4] px-2.5 py-0.5 font-mono text-[10px] tracking-widest text-[#1a1614]"
             >
               <span
                 aria-hidden="true"
@@ -135,6 +135,7 @@ export function GraphPanel({
               size="sm"
               aria-label="Trigger a live demo run"
               onClick={onTrigger}
+              className="bg-[#fdfcf4] text-[#1a1614] hover:bg-[#f2f2f2]"
             >
               <Play aria-hidden="true" />
               Trigger run
@@ -146,6 +147,7 @@ export function GraphPanel({
               size="sm"
               aria-label="Restart test run"
               onClick={onRestart}
+              className="border-[#1a1614]/20 bg-[#fdfcf4] text-[#1a1614] hover:bg-[#f2f2f2]"
             >
               <RotateCcw aria-hidden="true" />
               Restart test run

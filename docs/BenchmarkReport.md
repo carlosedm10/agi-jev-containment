@@ -34,8 +34,8 @@ Also fail on any level downgrade. Exact 72/72 oracle match is **not** the gate.
 | 1. Offline integrity | pytest: Jev/pipeline/watcher mocks, Sentinel rules+cases, monitor, evals integrity | 77 + 16 + 5 tests (see reproduce) | mocked / none |
 | 2. Sentinel inspect-only | Fast path: `inspect` + drift + gate + local dispatcher; Jev **not** called | 30 Sentinel traces (10 rules); 102 traces walked including HappyRobot | no |
 | 3. Live `monitor-eval` | 72 HappyRobot traces through `service.ingest`; unique `run_id` per trace | 72 traces | attempted; HTTP 401 → degraded |
-| 4. Ingest sample | One P1 covert Sentinel trace through ingest | 1 trace | same 401 |
-| 5. Scale notes | Current Neo4j after prior `make seed-lab` (no `graph.clear()`) | 4930 events / 480 runs / 47648 nodes / 56883 edges | seed was degraded unless `LIVE_JEV=1` |
+| 4. Ingest trace | One P1 covert Sentinel trace through ingest | 1 trace | same 401 |
+| 5. Scale notes | Current Neo4j after prior `make populate-labs` (no `graph.clear()`) | 4930 events / 480 runs / 47648 nodes / 56883 edges | populate was degraded unless `LIVE_JEV=1` |
 
 A first `monitor-eval` with reused `eval:{cluster}:{trace}` ids was **invalid** (JSONL duplicate skip, ~0.9s, `degraded_rate=0`). The runner now suffixes a unique id. Numbers below are the unique-id run (~44s, real ingest).
 
@@ -94,7 +94,7 @@ Leave-one-cluster-out Markov (eval `fit()` only; live drift uses `prior()`): uns
 
 ## Speed
 
-Ingest sample (P1 covert, LIVE key, 401 on every classify):
+Ingest trace (P1 covert, LIVE key, 401 on every classify):
 
 | Metric | Value |
 |---|---|
@@ -105,7 +105,7 @@ Ingest sample (P1 covert, LIVE key, 401 on every classify):
 
 ## Reliability
 
-| Metric | Ingest sample | monitor-eval |
+| Metric | Ingest trace | monitor-eval |
 |---|---|---|
 | Degraded Jev rate | 1.000 | 1.000 |
 | Graph persisted rate | 1.000 | (ingest persisted) |
@@ -143,9 +143,9 @@ Lab conversation replay uses `completed`, so REFUSE/HOLD is not exercised there.
 | E4 fires when two runs share a target | pass |
 | P3 fires when effect `derived_from` other-run memory | pass |
 
-## Scale (seed-lab already present)
+## Scale (populate-labs already present)
 
-`make seed-lab` was already applied on this graph. After the unique-id monitor-eval:
+`make populate-labs` was already applied on this graph. After the unique-id monitor-eval:
 
 - events 4930
 - runs 480
@@ -188,7 +188,7 @@ make test-backend TEST='app/evals/tests app/monitor/tests'
 make monitor-eval
 
 # 5 scale (does not clear Neo4j)
-make seed-lab
+make populate-labs
 ```
 
-Write-up to refresh: this file. Machine report: `GET /api/evals/benchmarks` (schema_version 3: default path is `service.ingest`; `jev_mode=LIVE` only if classify returned `latency_ms`; smoke is `?smoke=true`; optional HPO; last `make monitor-eval` JSON still attached from `/tmp/monitor-eval.json`). `make seed-lab LIVE_JEV=1` — not `--live-jev`.
+Write-up to refresh: this file. Machine report: `GET /api/evals/benchmarks` (schema_version 3: default path is `service.ingest`; `jev_mode=LIVE` only if classify returned `latency_ms`; smoke is `?smoke=true`; optional HPO; last `make monitor-eval` JSON still attached from `/tmp/monitor-eval.json`). `make populate-labs LIVE_JEV=1` — not `--live-jev`.

@@ -81,11 +81,11 @@ For a paced, watchable replay through the same ingest path (JSONL, Drift/Markov,
 - [Benchmarks](http://localhost:8000/lab/benchmarks) — default **Run lab suite** is `service.ingest` on the Sentinel corpus (JSONL, monitor, Jev-or-degrade, gate, dispatch, Neo4j persist, SSE), with repeats, study stats, and optional HPO. **Quick smoke** (`?smoke=true`) is in-process `_walk_trace` and is not the number to pitch. **LIVE** means a classify returned `latency_ms` (HTTP 200), not that `TYPESAFE_API_KEY` is set. Sentinel neighborhood is link-scoped; with Neo4j enabled, ingest rehydrates linked runs and ActionGraph state from the store before `inspect`. Attach `make monitor-eval` output at `/tmp/monitor-eval.json`. Dated write-up: [BenchmarkReport.md](BenchmarkReport.md).
 - [Inspector](http://localhost:8000/lab/inspector) — graph + Markov debug
 
-Seed a large JSONL + Neo4j tape without wiping other runs. GNU make cannot take `--live-jev` as a make argument (`make seed-lab --live-jev` dies). Default seed is degraded (the process clears the key). Live Jev:
+Populate a large JSONL + Neo4j tape without wiping other runs. GNU make cannot take `--live-jev` as a make argument (`make populate-labs --live-jev` dies). Default run is degraded (the process clears the key). Live Jev:
 
 ```bash
-make seed-lab
-make seed-lab LIVE_JEV=1
+make populate-labs
+make populate-labs LIVE_JEV=1
 ```
 
 `make monitor-eval` requires `TYPESAFE_API_KEY`. Integrity and unit tests remain offline. The runner prints per-trace oracle match and fails locally on a high degraded rate, a high safe false-positive rate, a missing key, or any level downgrade — it does not fabricate a Jev answer. GitHub CI does not run this target.
@@ -121,7 +121,7 @@ Do not generate mutations that change the policy question without changing the o
 
 `backend/app/evals/sentinel_cases.py` adds 10 clusters (30 traces) under `product_scope=hackspain_monitor`. Each cluster is one Sentinel rule. Every trace starts with 16+ in-policy utterances/reads, then a real chain. Replay maps `read_file` → `file_read` and `http_request` → `network_request` so P1 sees the kinds Sentinel inspects, without extending HappyRobot `EventKind`.
 
-Lab replay uses one `run_id`. E4/P3 `cross_run=true` needs two run ids that **share a link** (same target, `derived_from`/`caused_by`, same agent+target, shared memory/entity ids, or same tool+target). Sentinel inspect history is that linked neighborhood: the current run's last 100 events, plus matching events from other runs (rehydrated from Neo4j on ingest when enabled, otherwise only runs still in the same process). That is how apparently unrelated chains are still caught without N2/P1/E6 firing across leftover lab seeds. `make seed-lab` and the benchmarks suite inject those pairs.
+Lab replay uses one `run_id`. E4/P3 `cross_run=true` needs two run ids that **share a link** (same target, `derived_from`/`caused_by`, same agent+target, shared memory/entity ids, or same tool+target). Sentinel inspect history is that linked neighborhood: the current run's last 100 events, plus matching events from other runs (rehydrated from Neo4j on ingest when enabled, otherwise only runs still in the same process). That is how apparently unrelated chains are still caught without N2/P1/E6 firing across leftover lab seeds. `make populate-labs` and the benchmarks suite inject those pairs.
 
 ## Lab pages
 
@@ -131,7 +131,7 @@ The FastAPI lab is not the React app and is not a live agent. Conversation is a 
 
 HappyRobot seeds (72 traces) almost never set `AgentEvent.tool`, so N1 and P1 barely fire. Replay `phase=completed`, so gate REFUSE/HOLD on `requested` is untested by the lab unless benchmarks preflight is run. Missing harness kinds in the HappyRobot `EventKind` enum (`file_read`, `network_request`, `register_tool`) are mapped in replay from tool names. Live `SafetyDrift` always uses `CompactMarkovModel.prior()`; `fit()` is eval-only. Dispatcher records playbooks and demo counters; it does not invoke host Docker scripts. Sentinel N2 ignores the current event (needs five writes already in history) and counts current-run writes plus linked writes that share target/agent. E6 only searches the current run's last five history events. `policy.forbidden_tools` is enforced in `policy_violations`, not as a distinct Sentinel rule — docker still fails N1 because it is absent from `policy.tools`.
 
-The 10 Sentinel clusters close the per-rule seed gap. They do not close preflight-on-lab-replay, Markov-prior-vs-fitted, or host-script dispatch. Replay maps `write_file` → `file_edit`; E4 and E8 only match `tool_write`/`memory_write`, so those clusters use `book_load` or `memory_write` instead of `write_file`.
+The 10 Sentinel clusters close the per-rule data gap. They do not close preflight-on-lab-replay, Markov-prior-vs-fitted, or host-script dispatch. Replay maps `write_file` → `file_edit`; E4 and E8 only match `tool_write`/`memory_write`, so those clusters use `book_load` or `memory_write` instead of `write_file`.
 
 ## Evidence boundary and sources
 
