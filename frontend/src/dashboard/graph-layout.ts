@@ -24,7 +24,11 @@ export type ActivityLink = {
   pending: boolean;
 };
 
-function eventText(node: GraphNode, keys: string[], fallback: string) {
+export function eventText(
+  node: GraphNode,
+  keys: string[],
+  fallback: string,
+) {
   for (const key of keys) {
     const value = node.event?.[key];
     if (typeof value === "string" && value.length > 0) return value;
