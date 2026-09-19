@@ -26,9 +26,17 @@ class CompactMarkovModel:
                 band_advance = min(0.35, 0.08 + 0.04 * maximum)
                 breadth_advance = min(0.25, 0.04 + 0.025 * elevated)
                 targets: dict[State, float] = {(4, max(1, elevated)): violation}
-                next_band = (min(3, maximum + 1), max(elevated, 1))
+                next_maximum = min(3, maximum + 1)
+                next_band = (
+                    next_maximum,
+                    max(elevated, 1) if next_maximum >= 2 else 0,
+                )
                 targets[next_band] = targets.get(next_band, 0.0) + band_advance
-                next_breadth = (maximum, min(6, elevated + 1))
+                next_breadth = (
+                    (maximum, min(6, elevated + 1))
+                    if maximum >= 2
+                    else state
+                )
                 targets[next_breadth] = targets.get(next_breadth, 0.0) + breadth_advance
                 used = sum(targets.values())
                 targets[state] = targets.get(state, 0.0) + max(0.0, 1.0 - used)

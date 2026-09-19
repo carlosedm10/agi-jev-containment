@@ -76,7 +76,7 @@ class Dispatcher:
         created: list[DispatchAction] = []
         with self._lock:
             for kind in kinds:
-                action_id = f"{kind}:{event.run_id}:L{int(level)}"
+                action_id = f"{kind}:{event.run_id}"
                 if action_id in self._actions:
                     continue
                 action = DispatchAction(

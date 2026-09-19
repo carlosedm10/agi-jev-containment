@@ -126,7 +126,7 @@ Respuesta `200` completa actual:
   "graph_persisted": true,
   "dispatch_actions": [
     {
-      "id": "contain_all_runs:demo:L4",
+      "id": "contain_all_runs:demo",
       "run_id": "demo",
       "kind": "contain_all_runs",
       "state": "recorded",
@@ -135,7 +135,7 @@ Respuesta `200` completa actual:
       "created_at": "2026-09-19T11:00:00Z"
     },
     {
-      "id": "cut_egress:demo:L4",
+      "id": "cut_egress:demo",
       "run_id": "demo",
       "kind": "cut_egress",
       "state": "recorded",
@@ -144,7 +144,7 @@ Respuesta `200` completa actual:
       "created_at": "2026-09-19T11:00:00Z"
     },
     {
-      "id": "page_oncall:demo:L4",
+      "id": "page_oncall:demo",
       "run_id": "demo",
       "kind": "page_oncall",
       "state": "recorded",
@@ -459,7 +459,7 @@ Respuesta `200`:
   },
   "dispatch_actions": [
     {
-      "id": "contain_all_runs:demo:L4",
+      "id": "contain_all_runs:demo",
       "run_id": "demo",
       "kind": "contain_all_runs",
       "state": "recorded",
@@ -468,7 +468,7 @@ Respuesta `200`:
       "created_at": "2026-09-19T11:00:00Z"
     },
     {
-      "id": "cut_egress:demo:L4",
+      "id": "cut_egress:demo",
       "run_id": "demo",
       "kind": "cut_egress",
       "state": "recorded",
@@ -477,7 +477,7 @@ Respuesta `200`:
       "created_at": "2026-09-19T11:00:00Z"
     },
     {
-      "id": "page_oncall:demo:L4",
+      "id": "page_oncall:demo",
       "run_id": "demo",
       "kind": "page_oncall",
       "state": "recorded",
@@ -681,7 +681,7 @@ El ID objetivo de arista es determinista: `{type}:{source}:{target}` y, si hace 
 ```json
 {
   "action": {
-    "id": "cut_egress:demo:L4",
+    "id": "cut_egress:demo",
     "run_id": "demo",
     "kind": "cut_egress",
     "state": "recorded",

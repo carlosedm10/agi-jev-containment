@@ -15,6 +15,8 @@ def decide(
 ) -> GateDecision:
     """Pure decision policy: models provide signals, code owns the action."""
     sentinel_level = max((item.severity for item in findings), default=0)
+    if verdict.containment_breached:
+        sentinel_level = max(sentinel_level, int(Level.CATASTROPHIC))
     incident_level = Level(max(int(prior_level), int(verdict.level), sentinel_level))
     semantic_risk = sum(
         probability
@@ -38,6 +40,8 @@ def decide(
         *(finding.rule_id for finding in findings),
         *(f"JEV_{name.upper()}" for name, risk in atomic_risks.items() if risk >= 0.75),
     ]
+    if verdict.containment_breached:
+        reasons.append("JEV_CONTAINMENT_BREACHED")
     is_preflight = event.phase == EventPhase.REQUESTED
     hard_refusal = any(
         reason in {"forbidden_tool", "identity_requirement_failed"} for reason in violations

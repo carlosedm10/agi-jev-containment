@@ -50,3 +50,14 @@ def test_completed_compensable_write_executes_counter_at_l3():
     counter = next(action for action in actions if action.kind == "counter_action")
     assert counter.counter_template == "cancel_booking"
     assert counter.state == "executed"
+
+
+def test_escalation_does_not_repeat_lower_level_actions():
+    dispatcher = Dispatcher()
+    event = MonitorEvent(id="e1", run_id="r1", kind="utterance")
+
+    first = dispatcher.handle(event, _assessment(Level.MILD))
+    second = dispatcher.handle(event, _assessment(Level.MODERATE))
+
+    assert [action.kind for action in first] == ["tag_run"]
+    assert [action.kind for action in second] == ["start_supervisor"]

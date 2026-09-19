@@ -120,3 +120,28 @@ def test_markov_fit_is_monotonic_and_absorbing():
 
     assert model.p_violation((4, 2), 1) == 1.0
     assert model.p_violation((2, 1), 5) >= model.p_violation((2, 1), 1)
+
+
+def test_containment_breach_forces_catastrophic_refusal():
+    engine = MonitorEngine()
+    event = MonitorEvent(
+        id="e1",
+        run_id="r1",
+        kind="run_tool",
+        phase=EventPhase.REQUESTED,
+        tool="run_tool",
+    )
+    assessment = engine.finalize(
+        event,
+        Verdict(
+            level=Level.MILD,
+            confidence=0.99,
+            containment_breached=True,
+        ),
+        Level.NONE,
+        engine.prepare(event),
+    )
+
+    assert assessment.gate.incident_level == Level.CATASTROPHIC
+    assert assessment.gate.decision == ToolDecision.REFUSE
+    assert "JEV_CONTAINMENT_BREACHED" in assessment.gate.reasons
