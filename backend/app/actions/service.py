@@ -46,7 +46,6 @@ class ActionService:
         )
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._tasks: set[asyncio.Task[None]] = set()
-        self._canceled_actions: set[str] = set()
 
     async def dispatch(
         self,
@@ -79,14 +78,15 @@ class ActionService:
             )
             self._journal.append(accepted)
 
-            task = asyncio.create_task(
-                self._run_playbook(
-                    accepted,
-                    intent=getattr(request, "intent", None) or "critical agent activity",
+            if plan:
+                task = asyncio.create_task(
+                    self._run_playbook(
+                        accepted,
+                        intent=getattr(request, "intent", None) or "critical agent activity",
+                    )
                 )
-            )
-            self._tasks.add(task)
-            task.add_done_callback(self._tasks.discard)
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
             return accepted
 
     def get_state(self, incident_id: str) -> IncidentActionState:
@@ -116,23 +116,18 @@ class ActionService:
                 is_pager=True,
             )
 
-        if level == 1:
-            return [simulated("tag_run", 1)]
-        if level == 2:
-            return [
-                simulated("tag_run", 1),
-                simulated("supervise_run", 2),
-            ]
+        if level <= 2:
+            return []
         if level == 3:
-            return [simulated("contain_agent", 3)]
+            return [simulated("tag_run", 3)]
         if level == 4:
             return [
-                simulated("contain_all_runs", 3),
-                simulated("cut_environment_egress", 4),
-                pager(4),
+                simulated("contain_agent", 4),
+                simulated("notify_sms", 4),
             ]
         plan = [
             simulated("copy_forensics", 5),
+            simulated("cut_environment_egress", 5),
             simulated("kill_agent_swarm", 5),
         ]
         if page:
@@ -148,49 +143,33 @@ class ActionService:
 
     async def _run_playbook(self, accepted: DispatchAccepted, *, intent: str) -> None:
         actions = {action.name: action for action in accepted.planned_actions}
-        if accepted.level == 1:
+        if accepted.level <= 2:
+            return
+        if accepted.level == 3:
             await self._run_if_planned(actions, "tag_run", accepted)
-        elif accepted.level == 2:
-            await self._run_if_planned(actions, "tag_run", accepted)
-            await self._run_if_planned(
-                actions,
-                "supervise_run",
-                accepted,
-                persistent=True,
-            )
-        elif accepted.level == 3:
-            self._cancel_supervision(accepted)
-            await self._run_if_planned(actions, "contain_agent", accepted)
-        elif accepted.level == 4:
+            return
+        if accepted.level == 4:
             await asyncio.gather(
-                self._run_if_planned(actions, "contain_all_runs", accepted),
-                self._run_if_planned(actions, "cut_environment_egress", accepted),
-                self._run_pager(
-                    actions["page_oncall"],
-                    accepted,
-                    intent=intent,
-                    action_taken="Contained all live runs and cut sandbox egress",
-                ),
-            )
-        else:
-            await asyncio.gather(
-                self._run_sequence(
-                    accepted,
+                self._run_if_planned(actions, "contain_agent", accepted),
+                self._run_if_planned(
                     actions,
-                    ("copy_forensics", "kill_agent_swarm"),
+                    "notify_sms",
+                    accepted,
+                    detail="Fake SMS to on-call (not sent).",
                 ),
-                *(
-                    [
-                        self._run_pager(
-                            actions["page_oncall"],
-                            accepted,
-                            intent=intent,
-                            action_taken="Copied JSONL forensics and stopped the agent swarm",
-                        )
-                    ]
-                    if "page_oncall" in actions
-                    else []
-                ),
+            )
+            return
+        await self._run_sequence(
+            accepted,
+            actions,
+            ("copy_forensics", "cut_environment_egress", "kill_agent_swarm"),
+        )
+        if "page_oncall" in actions:
+            await self._run_pager(
+                actions["page_oncall"],
+                accepted,
+                intent=intent,
+                action_taken="Cut sandbox egress and stopped the agent swarm",
             )
 
     async def _run_sequence(
@@ -208,62 +187,24 @@ class ActionService:
         name: str,
         accepted: DispatchAccepted,
         *,
-        persistent: bool = False,
+        detail: str | None = None,
     ) -> None:
         action = actions.get(name)
         if action is not None:
-            await self._simulate(action, accepted, persistent=persistent)
+            await self._simulate(action, accepted, detail=detail)
 
     async def _simulate(
         self,
         action: PlannedAction,
         accepted: DispatchAccepted,
         *,
-        persistent: bool = False,
+        detail: str | None = None,
     ) -> None:
-        if action.action_id in self._canceled_actions:
-            return
         self._transition(action, accepted, "queued")
         await self._delay()
-        if action.action_id in self._canceled_actions:
-            return
         self._transition(action, accepted, "running")
-        if persistent:
-            return
         await self._delay()
-        if action.action_id not in self._canceled_actions:
-            self._transition(action, accepted, "ok")
-
-    def _cancel_supervision(self, accepted: DispatchAccepted) -> None:
-        action_id = f"{accepted.incident_id}:supervise_run"
-        prior_records = self._journal.read(accepted.incident_id)
-        was_planned = any(
-            isinstance(record, DispatchAccepted)
-            and any(action.action_id == action_id for action in record.planned_actions)
-            for record in prior_records
-        )
-        latest = next(
-            (
-                record
-                for record in reversed(prior_records)
-                if isinstance(record, ActionTransition) and record.action_id == action_id
-            ),
-            None,
-        )
-        if not was_planned or (latest is not None and latest.status not in {"queued", "running"}):
-            return
-        self._canceled_actions.add(action_id)
-        self._journal.append(
-            ActionTransition(
-                incident_id=accepted.incident_id,
-                level=accepted.level,
-                action_id=action_id,
-                name="supervise_run",
-                ladder_level=2,
-                mode="simulated",
-                status="canceled",
-            )
-        )
+        self._transition(action, accepted, "ok", detail=detail)
 
     async def _run_pager(
         self,

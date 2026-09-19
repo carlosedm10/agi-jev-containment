@@ -15,19 +15,26 @@ describe("mock monitoring timeline", () => {
   });
 
   test("only starts playbooks after the corresponding Jev verdict", () => {
-    expect(getDemoFrame(11).actions.some((a) => a.id === "contain:atlas")).toBe(
+    expect(getDemoFrame(11).actions.some((a) => a.id === "tag:atlas")).toBe(
+      false,
+    );
+    expect(getDemoFrame(12).actions.find((a) => a.id === "tag:atlas")?.status).toBe(
+      "running",
+    );
+    expect(getDemoFrame(12).actions.some((a) => a.id === "contain:atlas")).toBe(
       false,
     );
     expect(
-      getDemoFrame(12).actions.find((a) => a.id === "contain:atlas")?.status,
+      getDemoFrame(13).actions.find((a) => a.id === "contain:atlas")?.status,
     ).toBe("running");
-    const critical = getDemoFrame(14);
-    expect(critical.actions.find((a) => a.id === "cut-egress")?.status).toBe(
+    expect(getDemoFrame(13).actions.find((a) => a.id === "sms:atlas")?.status).toBe(
       "running",
     );
-    expect(critical.actions.find((a) => a.id === "page:atlas")?.status).toBe(
+    expect(getDemoFrame(14).actions.some((a) => a.id === "cut-egress")).toBe(false);
+    expect(getDemoFrame(15).actions.find((a) => a.id === "cut-egress")?.status).toBe(
       "running",
     );
+    expect(getDemoFrame(15).actions.some((a) => a.id === "page:atlas")).toBe(false);
     expect(
       getDemoFrame(16).actions.find((a) => a.id === "cut-egress")?.status,
     ).toBe("done");

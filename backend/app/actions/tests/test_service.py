@@ -57,27 +57,21 @@ def transitions(journal: ActionJournal, incident_id: str) -> list[ActionTransiti
 @pytest.mark.parametrize(
     ("level", "expected"),
     [
-        (1, [("tag_run", 1, "simulated", False)]),
-        (
-            2,
-            [
-                ("tag_run", 1, "simulated", False),
-                ("supervise_run", 2, "simulated", False),
-            ],
-        ),
-        (3, [("contain_agent", 3, "simulated", False)]),
+        (1, []),
+        (2, []),
+        (3, [("tag_run", 3, "simulated", False)]),
         (
             4,
             [
-                ("contain_all_runs", 3, "simulated", False),
-                ("cut_environment_egress", 4, "simulated", False),
-                ("page_oncall", None, "real", True),
+                ("contain_agent", 4, "simulated", False),
+                ("notify_sms", 4, "simulated", False),
             ],
         ),
         (
             5,
             [
                 ("copy_forensics", 5, "simulated", False),
+                ("cut_environment_egress", 5, "simulated", False),
                 ("kill_agent_swarm", 5, "simulated", False),
                 ("page_oncall", None, "real", True),
             ],
@@ -103,60 +97,81 @@ async def test_dispatches_exact_level_plan_with_mode_labels(tmp_path, level, exp
     )
 
 
-async def test_simulation_transitions_and_persistent_supervision(tmp_path):
+async def test_l1_and_l2_accept_the_level_without_playbook_work(tmp_path):
     journal = ActionJournal(tmp_path)
-    service = ActionService(journal, FakePager(), simulation_delay=0)
+    pager = FakePager()
+    service = ActionService(journal, pager, simulation_delay=0)
 
-    await service.dispatch("incident", Request(2))
+    accepted = await service.dispatch("incident", Request(1))
+    await finish_background_work(service)
+
+    assert accepted is not None
+    assert accepted.planned_actions == []
+    assert transitions(journal, "incident") == []
+    assert pager.calls == []
+    assert service.get_state("incident").accepted_level == 1
+
+    accepted = await service.dispatch("incident", Request(2))
+    await finish_background_work(service)
+
+    assert accepted is not None
+    assert accepted.planned_actions == []
+    assert transitions(journal, "incident") == []
+    assert pager.calls == []
+    assert service.get_state("incident").accepted_level == 2
+
+
+async def test_l3_tags_and_does_not_page(tmp_path):
+    journal = ActionJournal(tmp_path)
+    pager = FakePager()
+    service = ActionService(journal, pager, simulation_delay=0)
+
+    await service.dispatch("incident", Request(3))
     await finish_background_work(service)
 
     by_name: dict[str, list[str]] = {}
     for event in transitions(journal, "incident"):
         by_name.setdefault(event.name, []).append(event.status)
-    assert by_name == {
-        "tag_run": ["queued", "running", "ok"],
-        "supervise_run": ["queued", "running"],
-    }
+    assert by_name == {"tag_run": ["queued", "running", "ok"]}
+    assert pager.calls == []
 
 
-async def test_l3_cancels_running_supervision_before_containment(tmp_path):
-    journal = ActionJournal(tmp_path)
-    service = ActionService(journal, FakePager(), simulation_delay=0)
-    await service.dispatch("incident", Request(2))
-    await finish_background_work(service)
-
-    await service.dispatch("incident", Request(3))
-    await finish_background_work(service)
-
-    events = transitions(journal, "incident")
-    canceled = next(event for event in events if event.status == "canceled")
-    containment_queued = next(
-        event for event in events if event.name == "contain_agent" and event.status == "queued"
-    )
-    assert canceled.name == "supervise_run"
-    assert events.index(canceled) < events.index(containment_queued)
-    assert service.get_state("incident").rows[2] == "canceled"
-
-
-async def test_l5_after_l4_does_not_page_again(tmp_path):
+async def test_l5_after_l4_still_calls_oncall(tmp_path):
     journal = ActionJournal(tmp_path)
     pager = FakePager()
     service = ActionService(journal, pager, simulation_delay=0)
 
     await service.dispatch("incident", Request(4))
     await finish_background_work(service)
+    sms = next(
+        event
+        for event in transitions(journal, "incident")
+        if event.name == "notify_sms" and event.status == "ok"
+    )
+    assert sms.detail == "Fake SMS to on-call (not sent)."
     await service.dispatch("incident", Request(5))
     await finish_background_work(service)
 
-    assert [call[0] for call in pager.calls] == [4]
+    assert [call[0] for call in pager.calls] == [5]
+    l4 = next(
+        record
+        for record in journal.read("incident")
+        if isinstance(record, DispatchAccepted) and record.level == 4
+    )
     l5 = next(
         record
         for record in journal.read("incident")
         if isinstance(record, DispatchAccepted) and record.level == 5
     )
+    assert [action.name for action in l4.planned_actions] == [
+        "contain_agent",
+        "notify_sms",
+    ]
     assert [action.name for action in l5.planned_actions] == [
         "copy_forensics",
+        "cut_environment_egress",
         "kill_agent_swarm",
+        "page_oncall",
     ]
 
 
@@ -181,7 +196,17 @@ async def test_direct_l5_pages_once(tmp_path):
     kill_queued = next(
         event for event in events if event.name == "kill_agent_swarm" and event.status == "queued"
     )
-    assert events.index(copied) < events.index(kill_queued)
+    cut_queued = next(
+        event
+        for event in events
+        if event.name == "cut_environment_egress" and event.status == "queued"
+    )
+    assert events.index(copied) < events.index(cut_queued)
+    assert events.index(cut_queued) < events.index(kill_queued)
+    page_queued = next(
+        event for event in events if event.name == "page_oncall" and event.status == "queued"
+    )
+    assert events.index(kill_queued) < events.index(page_queued)
 
 
 async def test_levels_only_escalate_and_duplicates_are_noops(tmp_path):
@@ -224,15 +249,16 @@ async def test_pager_failure_does_not_cancel_simulated_siblings(tmp_path):
     journal = ActionJournal(tmp_path)
     service = ActionService(journal, FailingPager(), simulation_delay=0)
 
-    await service.dispatch("incident", Request(4))
+    await service.dispatch("incident", Request(5))
     await finish_background_work(service)
 
     latest = {
         event.name: event
         for event in transitions(journal, "incident")
     }
-    assert latest["contain_all_runs"].status == "ok"
+    assert latest["copy_forensics"].status == "ok"
     assert latest["cut_environment_egress"].status == "ok"
+    assert latest["kill_agent_swarm"].status == "ok"
     assert latest["page_oncall"].status == "failed"
     assert latest["page_oncall"].error_code == "pager_error"
 
@@ -240,7 +266,7 @@ async def test_pager_failure_does_not_cancel_simulated_siblings(tmp_path):
 async def test_dispatch_keeps_background_task_references(tmp_path):
     service = ActionService(ActionJournal(tmp_path), FakePager(), simulation_delay=0.01)
 
-    await service.dispatch("incident", Request(1))
+    await service.dispatch("incident", Request(3))
 
     assert service._tasks
     await finish_background_work(service)

@@ -224,7 +224,7 @@
           html += `<div class="row"><span>covert recall</span><b>${fmt(block.covert_recall_stats || block.covert_recall)}</b></div>`;
           html += `<div class="row"><span>checkpoint delay</span><b>${fmt(block.checkpoint_delay_events || block.checkpoint_delay_events_mean)}</b></div>`;
           html += `<div class="row"><span>no-downgrade</span><b>${fmt(block.no_downgrade_rate)}</b></div>`;
-          html += `<div class="row"><span>pager on L4</span><b>${fmt(block.pager_on_l4_rate)}</b></div>`;
+          html += `<div class="row"><span>pager on L5</span><b>${fmt(block.pager_on_l5_rate)}</b></div>`;
           const ruleBars = chartItems(Object.entries(block.sentinel_per_rule), "recall");
           html += barChart(ruleBars);
           html += `<table><thead><tr><th>Rule</th><th>P</th><th>R</th><th>TP</th><th>FP</th><th>FN</th></tr></thead><tbody>`;

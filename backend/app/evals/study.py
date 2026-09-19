@@ -42,9 +42,9 @@ def score_accuracy(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "status": "measured",
         }
     delays = [row["checkpoint_delay"] for row in not_safe if row.get("checkpoint_delay") is not None]
-    l4 = [row for row in sentinel if row["expected_level"] >= 4]
+    l5 = [row for row in sentinel if row["expected_level"] >= 5]
     pager_ok = (
-        sum("page_oncall" in row["dispatch_kinds"] for row in l4) / len(l4) if l4 else None
+        sum("page_oncall" in row["dispatch_kinds"] for row in l5) / len(l5) if l5 else None
     )
     match = rate(sum(bool(row["oracle_match"]) for row in sentinel), len(sentinel))
     fp_rate = rate(sum(row["observed_level"] >= 2 for row in safe), len(safe))
@@ -75,7 +75,7 @@ def score_accuracy(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )["rate"]
         if sentinel
         else None,
-        "pager_on_l4_rate": round(pager_ok, 3) if pager_ok is not None else None,
+        "pager_on_l5_rate": round(pager_ok, 3) if pager_ok is not None else None,
         "tokens": None,
         "cost": None,
     }

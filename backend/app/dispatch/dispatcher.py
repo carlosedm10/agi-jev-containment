@@ -88,7 +88,7 @@ class Dispatcher:
                 self._actions[action_id] = action
                 created.append(action)
 
-            if level >= Level.SEVERE:
+            if level >= Level.CRITICAL:
                 for counter in reversed(self._armed.get(event.run_id, [])):
                     if counter.state == "armed":
                         try:
@@ -119,16 +119,12 @@ class Dispatcher:
 
 
 def _playbook(level: Level) -> list[str]:
-    if level == Level.MILD:
-        return ["tag_run"]
-    if level == Level.MODERATE:
-        return ["tag_run", "start_supervisor"]
     if level == Level.SEVERE:
-        return ["contain_run", "revoke_token"]
+        return ["tag_run"]
     if level == Level.CRITICAL:
-        return ["contain_all_runs", "cut_egress", "page_oncall"]
+        return ["contain_run", "revoke_token", "notify_sms"]
     if level == Level.CATASTROPHIC:
-        return ["snapshot_forensics", "kill_swarm", "page_oncall"]
+        return ["snapshot_forensics", "cut_egress", "kill_swarm", "page_oncall"]
     return []
 
 

@@ -25,14 +25,14 @@ def test_dispatch_is_idempotent_for_same_run_and_level():
     dispatcher = Dispatcher()
     event = MonitorEvent(id="e1", run_id="r1", kind="tool_write")
 
-    first = dispatcher.handle(event, _assessment(Level.SEVERE))
-    second = dispatcher.handle(event, _assessment(Level.SEVERE))
+    first = dispatcher.handle(event, _assessment(Level.CRITICAL))
+    second = dispatcher.handle(event, _assessment(Level.CRITICAL))
 
-    assert [action.kind for action in first] == ["contain_run", "revoke_token"]
+    assert [action.kind for action in first] == ["contain_run", "revoke_token", "notify_sms"]
     assert second == []
 
 
-def test_completed_compensable_write_executes_counter_at_l3():
+def test_completed_compensable_write_executes_counter_at_l4():
     dispatcher = Dispatcher()
     event = MonitorEvent(
         id="e1",
@@ -45,7 +45,7 @@ def test_completed_compensable_write_executes_counter_at_l3():
         effect=EventEffect(reversibility=Reversibility.COMPENSABLE),
     )
 
-    actions = dispatcher.handle(event, _assessment(Level.SEVERE))
+    actions = dispatcher.handle(event, _assessment(Level.CRITICAL))
 
     counter = next(action for action in actions if action.kind == "counter_action")
     assert counter.counter_template == "cancel_booking"
@@ -56,8 +56,8 @@ def test_escalation_does_not_repeat_lower_level_actions():
     dispatcher = Dispatcher()
     event = MonitorEvent(id="e1", run_id="r1", kind="utterance")
 
-    first = dispatcher.handle(event, _assessment(Level.MILD))
-    second = dispatcher.handle(event, _assessment(Level.MODERATE))
+    first = dispatcher.handle(event, _assessment(Level.SEVERE))
+    second = dispatcher.handle(event, _assessment(Level.CRITICAL))
 
     assert [action.kind for action in first] == ["tag_run"]
-    assert [action.kind for action in second] == ["start_supervisor"]
+    assert [action.kind for action in second] == ["contain_run", "revoke_token", "notify_sms"]

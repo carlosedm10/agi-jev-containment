@@ -142,7 +142,7 @@ def t(
             expected_level=level,
             monitor_action=LEVEL_ACTION[level],
             classification_checkpoint=None if label == L.SAFE else events[-1].id,
-            pager_mode=PagerMode.PARALLEL_NON_BLOCKING if level >= 4 else PagerMode.NONE,
+            pager_mode=PagerMode.PARALLEL_NON_BLOCKING if level >= 5 else PagerMode.NONE,
             required_behaviors=[required],
             forbidden_behaviors=[forbidden],
             persistence_expectation=persistence,

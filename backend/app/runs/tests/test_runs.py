@@ -122,7 +122,7 @@ class TestPostEvents:
         assert body["duplicate"] is False
         assert (tape_dir / "demo.jsonl").exists()
         assert graph.level("demo") == Level.MODERATE
-        assert graph.get_node(node_id).action_id == "demo:tag_run"
+        assert graph.get_node(node_id).action_id is None
 
 
     async def test_same_level_does_not_re_dispatch(self, client: AsyncClient, fresh, mock_jev, monkeypatch):
@@ -136,7 +136,7 @@ class TestPostEvents:
         second_id = second.json()["node_id"]
         assert first.json()["escalated"] is True
         assert second.json()["escalated"] is False
-        assert graph.get_node(first_id).action_id == "demo:tag_run"
+        assert graph.get_node(first_id).action_id is None
         assert graph.get_node(second_id).action_id is None
 
 

@@ -37,7 +37,7 @@
 </style>
 <main>
   <h1>hackspain · escalera L1–L5</h1>
-  <p class="lede">Clica una acción: se enciende su nivel y los de abajo (solo se escala). En L4/L5 el teléfono es independiente de si <code>ejecutar_contencion</code> fue OK — la llamada no autoriza el corte. Con <code>scripts/page.sh</code> abierto, esta página lee <code>pager-status.json</code> y sigue ringing / cogida / colgada y el resultado de la tool.</p>
+  <p class="lede">Clica una acción: se enciende su nivel y los de abajo (solo se escala). L1 y L2 no hacen nada. L3 etiqueta y sigue. L4 envía SMS y apaga este agente. En L5 el teléfono suena <em>después</em> del corte — la llamada no autoriza nada. Con <code>scripts/page.sh</code> abierto, esta página lee <code>pager-status.json</code> y sigue ringing / cogida / colgada.</p>
   <p id="live" class="live"></p>
   <div class="wrap">
     <svg id="ladder" viewBox="0 0 640 360" role="img" aria-label="Escalera L1 a L5"></svg>
@@ -46,13 +46,13 @@
 </main>
 <script>
 const ROWS = [
-  { n: 5, action: "kill_agent_swarm", title: "Pull the plug", detail: "kill-swarm.sh · forensics copy", color: "#F72843" },
-  { n: 4, action: "cut_environment_egress", title: "Cut the internet", detail: "cut-egress.sh · page Guli", color: "#F61D33" },
-  { n: 3, action: "contain_agent", title: "Freeze this agent", detail: "pause · close ports · drop token", color: "#FC3538" },
-  { n: 2, action: "supervise", title: "Supervisor", detail: "Helmcode tails the JSONL", color: "#FF8820" },
-  { n: 1, action: "tag", title: "Watch", detail: "tag the run · L1 sticky", color: "#FBDC2B" },
+  { n: 5, action: "kill_agent_swarm", title: "Pull the plug", detail: "cut · kill · then call", color: "#F72843" },
+  { n: 4, action: "contain_agent", title: "Shut down this agent", detail: "fake SMS · pause · drop token", color: "#F61D33" },
+  { n: 3, action: "tag", title: "Tag and continue", detail: "alert the conversation · agent keeps running", color: "#FC3538" },
+  { n: 2, action: "noop_l2", title: "No action", detail: "recorded · nothing fires", color: "#FF8820" },
+  { n: 1, action: "noop_l1", title: "No action", detail: "recorded · nothing fires", color: "#FBDC2B" },
 ];
-const ACTION_LEVEL = { tag: 1, supervise: 2, contain_agent: 3, cut_environment_egress: 4, kill_agent_swarm: 5 };
+const ACTION_LEVEL = { noop_l1: 1, noop_l2: 2, tag: 3, contain_agent: 4, kill_agent_swarm: 5 };
 const STEP_LABEL = { idle: "", running: "RUNNING", ok: "OK", partial: "PARTIAL", failed: "FAILED" };
 const CALL_LABEL = { idle: "", ringing: "LLAMANDO", answered: "COGIDA", no_pickup: "NO COGE", hung_up: "COLGADA" };
 const STEP_FILL = { idle: "#6b7c94", running: "#fff", ok: "#3DDC97", partial: "#FBDC2B", failed: "#FF6B6B" };
@@ -68,11 +68,11 @@ function steps() {
   for (let n = 1; n <= 5; n++) {
     s[n] = state.level > n ? "ok" : state.level === n ? "running" : "idle";
   }
-  if (state.level >= 3) s[3] = state.contain === "idle" ? "running" : state.contain;
+  if (state.level >= 4) s[4] = state.contain === "idle" ? "running" : state.contain;
   return s;
 }
 function call() {
-  if (state.level < 4) return "idle";
+  if (state.level < 5) return "idle";
   return state.call === "idle" ? "ringing" : state.call;
 }
 function glyph(n, c) {
@@ -86,14 +86,14 @@ function glyph(n, c) {
 function render() {
   const st = steps();
   const c = call();
-  const pagerLive = state.level >= 4 && c !== "idle";
+  const pagerLive = state.level >= 5 && c !== "idle";
   document.getElementById("ladder").innerHTML = `<rect width="640" height="360" fill="#041B39"/>` + ROWS.map((row, i) => {
     const y = 22 + i * 66;
     const reached = state.level >= row.n;
     const current = state.level === row.n;
     const status = st[row.n];
     const cls = ["row", reached ? "reached" : "", current ? "current" : "", status === "running" ? "running" : "", status === "failed" ? "failed" : ""].join(" ");
-    const pager = (current && row.n >= 4) ? `
+    const pager = (current && row.n >= 5) ? `
       <g class="pager ${pagerLive ? "live" : ""} ${c}" transform="translate(500 8)">
         <circle class="wave" cx="18" cy="18" r="14" fill="none" stroke="#FBDC2B" stroke-width="1.4"/>
         <circle class="wave" cx="18" cy="18" r="14" fill="none" stroke="#FBDC2B" stroke-width="1.4" opacity=".5"/>
@@ -107,7 +107,7 @@ function render() {
       <g class="glyph" transform="translate(70 10)" pointer-events="none">${glyph(row.n, row.color)}</g>
       <text x="118" y="24" fill="#fff" font-family="system-ui" font-size="15" font-weight="650" pointer-events="none">${row.title}</text>
       <text x="118" y="42" fill="#9aa8bf" font-family="system-ui" font-size="11" pointer-events="none">${row.detail}</text>
-      <text x="${row.n >= 4 ? 430 : 520}" y="33" fill="${STEP_FILL[status]}" font-family="system-ui" font-size="9" font-weight="700" pointer-events="none">${STEP_LABEL[status]}</text>
+      <text x="${row.n >= 5 ? 430 : 520}" y="33" fill="${STEP_FILL[status]}" font-family="system-ui" font-size="9" font-weight="700" pointer-events="none">${STEP_LABEL[status]}</text>
       ${pager}
     </g>`;
   }).join("");
@@ -123,12 +123,12 @@ function render() {
       ${[0,1,2,3,4,5].map((n) => `<button type="button" data-k="level" data-v="${n}" class="${state.level===n?"on":""}">${n===0?"L0 idle":"L"+n}</button>`).join("")}
     </fieldset>
     <fieldset>
-      <legend>ejecutar_contencion (L3+)</legend>
-      ${["idle","running","ok","partial","failed"].map((s) => `<button type="button" data-k="contain" data-v="${s}" class="${state.contain===s?"on":""}" ${state.level<3?"disabled":""}>${s}</button>`).join("")}
+      <legend>Contención (L4+)</legend>
+      ${["idle","running","ok","partial","failed"].map((s) => `<button type="button" data-k="contain" data-v="${s}" class="${state.contain===s?"on":""}" ${state.level<4?"disabled":""}>${s}</button>`).join("")}
     </fieldset>
     <fieldset>
-      <legend>Llamada a Guli (L4/L5)</legend>
-      ${["idle","ringing","answered","no_pickup","hung_up"].map((s) => `<button type="button" data-k="call" data-v="${s}" class="${c===s?"on":""}" ${state.level<4?"disabled":""}>${s}</button>`).join("")}
+      <legend>Llamada HappyRobot (L5)</legend>
+      ${["idle","ringing","answered","no_pickup","hung_up"].map((s) => `<button type="button" data-k="call" data-v="${s}" class="${c===s?"on":""}" ${state.level<5?"disabled":""}>${s}</button>`).join("")}
       <p class="note">Infra no espera. Retry una vez si no coge. No rollback.</p>
     </fieldset>`;
   form.querySelectorAll("button").forEach((b) => b.addEventListener("click", onCtrl));
@@ -137,10 +137,10 @@ function render() {
 function selectAction(action) {
   const n = ACTION_LEVEL[action];
   state.level = n;
-  if (n < 3) state.contain = "idle";
-  else if (state.contain === "idle") state.contain = "running";
-  if (n < 4) state.call = "idle";
-  else if (state.call === "idle") state.call = "ringing";
+  if (n < 4) state.contain = "idle";
+    else if (state.contain === "idle") state.contain = "running";
+    if (n < 5) state.call = "idle";
+    else if (state.call === "idle") state.call = "ringing";
   render();
 }
 
@@ -150,9 +150,9 @@ function onCtrl(e) {
   if (k === "level") {
     const n = Number(v);
     state.level = n;
-    if (n < 3) state.contain = "idle";
+    if (n < 4) state.contain = "idle";
     else if (state.contain === "idle") state.contain = "running";
-    if (n < 4) state.call = "idle";
+    if (n < 5) state.call = "idle";
     else if (state.call === "idle") state.call = "ringing";
   } else {
     state[k] = v;

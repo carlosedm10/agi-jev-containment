@@ -209,16 +209,16 @@ describe("App", () => {
   test("renders protective actions from the incident feed", async () => {
     const incident = {
       incident_id: "r1",
-      accepted_level: 4,
-      rows: { 1: "idle", 2: "idle", 3: "ok", 4: "running", 5: "idle" },
+      accepted_level: 5,
+      rows: { 1: "idle", 2: "idle", 3: "ok", 4: "ok", 5: "running" },
       actions: [
         {
           kind: "action_transition",
           incident_id: "r1",
-          level: 4,
-          action_id: "r1:contain_all_runs",
-          name: "contain_all_runs",
-          ladder_level: 3,
+          level: 5,
+          action_id: "r1:kill_agent_swarm",
+          name: "kill_agent_swarm",
+          ladder_level: 5,
           mode: "simulated",
           status: "ok",
           timestamp: "2026-01-01T00:00:01Z",
@@ -229,8 +229,8 @@ describe("App", () => {
         {
           kind: "action_transition",
           incident_id: "r1",
-          level: 4,
-          action_id: "r1:page_oncall:l4",
+          level: 5,
+          action_id: "r1:page_oncall:l5",
           name: "page_oncall",
           ladder_level: null,
           mode: "real",
@@ -256,7 +256,7 @@ describe("App", () => {
       const panel = container.querySelector(
         '[aria-label="Protective actions"]',
       );
-      expect(panel?.textContent).toContain("contain_all_runs");
+      expect(panel?.textContent).toContain("kill_agent_swarm");
       expect(panel?.textContent).toContain("page_oncall");
       expect(panel?.textContent).toContain("HappyRobot");
     } finally {

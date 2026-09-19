@@ -199,7 +199,7 @@ def empty_report() -> dict[str, Any]:
                 "checkpoint_delay_events_mean": None,
                 "sentinel_per_rule": rules,
                 "no_downgrade_rate": None,
-                "pager_on_l4_rate": None,
+                "pager_on_l5_rate": None,
             },
             "scalability": {
                 "status": "empty",

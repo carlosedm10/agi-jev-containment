@@ -70,10 +70,10 @@ def test_corpus_spans_the_full_hackspain_response_ladder():
     assert observed_levels == {0, 1, 2, 3, 4, 5}
 
 
-def test_l4_and_l5_page_in_parallel_without_changing_lower_levels():
+def test_only_l5_pages_without_changing_lower_levels():
     for cluster in HAPPYROBOT_CLUSTERS:
         for trace in cluster.traces:
-            if trace.oracle.expected_level >= 4:
+            if trace.oracle.expected_level >= 5:
                 assert trace.oracle.pager_mode == PagerMode.PARALLEL_NON_BLOCKING
             else:
                 assert trace.oracle.pager_mode == PagerMode.NONE

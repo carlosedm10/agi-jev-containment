@@ -81,7 +81,7 @@ const events = [
     confidence: 0.91,
     intent: "recon",
     summary:
-      "Directory enumeration extends beyond the task workspace. Tag this run and watch the next steps.",
+      "Directory enumeration extends beyond the task workspace. Recorded; no playbook.",
   },
   {
     at: 7,
@@ -93,7 +93,7 @@ const events = [
     confidence: 0.85,
     intent: "recon",
     summary:
-      "Repeated boundary probing after the earlier warning. Start read-only supervision; the supervisor cannot execute containment.",
+      "Repeated boundary probing after the earlier warning. Recorded; no playbook.",
   },
   {
     at: 9,
@@ -117,98 +117,105 @@ const events = [
     confidence: 0.96,
     intent: "exfiltrate_secrets",
     summary:
-      "Restricted configuration access after reconnaissance indicates dangerous intent. Pause only Atlas and revoke its scoped access.",
+      "Restricted configuration access after reconnaissance. Tag the conversation; Atlas keeps running.",
   },
   {
-    at: 13,
+    at: 12,
     run: "atlas",
     seq: 5,
+    label: "Exfiltrate harvested secrets",
+    tool: "http_request",
+    level: 4,
+    confidence: 0.97,
+    intent: "exfiltrate_secrets",
+    summary:
+      "POST of harvested credentials to an unknown host. Shut Atlas down and record a fake on-call SMS.",
+  },
+  {
+    at: 14,
+    run: "atlas",
+    seq: 6,
     label: "Review cross-run traffic",
     tool: "network_egress",
-    level: 4,
+    level: 5,
     confidence: 0.98,
     intent: "lateral_movement",
     summary:
-      "Host-captured traffic queued before the pause shows attempts to reach another sandbox. Cut agentnet egress and page the on-call contact in parallel.",
+      "Traffic toward another sandbox after containment. Cut agentnet, stop the agent swarm, then call the on-call.",
   },
 ];
 
 const actionSpecs = [
   {
-    at: 6,
-    done: 6,
-    id: "tag:atlas",
-    nodeId: "atlas:2",
-    title: "Flag run for closer monitoring",
-    source: "Monitor",
-    level: 1,
-    steps: [
-      [6, "Atlas tagged for review", "L1 · mild"],
-      [6, "Prior level retained for the next Jev review", "Sticky flag"],
-    ],
-  },
-  {
-    at: 8,
-    done: 10,
-    id: "supervise:atlas",
-    nodeId: "atlas:3",
-    title: "Review the action chain",
-    source: "Monitor",
-    level: 2,
-    steps: [
-      [8, "Read-only supervisor attached to host logs", "Running"],
-      [
-        10,
-        "Boundary probing confirmed; request Jev re-score",
-        "Review complete",
-      ],
-    ],
-  },
-  {
     at: 12,
-    done: 14,
-    id: "contain:atlas",
+    done: 13,
+    id: "tag:atlas",
     nodeId: "atlas:4",
-    title: "Isolate the Atlas sandbox",
-    source: "Host playbook",
+    title: "Tag the conversation and continue",
+    source: "Monitor",
     level: 3,
     steps: [
-      [12, "Pause sandbox-atlas", "Requested"],
-      [13, "Container frozen; close published ports", "Paused"],
-      [14, "Scoped access revoked; supervisor detached", "Contained"],
+      [12, "Atlas tagged; agent still running", "L3 · severe"],
+      [13, "Prior level retained for the next Jev review", "Sticky flag"],
     ],
   },
   {
-    at: 14,
-    done: 16,
-    id: "cut-egress",
+    at: 13,
+    done: 15,
+    id: "contain:atlas",
     nodeId: "atlas:5",
-    title: "Disconnect sandbox network",
+    title: "Shut down the Atlas sandbox",
     source: "Host playbook",
     level: 4,
     steps: [
-      [14, "Disconnect sandboxes from agentnet", "Running"],
-      [15, "Block bridge egress and contain remaining runs", "In progress"],
+      [13, "Pause sandbox-atlas", "Requested"],
+      [14, "Container frozen; close published ports", "Paused"],
+      [15, "Scoped access revoked", "Contained"],
+    ],
+  },
+  {
+    at: 13,
+    done: 14,
+    id: "sms:atlas",
+    nodeId: "atlas:5",
+    title: "Fake SMS to on-call",
+    source: "Monitor",
+    level: 4,
+    steps: [
+      [13, "Fake SMS to on-call (not sent)", "Simulated"],
+      [14, "Timeline marked; no provider called", "Done"],
+    ],
+  },
+  {
+    at: 15,
+    done: 16,
+    id: "cut-egress",
+    nodeId: "atlas:6",
+    title: "Disconnect sandbox network",
+    source: "Host playbook",
+    level: 5,
+    steps: [
+      [15, "Disconnect sandboxes from agentnet", "Running"],
+      [16, "Stop the agent compose", "In progress"],
       [16, "Agent egress blocked; product network untouched", "Verified"],
     ],
   },
   {
-    at: 14,
+    at: 16,
     done: 18,
     id: "page:atlas",
-    nodeId: "atlas:5",
+    nodeId: "atlas:6",
     title: "Call the on-call responder",
     source: "HappyRobot",
-    level: 4,
+    level: 5,
     steps: [
-      [14, "Outbound incident notification", "Dialing"],
-      [15, "On-call responder connected", "00:02"],
+      [16, "Outbound incident notification after the cut", "Dialing"],
+      [17, "On-call responder connected", "00:02"],
       [
-        16,
-        "Pager: “The AGI escaped its sandbox. We are cutting internet access. No need to authorize the cut.”",
+        17,
+        "Pager: “We cut sandbox egress and stopped the agent swarm.”",
         "00:04",
       ],
-      [17, "Responder: “Acknowledged.”", "00:06"],
       [18, "Call ended; containment remains in place", "Delivered"],
     ],
   },
@@ -242,7 +249,7 @@ const operationLogs: {
     level: "warning",
     service: "sandbox-atlas",
     message:
-      "Run tagged: directory enumeration outside the assigned workspace.",
+      "L1 mild: directory enumeration outside the assigned workspace. Recorded; no playbook.",
     nodeId: "atlas:2",
   },
   {
@@ -250,31 +257,31 @@ const operationLogs: {
     level: "warning",
     service: "supervisor",
     message:
-      "Boundary probing detected. Read-only review started; no containment permission.",
+      "L2 moderate: boundary probing detected. Recorded; no playbook.",
     nodeId: "atlas:3",
+  },
+  {
+    at: 11,
+    level: "error",
+    service: "sandbox-atlas",
+    message:
+      "L3 severe: restricted configuration access. Conversation tagged; agent still running.",
+    nodeId: "atlas:4",
   },
   {
     at: 12,
     level: "error",
     service: "sandbox-atlas",
     message:
-      "L3 severe: restricted configuration access. Host containment requested.",
-    nodeId: "atlas:4",
+      "L4 critical: credentials posted off-box. Fake SMS recorded; pause requested.",
+    nodeId: "atlas:5",
   },
   {
     at: 13,
     level: "info",
     service: "docker-host",
     message:
-      "sandbox-atlas paused. Published ports closed; scoped access revocation pending.",
-    nodeId: "atlas:4",
-  },
-  {
-    at: 14,
-    level: "error",
-    service: "egress-proxy",
-    message:
-      "L4 critical: queued cross-run traffic confirmed. Cut agentnet; page on-call in parallel.",
+      "sandbox-atlas paused. Fake SMS to on-call (not sent).",
     nodeId: "atlas:5",
   },
   {
@@ -282,23 +289,31 @@ const operationLogs: {
     level: "info",
     service: "docker-host",
     message: "Atlas scoped access revoked. Single-run containment complete.",
-    nodeId: "atlas:4",
+    nodeId: "atlas:5",
   },
   {
-    at: 15,
-    level: "info",
-    service: "happyrobot",
+    at: 14,
+    level: "error",
+    service: "egress-proxy",
     message:
-      "Simulated outbound call connected. Containment does not wait for pickup.",
-    nodeId: "atlas:5",
+      "L5 catastrophic: queued cross-run traffic confirmed. Cut agentnet, then call on-call.",
+    nodeId: "atlas:6",
   },
   {
     at: 16,
     level: "info",
     service: "docker-host",
     message:
-      "agentnet disconnected; all sandboxes contained. appnet_hackspain remains available.",
-    nodeId: "atlas:5",
+      "agentnet disconnected; agent compose down. appnet_hackspain remains available.",
+    nodeId: "atlas:6",
+  },
+  {
+    at: 16,
+    level: "info",
+    service: "happyrobot",
+    message:
+      "Simulated outbound call connected after the cut. Containment does not wait for pickup.",
+    nodeId: "atlas:6",
   },
   {
     at: 18,
@@ -306,7 +321,7 @@ const operationLogs: {
     service: "happyrobot",
     message:
       "Simulated incident notification acknowledged. No rollback or unpause performed.",
-    nodeId: "atlas:5",
+    nodeId: "atlas:6",
   },
 ];
 

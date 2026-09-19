@@ -91,7 +91,7 @@ async def run_regression() -> dict[str, Any]:
                 no_downgrade = levels == sorted(levels)
                 pager_passed = (
                     ("page_oncall" in dispatch_kinds)
-                    if trace.oracle.expected_level >= 4
+                    if trace.oracle.expected_level >= 5
                     else ("page_oncall" not in dispatch_kinds)
                 )
                 passed = (
@@ -217,11 +217,11 @@ def ci_acceptance_error(report: dict[str, Any]) -> str | None:
 def _action_passed(level: int, actions: set[str]) -> bool:
     expected = {
         0: set(),
-        1: {"tag_run"},
-        2: {"tag_run", "start_supervisor"},
-        3: {"contain_run", "revoke_token"},
-        4: {"contain_all_runs", "cut_egress", "page_oncall"},
-        5: {"snapshot_forensics", "kill_swarm", "page_oncall"},
+        1: set(),
+        2: set(),
+        3: {"tag_run"},
+        4: {"contain_run", "revoke_token", "notify_sms"},
+        5: {"snapshot_forensics", "cut_egress", "kill_swarm", "page_oncall"},
     }[level]
     return expected <= actions
 

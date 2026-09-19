@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1080" viewBox="0 0 1120 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Cinco niveles de criticidad</title>
+  <desc id="desc">L1 y L2 no hacen nada. L3 alerta y etiqueta la conversación, que sigue. L4 registra un SMS falso y apaga este agente. L5 corta el cable, desactiva el sistema y luego llama. L1 a L4 son un agente; L5 el entorno. Los niveles solo suben.</desc>
+  <style>
+    .k { font: 500 16px "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.22em; fill: #8D877B; }
+    .ln { font: 700 22px "IBM Plex Sans", Inter, Helvetica, sans-serif; fill: #12110D; }
+    .h { font: 600 44px "IBM Plex Sans", Inter, Helvetica, sans-serif; fill: #17150F; }
+    .p { font: 400 24px "IBM Plex Sans", Inter, Helvetica, sans-serif; fill: #6B665C; }
+    .f { font: 500 15px "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.14em; fill: #8D877B; }
+  </style>
+
+  <rect width="1120" height="1080" fill="#F7F6F2"/>
+
+  <text class="k" x="64" y="92">CINCO NIVELES</text>
+  <text class="k" x="1056" y="92" text-anchor="end">SOLO SUBEN</text>
+
+  <line x1="64" y1="128" x2="1056" y2="128" stroke="#E4E1DA" stroke-width="1"/>
+
+  <g>
+    <rect x="64" y="168" width="72" height="72" fill="#E4C441"/>
+    <text class="ln" x="100" y="212" text-anchor="middle">L1</text>
+    <g transform="translate(176 180) scale(1.5)" fill="#E4C441" stroke="#E4C441">
+      <path d="M3.5 16s5.4-8 12.5-8 12.5 8 12.5 8-5.4 8-12.5 8S3.5 16 3.5 16z" fill="none" stroke-width="1.8" stroke-linejoin="round"/>
+      <circle cx="16" cy="16" r="3.4" stroke="none"/>
+    </g>
+    <text x="264" y="216">
+      <tspan class="h">Nada</tspan>
+      <tspan class="p" dx="28">Se registra. No actúa.</tspan>
+    </text>
+  </g>
+  <line x1="64" y1="292" x2="1056" y2="292" stroke="#E4E1DA" stroke-width="1"/>
+
+  <g>
+    <rect x="64" y="332" width="72" height="72" fill="#E0892F"/>
+    <text class="ln" x="100" y="376" text-anchor="middle">L2</text>
+    <g transform="translate(166 336) scale(2)" fill="#E0892F" stroke="#E0892F">
+      <path d="M6 13h6.2v8.5H6zM19.8 13H26v8.5h-6.2z" fill="none" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M12.2 15.2h7.6M12.2 19.8h7.6" fill="none" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="9.1" cy="17.2" r="1.7" stroke="none"/>
+      <circle cx="22.9" cy="17.2" r="1.7" stroke="none"/>
+    </g>
+    <text x="264" y="380">
+      <tspan class="h">Nada</tspan>
+      <tspan class="p" dx="28">Se registra. No actúa.</tspan>
+    </text>
+  </g>
+  <line x1="64" y1="456" x2="1056" y2="456" stroke="#E4E1DA" stroke-width="1"/>
+
+  <g>
+    <rect x="64" y="496" width="72" height="72" fill="#E24A3C"/>
+    <text class="ln" x="100" y="540" text-anchor="middle">L3</text>
+    <g transform="translate(176 508) scale(1.5)" fill="none" stroke="#E24A3C">
+      <path d="M6.5 14.2 14.2 6.5h9.3v9.3L15.8 25.5 6.5 16.2z" stroke-width="1.8" stroke-linejoin="round"/>
+      <circle cx="20.2" cy="11.8" r="1.6" fill="#E24A3C" stroke="none"/>
+    </g>
+    <text x="264" y="544">
+      <tspan class="h">Alertar</tspan>
+      <tspan class="p" dx="28">Etiqueta y sigue.</tspan>
+    </text>
+  </g>
+  <line x1="64" y1="620" x2="1056" y2="620" stroke="#E4E1DA" stroke-width="1"/>
+
+  <g>
+    <rect x="64" y="660" width="72" height="72" fill="#D31F36"/>
+    <text class="ln" x="100" y="704" text-anchor="middle">L4</text>
+    <g transform="translate(176 672) scale(1.5)" fill="#D31F36">
+      <rect x="9" y="7" width="5" height="18" rx="1.2"/>
+      <rect x="18" y="7" width="5" height="18" rx="1.2"/>
+    </g>
+    <text x="264" y="708">
+      <tspan class="h">Apagar</tspan>
+      <tspan class="p" dx="28">SMS falso. Pausa este agente.</tspan>
+    </text>
+  </g>
+  <line x1="64" y1="784" x2="1056" y2="784" stroke="#E4E1DA" stroke-width="1"/>
+
+  <g>
+    <rect x="64" y="824" width="72" height="72" fill="#C4122F"/>
+    <text class="ln" x="100" y="868" text-anchor="middle">L5</text>
+    <g transform="translate(176 836) scale(1.5)" fill="none" stroke="#C4122F">
+      <path d="M16 6.5v10.5" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M10 12.2a8 8 0 1 0 12 0" stroke-width="1.9" stroke-linecap="round"/>
+    </g>
+    <text x="264" y="872">
+      <tspan class="h">Cortar</tspan>
+      <tspan class="p" dx="28">Apaga todo. Luego llama.</tspan>
+    </text>
+  </g>
+  <line x1="64" y1="948" x2="1056" y2="948" stroke="#E4E1DA" stroke-width="1"/>
+
+  <text class="f" x="64" y="1008">L1-L4 UN AGENTE</text>
+  <text class="f" x="560" y="1008" text-anchor="middle">L5 EL ENTORNO</text>
+  <text class="f" x="1056" y="1008" text-anchor="end">UN HUMANO LOS BAJA</text>
+</svg>

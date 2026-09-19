@@ -12,9 +12,9 @@ export function LevelIcon({
   color?: string;
 }) {
   if (n === 1) return <WatchIcon color={color} />;
-  if (n === 2) return <SupervisorIcon color={color} />;
-  if (n === 3) return <FreezeIcon color={color} />;
-  if (n === 4) return <CutIcon color={color} />;
+  if (n === 2) return <WatchIcon color={color} />;
+  if (n === 3) return <TagIcon color={color} />;
+  if (n === 4) return <FreezeIcon color={color} />;
   return <PlugIcon color={color} />;
 }
 
@@ -33,25 +33,17 @@ function WatchIcon({ color }: IconProps) {
   );
 }
 
-function SupervisorIcon({ color }: IconProps) {
+function TagIcon({ color }: IconProps) {
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true">
       <path
-        d="M6 13h6.2v8.5H6zM19.8 13H26v8.5h-6.2z"
+        d="M6.5 14.2 14.2 6.5h9.3v9.3L15.8 25.5 6.5 16.2z"
         fill="none"
         stroke={color}
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      <path
-        d="M12.2 15.2h7.6M12.2 19.8h7.6"
-        fill="none"
-        stroke={color}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <circle cx="9.1" cy="17.2" r="1.7" fill={color} />
-      <circle cx="22.9" cy="17.2" r="1.7" fill={color} />
+      <circle cx="20.2" cy="11.8" r="1.6" fill={color} />
     </svg>
   );
 }
@@ -61,44 +53,6 @@ function FreezeIcon({ color }: IconProps) {
     <svg viewBox="0 0 32 32" aria-hidden="true">
       <rect x="9" y="7" width="5" height="18" rx="1.2" fill={color} />
       <rect x="18" y="7" width="5" height="18" rx="1.2" fill={color} />
-    </svg>
-  );
-}
-
-function CutIcon({ color }: IconProps) {
-  return (
-    <svg viewBox="0 0 32 32" aria-hidden="true">
-      <circle
-        cx="16"
-        cy="16"
-        r="10"
-        fill="none"
-        stroke={color}
-        strokeWidth="1.8"
-      />
-      <path
-        d="M16 6.2v3.4M16 22.4v3.4M6.2 16h3.4M22.4 16h3.4"
-        fill="none"
-        stroke={color}
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      <ellipse
-        cx="16"
-        cy="16"
-        rx="4.2"
-        ry="10"
-        fill="none"
-        stroke={color}
-        strokeWidth="1.6"
-      />
-      <path
-        d="M7 25 L25 7"
-        fill="none"
-        stroke={color}
-        strokeWidth="2.1"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }

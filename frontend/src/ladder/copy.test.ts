@@ -25,9 +25,9 @@ describe("ladder copy", () => {
     expect(ACTION_STATUS_LABEL.ok).toBe("Done");
   });
 
-  test("parks the call rail on the current paging level", () => {
+  test("parks the call rail on L5 only", () => {
     expect(callRailLevel(3)).toBeNull();
-    expect(callRailLevel(4)).toBe(4);
+    expect(callRailLevel(4)).toBeNull();
     expect(callRailLevel(5)).toBe(5);
   });
 });

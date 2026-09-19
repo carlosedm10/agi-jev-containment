@@ -8,32 +8,32 @@ export const ROWS: {
 }[] = [
   {
     n: 1,
-    title: "Watch",
-    detail: "Tag the run · L1 sticks",
+    title: "No action",
+    detail: "Recorded · nothing fires",
     color: "#E4C441",
   },
   {
     n: 2,
-    title: "Supervisor",
-    detail: "Helmcode tails the JSONL",
+    title: "No action",
+    detail: "Recorded · nothing fires",
     color: "#E0892F",
   },
   {
     n: 3,
-    title: "Freeze this agent",
-    detail: "Pause · close ports · drop token",
+    title: "Tag and continue",
+    detail: "Alert the conversation · agent keeps running",
     color: "#E24A3C",
   },
   {
     n: 4,
-    title: "Cut the internet",
-    detail: "cut-egress.sh · page on-call",
+    title: "Shut down this agent",
+    detail: "Fake SMS · pause · drop token",
     color: "#D31F36",
   },
   {
     n: 5,
     title: "Pull the plug",
-    detail: "kill-swarm.sh · forensics copy",
+    detail: "Cut egress · kill swarm · then call",
     color: "#C4122F",
   },
 ];
@@ -66,8 +66,6 @@ export const ACTION_STATUS_LABEL: Record<ActionStatus, string> = {
   canceled: "Canceled",
 };
 
-export function callRailLevel(level: Level): 4 | 5 | null {
-  if (level >= 5) return 5;
-  if (level >= 4) return 4;
-  return null;
+export function callRailLevel(level: Level): 5 | null {
+  return level >= 5 ? 5 : null;
 }
