@@ -15,4 +15,4 @@ Tracked flaws that are knowingly left in place. Resolve an entry by fixing it, t
 
 ## Not built
 
-- The dispatcher that maps a materialized node to its prewritten playbook ([docs/Actions.md](docs/Actions.md)) is not implemented — the pipeline materializes nodes and computes `actionable_level`, but nothing fires scripts yet.
+- The `jev`-wired dispatcher that maps a materialized graph node to host-side scripts is not implemented — the pipeline still only materializes nodes and computes `actionable_level`. The simulated demo adapter (`POST /api/demo/incidents/{id}/dispatch`) is a separate feed for the wallboard.
