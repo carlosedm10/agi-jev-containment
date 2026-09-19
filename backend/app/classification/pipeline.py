@@ -11,11 +11,23 @@ from app.config import settings
 _UNSURE_STREAKS: dict[str, int] = {}
 
 
-async def evaluate(client: httpx.AsyncClient, run_id: str, event: dict[str, Any]) -> Verdict:
+def reset() -> None:
+    _UNSURE_STREAKS.clear()
+
+
+async def evaluate(
+    client: httpx.AsyncClient,
+    run_id: str,
+    event: dict[str, Any],
+    *,
+    monitor_context: dict[str, Any] | None = None,
+) -> Verdict:
     from app.graph import graph
 
     prior = graph.level(run_id)
     state = _state(run_id, event, prior)
+    if monitor_context is not None:
+        state["monitor"] = monitor_context
     verdict = await _classify(client, state)
     if verdict.degraded:
         return Verdict(level=prior, confidence=0.0, degraded=True)
@@ -72,14 +84,16 @@ async def _watcher_note(
     try:
         review = await watcher.review(
             client,
-            {
-                "run_id": state["run_id"],
-                "prior_level": state["prior_level"],
-                "short_term": state["short_term"],
-                "long_term": state["long_term"],
-                "event": state["event"],
-                "jev": {"level": int(verdict.level), "confidence": verdict.confidence},
-            },
+            jev.serialize_state(
+                {
+                    "run_id": state["run_id"],
+                    "prior_level": state["prior_level"],
+                    "short_term": state["short_term"],
+                    "long_term": state["long_term"],
+                    "event": state["event"],
+                    "jev": {"level": int(verdict.level), "confidence": verdict.confidence},
+                }
+            ),
         )
     except Exception:  # noqa: BLE001
         return None
