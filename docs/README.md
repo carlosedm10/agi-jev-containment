@@ -89,4 +89,5 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - [docs/Graph.md](Graph.md) — action graph spec (sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
+- `plans/` — not shipped, design only: [rogue agent in our Docker](../plans/rogue-agent.md) (premise, corpus mapping, use cases, containment ladder, build order), [graph layer](../plans/graph-layer.md) (event schema, dimensions, counter-actions, interaction graph), [detection](../plans/detection.md) (SafetyDrift + SentinelAgent around `jev`, gate, calibration).
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
