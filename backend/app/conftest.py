@@ -7,6 +7,7 @@ import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.config import settings
 from app.graph import graph
 from app.main import app
 
@@ -19,6 +20,16 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture(autouse=True)
+def _fast_action_dispatch(monkeypatch):
+    from app.actions.router import get_action_service
+
+    monkeypatch.setattr(settings, "action_step_delay", 0)
+    get_action_service.cache_clear()
+    yield
+    get_action_service.cache_clear()
 
 
 @pytest.fixture

@@ -153,7 +153,7 @@ Voice: identify as the pager, say the AGI escaped its sandbox, say `{action_take
 
 ### Demo adapter (this phase)
 
-The wallboard is driven by a simulated incident feed, not by `jev`. Another service POSTs an already-decided level:
+The wallboard polls the action journal (`GET /api/demo/incidents/latest`). Classified runs write that journal from `POST /api/runs/{run_id}/events`; the demo adapter below is the manual feed for rehearsal.
 
 ```
 POST /api/demo/incidents/{incident_id}/dispatch
@@ -165,19 +165,13 @@ Levels only increase per incident; duplicates and lower levels are no-ops. The j
 
 ### Dispatcher
 
-Host-side production path, every time `jev` returns a level greater than the run's stored level. Not wired yet; the demo adapter above is what the viewer uses today.
+Host-side path, every time `jev` returns a level greater than the run's already-accepted playbook level. Wired from `POST /api/runs/{run_id}/events` after classification. The wallboard at `/ladder` reads the same journal (`run_id` is the incident id). Degraded verdicts and level 0 do not dispatch. A single arriving 4 or 5 is enough — the demo's L1→L5 climb is not the production shape.
 
 ```
 on_jev(run, result):
-    if result.level <= run.level: return
-    run.level = result.level
-    persist graph node
-    match result.level:
-        1: tag_run(run)
-        2: tag_run(run); start_supervisor(run)
-        3: contain.sh run.id                         # pause first, then ports + token
-        4: contain all live runs; cut-egress.sh & page_guli(4)
-        5: kill-swarm.sh & page_guli(5)
+    if result.degraded or result.level < 1: return
+    dispatch(run_id, result.level)  # no-op if level <= accepted
+    stamp action_id on the new graph node
 ```
 
 Jumping 1 → 4 still contains live runs, then cuts egress. Jumping to 5 still copies logs, then kills the agent compose.
