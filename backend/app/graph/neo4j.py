@@ -262,7 +262,7 @@ class Neo4jGraphStore:
         if not entity_ids and not event.caused_by and not event.derived_from:
             return []
         query = """
-        CALL {
+        CALL () {
           UNWIND $entity_ids AS eid
           MATCH (entity:Entity {id: eid})<-[:TOUCHES]-(other:Event)
           WHERE other.run_id <> $run_id AND coalesce(other.placeholder, false) = false

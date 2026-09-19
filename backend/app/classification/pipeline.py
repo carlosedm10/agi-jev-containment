@@ -30,10 +30,6 @@ def _record_watcher_contribution() -> None:
     _WATCHER_INVOCATIONS += 1
 
 
-def reset() -> None:
-    _UNSURE_STREAKS.clear()
-
-
 async def evaluate(
     client: httpx.AsyncClient,
     run_id: str,

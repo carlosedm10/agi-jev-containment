@@ -35,7 +35,7 @@ def test_wilson_and_rate():
 
 
 def test_jev_mode_requires_classify_latency():
-    from app.evals.benchmarks import jev_mode_label, resolve_jev_mode, _verdict
+    from app.evals.benchmarks import _verdict, jev_mode_label, resolve_jev_mode
 
     assert jev_mode_label(classified=2, key_present=True) == "LIVE"
     assert jev_mode_label(classified=0, key_present=True) == (

@@ -64,6 +64,10 @@
       return "stub";
     }
 
+    function shortRule(rule) {
+      return String(rule).split("_")[0];
+    }
+
     function barChart(items, { max = 1 } = {}) {
       if (!items || !items.length) return "";
       const width = 720;
