@@ -58,3 +58,26 @@ commands were run directly through the project's `uv` environment.
 
 Docker-backed `make test-backend` and `make lint-backend` remain unverified in
 this environment. Direct backend tests and lint are green.
+
+## Fix round 1
+
+### RED evidence
+
+`uv run pytest app/actions/tests/test_router.py -v` collected 21 tests and
+failed the three new regressions as expected:
+
+- A latin-1 `café` dispatch header raised `TypeError` from `compare_digest`.
+- The POST OpenAPI response map omitted status 200.
+- `.env_template` omitted both HappyRobot polling variables.
+
+### GREEN evidence
+
+- `uv run pytest app/actions/tests/test_router.py -v` — 21 passed.
+- `uv run pytest -q` — 208 passed.
+- `uv run ruff check .` — all checks passed.
+- `git diff --check` — clean.
+
+The token comparison now encodes both values before constant-time comparison,
+the route documents its real 200 no-op response, and the polling defaults are
+documented beside the HappyRobot settings. Existing unstaged `.env_template`
+edits were preserved through partial staging.

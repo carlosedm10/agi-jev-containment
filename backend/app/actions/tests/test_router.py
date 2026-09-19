@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -50,6 +51,16 @@ async def test_dispatch_rejects_wrong_token(api):
     response = await api.client.post(
         "/api/demo/incidents/incident-1/dispatch",
         headers={"X-Dispatch-Token": "wrong"},
+        json={"level": 1},
+    )
+
+    assert response.status_code == 401
+
+
+async def test_dispatch_rejects_non_ascii_latin1_token_without_server_error(api):
+    response = await api.client.post(
+        "/api/demo/incidents/incident-1/dispatch",
+        headers=[(b"X-Dispatch-Token", "café".encode("latin-1"))],
         json={"level": 1},
     )
 
@@ -158,6 +169,14 @@ async def test_get_latest_returns_404_without_journaled_incidents(api):
     assert response.status_code == 404
 
 
+def test_dispatch_openapi_documents_noop_response():
+    responses = app.openapi()["paths"][
+        "/api/demo/incidents/{incident_id}/dispatch"
+    ]["post"]["responses"]
+
+    assert "200" in responses
+
+
 def test_happyrobot_poll_defaults_are_strictly_positive():
     configured = Settings(_env_file=None)
 
@@ -177,6 +196,18 @@ def test_happyrobot_poll_defaults_are_strictly_positive():
 def test_happyrobot_poll_settings_reject_non_positive_values(overrides):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **overrides)
+
+
+def test_env_template_documents_happyrobot_poll_settings_together():
+    template = (
+        Path(__file__).resolve().parents[4] / ".env_template"
+    ).read_text(encoding="utf-8")
+
+    hook_index = template.index("HAPPYROBOT_HOOK_URL=")
+    interval_index = template.index("HAPPYROBOT_POLL_INTERVAL=1.5")
+    timeout_index = template.index("HAPPYROBOT_POLL_TIMEOUT=180")
+    oncall_index = template.index("ONCALL_PHONE=")
+    assert hook_index < interval_index < timeout_index < oncall_index
 
 
 def test_production_service_factory_is_cached_and_wires_settings(tmp_path, monkeypatch):
