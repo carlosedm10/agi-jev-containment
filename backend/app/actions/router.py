@@ -9,7 +9,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import BaseModel, Field
 
 from app.actions.journal import ActionJournal
 from app.actions.models import IncidentActionState
@@ -24,7 +24,7 @@ router = APIRouter()
 
 
 class DispatchRequest(BaseModel):
-    level: StrictInt = Field(ge=1, le=5)
+    level: int = Field(ge=1, le=5)
     intent: str | None = None
     rationale: str | None = None
 

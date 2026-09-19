@@ -13,20 +13,15 @@ from app.actions.call_status import CallResult, derive_api_base, map_call
 from app.actions.types import PagerTransition
 
 HOOK_TIMEOUT = httpx.Timeout(30.0)
-HOLD_THE_LINE = (
-    " Speak slowly and clearly. Pause after every sentence."
-    " Keep this person on the line for at least one minute."
-    " Do not hang up until they confirm they understood."
-    " If they stay silent, wait five seconds and repeat the status once."
-)
+PAUTAS = {
+    3: "Hemos pausado al agente afectado y le hemos retirado el acceso. No necesita autorizar nada.",
+    4: "Ya estamos cortando el acceso a internet de todos los agentes y pausándolos. No necesita autorizar el corte.",
+    5: "Ya estamos apagando todos los agentes y guardando los registros. No necesita autorizar nada.",
+}
 
 
 def _default_http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=HOOK_TIMEOUT)
-
-
-def voice_pautas(action_taken: str) -> str:
-    return f"{action_taken.rstrip('.')}." + HOLD_THE_LINE
 
 
 class PagerError(RuntimeError):
@@ -64,7 +59,6 @@ class HappyRobotPager:
         level: int,
         incident_id: str,
         intent: str,
-        action_taken: str,
         transition: PagerTransition,
     ) -> None:
         started = time.monotonic()
@@ -85,24 +79,35 @@ class HappyRobotPager:
         transition = traced
         try:
             self._validate()
-            await transition(
-                "running", detail="stage=webhook_request attempt=1", call_status="queued"
-            )
             client = self._client or self._client_factory()
             owns_client = self._client is None
             try:
-                run_id = await self._start_call(
-                    client,
-                    level,
-                    incident_id,
-                    intent or "critical agent activity",
-                    action_taken or f"Escalated level {level} response",
-                    0,
-                    transition,
-                )
-                await transition("running", detail="stage=webhook_accepted", call_status="queued")
-                result, detail = await self._poll_call(client, run_id, transition)
-                await self._report_terminal(result, transition, detail)
+                for call_attempt in (0, 1):
+                    await transition(
+                        "running",
+                        detail=f"stage=webhook_request attempt={call_attempt + 1}",
+                        call_status="queued",
+                    )
+                    run_id = await self._start_call(
+                        client,
+                        level,
+                        incident_id,
+                        intent,
+                        call_attempt,
+                        transition,
+                    )
+                    await transition(
+                        "running", detail="stage=webhook_accepted", call_status="queued"
+                    )
+                    result, detail = await self._poll_call(client, run_id, transition)
+                    if result.call_status != "no_pickup" or call_attempt == 1:
+                        await self._report_terminal(result, transition, detail)
+                        break
+                    await transition(
+                        "running",
+                        detail="stage=retry attempt=2",
+                        call_status="queued",
+                    )
             finally:
                 if owns_client:
                     await client.aclose()
@@ -145,7 +150,6 @@ class HappyRobotPager:
         level: int,
         incident_id: str,
         intent: str,
-        action_taken: str,
         call_attempt: int,
         transition: PagerTransition,
     ) -> str:
@@ -154,17 +158,18 @@ class HappyRobotPager:
 
         # ponytail: fixed demo chains fit in 64 steps; bounded recent tape for paging.
         context = observed_context(log.tail(incident_id, 64))
+        tipo_emergencia = (intent or "actividad peligrosa").replace("_", " ")
         payload = {
-            "tipo_emergencia": f"{intent} (level {level}, run {incident_id})",
-            "pautas": voice_pautas(action_taken),
+            "run_id": incident_id,
             "nivel_gravedad": str(level),
+            "tipo_emergencia": tipo_emergencia,
             "nombre_contacto": self._name,
             "telefono": self._phone,
-            "nodos": (
-                (context + ". " if context else "")
-                + f"{(intent or 'actividad peligrosa').replace('_', ' ')}. "
-                f"Nivel {level}. {action_taken.rstrip('.')}."
+            "pautas": PAUTAS.get(
+                level,
+                f"La contención de nivel {level} ya está en marcha. No necesita autorizar nada.",
             ),
+            "nodos": context or f"{tipo_emergencia}. Nivel {level}.",
         }
         response = await self._request(
             client,

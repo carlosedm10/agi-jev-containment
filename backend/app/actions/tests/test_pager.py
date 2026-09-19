@@ -14,7 +14,7 @@ import pytest
 from app.actions.call_status import CallResult, derive_api_base, map_call
 from app.actions.journal import ActionJournal
 from app.actions.models import ActionTransition
-from app.actions.pager import HappyRobotPager, voice_pautas
+from app.actions.pager import PAUTAS, HappyRobotPager
 
 
 @pytest.mark.parametrize(
@@ -180,7 +180,6 @@ async def run_pager(
     poll_interval: float = 0.001,
     poll_timeout: float = 1,
     intent: str = "sandbox_escape",
-    action_taken: str = "Contained all live runs",
     trace_details: list[str] | None = None,
 ) -> list[tuple[str, str | None, str | None]]:
     transitions: list[tuple[str, str | None, str | None]] = []
@@ -212,7 +211,6 @@ async def run_pager(
             level,
             "incident-1",
             intent,
-            action_taken,
             transition,
         )
     finally:
@@ -246,15 +244,16 @@ async def test_posts_documented_payload_with_telefono_and_numeric_level():
 
     assert stub.payloads == [
         {
-            "tipo_emergencia": "sandbox_escape (level 4, run incident-1)",
-            "pautas": voice_pautas("Contained all live runs"),
+            "run_id": "incident-1",
             "nivel_gravedad": "4",
+            "tipo_emergencia": "sandbox escape",
             "nombre_contacto": "Guli",
             "telefono": "+34600000000",
-            "nodos": "sandbox escape. Nivel 4. Contained all live runs.",
+            "pautas": PAUTAS[4],
+            "nodos": "sandbox escape. Nivel 4.",
         }
     ]
-    assert "one minute" in stub.payloads[0]["pautas"]
+    assert "Speak slowly" not in json.dumps(stub.payloads[0])
 
 
 async def test_reports_answered_then_hung_up():
@@ -303,17 +302,36 @@ async def test_retries_webhook_once_after_5xx():
     assert transitions[-1] == ("failed", "failed", "invalid_phone_number")
 
 
-async def test_completed_no_pickup_fails_without_a_second_call():
-    no_pickup = (
+NO_PICKUP = (
+    {"status": "completed"},
+    {"status": "completed", "failure_reason": "no_answer"},
+    None,
+)
+
+
+async def test_no_pickup_retries_once_then_reports_second_call():
+    hung_up = (
         {"status": "completed"},
-        {"status": "completed", "failure_reason": "no_answer"},
+        {"status": "completed", "call_connected_at": "now"},
         None,
     )
-    stub = HappyRobotStub([[no_pickup]])
+    stub = HappyRobotStub([[NO_PICKUP], [hung_up]], hook_statuses=[200, 200])
+    details: list[str] = []
+
+    transitions = await run_pager(stub, trace_details=details)
+
+    assert stub.hook_calls == 2
+    assert stub.idempotency_keys[0] != stub.idempotency_keys[1]
+    assert any("stage=retry attempt=2" in detail for detail in details)
+    assert transitions[-1] == ("ok", "hung_up", None)
+
+
+async def test_no_pickup_twice_fails_without_a_third_call():
+    stub = HappyRobotStub([[NO_PICKUP], [NO_PICKUP]], hook_statuses=[200, 200])
 
     transitions = await run_pager(stub)
 
-    assert stub.hook_calls == 1
+    assert stub.hook_calls == 2
     assert transitions[-1] == ("failed", "no_pickup", "no_pickup")
 
 
@@ -422,13 +440,12 @@ async def test_missing_run_id_reports_specific_failure():
 async def test_l5_payload_keeps_level_and_uses_defensive_fallbacks():
     stub = HappyRobotStub([[({"status": "completed"}, {"failure_reason": "invalid number"}, None)]])
 
-    await run_pager(stub, level=5, intent="", action_taken="")
+    await run_pager(stub, level=5, intent="")
 
     assert stub.payloads[0]["nivel_gravedad"] == "5"
-    assert stub.payloads[0]["tipo_emergencia"] == (
-        "critical agent activity (level 5, run incident-1)"
-    )
-    assert stub.payloads[0]["pautas"] == voice_pautas("Escalated level 5 response")
+    assert stub.payloads[0]["tipo_emergencia"] == "actividad peligrosa"
+    assert stub.payloads[0]["pautas"] == PAUTAS[5]
+    assert stub.payloads[0]["nodos"] == "actividad peligrosa. Nivel 5."
 
 
 def test_pager_watch_imports_under_system_python_without_backend_package():

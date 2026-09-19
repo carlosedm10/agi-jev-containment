@@ -14,7 +14,7 @@ from app.main import app
 
 
 class FakePager:
-    async def page(self, level, incident_id, intent, action_taken, transition):
+    async def page(self, level, incident_id, intent, transition):
         await transition("running", call_status="answered")
         await transition("ok", call_status="hung_up")
 
@@ -193,7 +193,7 @@ async def test_dispatch_returns_unavailable_when_server_token_is_not_configured(
     assert response.status_code == 503
 
 
-@pytest.mark.parametrize("level", [0, 6, 1.5, True])
+@pytest.mark.parametrize("level", [0, 6, 1.5, "cuatro"])
 async def test_dispatch_rejects_invalid_level(api, level):
     response = await api.client.post(
         "/api/demo/incidents/incident-1/dispatch",
@@ -202,6 +202,17 @@ async def test_dispatch_rejects_invalid_level(api, level):
     )
 
     assert response.status_code == 422
+
+
+async def test_dispatch_accepts_numeric_string_level_from_happyrobot_webhook(api):
+    response = await api.client.post(
+        "/api/demo/incidents/incident-1/dispatch",
+        headers={"X-Dispatch-Token": "dispatch-secret"},
+        json={"level": "4", "intent": "oncall_phone_request"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["state"]["accepted_level"] == 4
 
 
 async def test_dispatch_accepts_escalation_and_returns_current_state(api):
@@ -293,7 +304,7 @@ def test_happyrobot_poll_defaults_are_strictly_positive():
     configured = Settings(_env_file=None)
 
     assert configured.happyrobot_poll_interval == 1.5
-    assert configured.happyrobot_poll_timeout == 240
+    assert configured.happyrobot_poll_timeout == 330
 
 
 @pytest.mark.parametrize(

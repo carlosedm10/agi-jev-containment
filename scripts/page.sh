@@ -3,7 +3,7 @@
 # Secrets live in gitignored .env.
 # Usage: scripts/page.sh
 #        ONCALL_PHONE=+34600000000 scripts/page.sh
-#        scripts/page.sh '{"tipo_emergencia":"…","pautas":"…","nivel_gravedad":"5","nombre_contacto":"…","telefono":"+34600000000","nodos":"…"}'
+#        scripts/page.sh '{"run_id":"…","tipo_emergencia":"…","pautas":"…","nivel_gravedad":"5","nombre_contacto":"…","telefono":"+34600000000","nodos":"…"}'
 # PAGE_WATCH=0  fire without polling
 # PAGE_OPEN=0   fire without opening the browser
 # LADDER_URL    defaults to http://localhost:3000/ladder
@@ -39,6 +39,7 @@ def e164(raw: str) -> str:
 
 raw = os.environ.get("PAGE_JSON") or ""
 payload = json.loads(raw) if raw else {
+    "run_id": "manual-page",
     "tipo_emergencia": "La AGI se ha escapado de su sandbox",
     "pautas": "Ya hemos cortado el acceso a internet y apagado el sistema. No hace falta autorizar el corte.",
     "nivel_gravedad": "5",

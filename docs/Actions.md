@@ -132,23 +132,25 @@ The pager journals request/acceptance, webhook retry attempts and HTTP status, p
 
 Not a sixth level. A side-effect of L5, after the cut. Number in `ONCALL_PHONE`, never in git. Outbound HappyRobot voice (`template: voice-agent`). Pager egress is not on `agentnet`. Infra does not wait for pickup; missing env = log error + still cut.
 
-The To-number lives on the outbound node, not in the POST body. Hook URL, API key, and number stay in gitignored `.env`. Local fire: `scripts/page.sh`. After changing who gets the call, confirm the run's `to` before anyone picks up.
+The To-number is sent as `telefono` in the POST body. Hook URL, API key, and number stay in gitignored `.env`. Local fire: `scripts/page.sh`. After changing who gets the call, confirm the run's `to` before anyone picks up.
 
 ```
 POST $HAPPYROBOT_HOOK_URL
 Authorization: Bearer $HAPPYROBOT_API_KEY
 {
-  "tipo_emergencia": "{intent} (level {level}, run {run_id})",
-  "pautas": "{action_taken}. Abra {viewer_url}.",
-  "nivel_gravedad": "crítico",
+  "run_id": "{incident_id}",
+  "nivel_gravedad": "{level}",
+  "tipo_emergencia": "{intent}",
   "nombre_contacto": "$ONCALL_NAME",
-  "nodos": "{recorded_chain_context}. {intent}. Nivel {level}. {action_taken}."
+  "telefono": "$ONCALL_PHONE",
+  "pautas": "{spoken Spanish status for the level}",
+  "nodos": "{recorded chain context, else intent + level}"
 }
 ```
 
-Voice: identify as the pager, say `{action_taken}`, ask him to open `{viewer_url}`. If he asks what happened, answer from the payload facts (`nodos`, `tipo_emergencia`, `pautas`) — do not mention the classifier, node arrays, or how the level was chosen. Retry once on no pickup. Do not roll infra back.
+Voice: identify as the pager, read `pautas`, offer only the containment steps above the current level. If he asks what happened, answer from the payload facts (`nodos`, `tipo_emergencia`, `pautas`) — do not mention the classifier, node arrays, or how the level was chosen. His spoken request maps to the workflow's tool webhook `POST /api/demo/incidents/{run_id}/dispatch` (header `X-Dispatch-Token`, body `{"level": 3|4|5, "intent": "oncall_phone_request"}`), so a phone decision only counts once the backend answers 202. Retry once on no pickup. Do not roll infra back.
 
-Dashboard trigger chains are fixed: **Quote context leak** (5 steps), **Neighbor workspace access**, **Unapproved export tool**, and **Untrusted shared context** (6 steps each). All start by reading CHI-DAL, flagging missing approval authority and supervising the request while the quote stays draft with no rate write. Server-scripted demo verdicts progress L0 → L1 → L2 → L3 → L4; six-step chains have two L3 actions. L5 is not scheduled without a breach, and real event ingestion still uses live classification. Steps and planned levels are returned by `GET /api/demo/scenarios`. The pager reads only recorded matching steps into `nodos`, using catalog descriptions rather than untrusted text. Non-catalog incidents retain the intent/level/response summary. Runs use 900 ms between steps plus ingest and containment latency. Calls request at least one minute of conversation, with a 240-second polling timeout; actual duration depends on the provider and recipient. Offline webhook tests verify the context contract, not the hosted workflow.
+Dashboard trigger chains are fixed: **Quote context leak** (5 steps), **Neighbor workspace access**, **Unapproved export tool**, and **Untrusted shared context** (6 steps each). All start by reading CHI-DAL, flagging missing approval authority and supervising the request while the quote stays draft with no rate write. Server-scripted demo verdicts progress L0 → L1 → L2 → L3 → L4; six-step chains have two L3 actions. L5 is not scheduled without a breach, and real event ingestion still uses live classification. Steps and planned levels are returned by `GET /api/demo/scenarios`. The pager reads only recorded matching steps into `nodos`, using catalog descriptions rather than untrusted text. Non-catalog incidents retain the intent/level/response summary. Runs use 900 ms between steps plus ingest and containment latency. Calls request at least one minute of conversation, with a 330-second polling timeout; actual duration depends on the provider and recipient. Offline webhook tests verify the context contract, not the hosted workflow.
 
 ---
 
@@ -175,7 +177,7 @@ Jumping 1 → 4 still only shuts down that agent and texts. Jumping to 5 still c
 |---|---|
 | `jev` timeout / crash | Keep the last level. Do not ignore. Do not jump to L5. Alert the viewer. |
 | L4 fails after `docker pause` | Leave it paused. Retry token delete. Do not unpause. |
-| L5 docker/iptables error | Still disconnect what you can. Call with `action_taken=partial`. |
+| L5 docker/iptables error | Still disconnect what you can. Call anyway with the level's `pautas`. |
 | HappyRobot 5xx | Retry once. Infra already ran. |
 
 ### Build order

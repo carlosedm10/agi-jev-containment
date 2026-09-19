@@ -26,7 +26,6 @@ class Pager(Protocol):
         level: int,
         incident_id: str,
         intent: str,
-        action_taken: str,
         transition: PagerTransition,
     ) -> None: ...
 
@@ -175,7 +174,6 @@ class ActionService:
                 actions["page_oncall"],
                 accepted,
                 intent=intent,
-                action_taken="Cut sandbox egress and stopped the agent swarm",
             )
 
     async def _run_sequence(
@@ -218,7 +216,6 @@ class ActionService:
         accepted: DispatchAccepted,
         *,
         intent: str,
-        action_taken: str,
     ) -> None:
         self._transition(action, accepted, "queued")
 
@@ -243,7 +240,6 @@ class ActionService:
                 accepted.level,
                 accepted.incident_id,
                 intent,
-                action_taken,
                 transition,
             )
         except Exception as exc:  # noqa: BLE001 - pager failures must not cancel containment

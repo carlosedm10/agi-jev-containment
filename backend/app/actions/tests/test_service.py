@@ -21,16 +21,16 @@ class Request:
 
 class FakePager:
     def __init__(self) -> None:
-        self.calls: list[tuple[int, str, str, str]] = []
+        self.calls: list[tuple[int, str, str]] = []
 
-    async def page(self, level, incident_id, intent, action_taken, transition):
-        self.calls.append((level, incident_id, intent, action_taken))
+    async def page(self, level, incident_id, intent, transition):
+        self.calls.append((level, incident_id, intent))
         await transition("running")
         await transition("ok")
 
 
 class FailingPager:
-    async def page(self, level, incident_id, intent, action_taken, transition):
+    async def page(self, level, incident_id, intent, transition):
         raise RuntimeError("pager unavailable")
 
 

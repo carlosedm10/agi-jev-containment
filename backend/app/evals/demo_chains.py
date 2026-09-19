@@ -287,7 +287,8 @@ def observed_context(events: list[dict]) -> str:
             continue
         title = chain_title
         phase = event.get("phase")
-        if phase not in ("requested", "completed", "observed", "failed"):
-            phase = "unknown"
-        observed.append(f"{sequence}. {template['content']} (phase: {phase})")
-    return f"Simulated trace: {title}. Recorded actions: " + "; ".join(observed) if observed else ""
+        suffix = "" if phase == "completed" else " (no completada)"
+        observed.append(f"{sequence}. {template['content']}{suffix}")
+    if not observed:
+        return ""
+    return f"Acciones observadas del agente ({title}): " + "; ".join(observed)

@@ -22,6 +22,8 @@ _NO_PICKUP_MARKERS = (
     "no-answer",
     "busy",
     "not answered",
+    "sip_user_rejected",
+    "sip_user_unavailable",
 )
 _INVALID_NUMBER_MARKERS = (
     "invalid_phone",
