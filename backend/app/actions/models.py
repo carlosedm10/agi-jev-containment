@@ -6,9 +6,9 @@ from typing import Literal, Self
 from pydantic import BaseModel, Field, model_validator
 
 from app.actions.call_status import CallStatus
+from app.actions.types import ActionStatus
 
 ActionMode = Literal["simulated", "real"]
-ActionStatus = Literal["queued", "running", "ok", "partial", "failed", "canceled"]
 RowStatus = Literal["idle", "running", "ok", "partial", "failed", "canceled"]
 
 

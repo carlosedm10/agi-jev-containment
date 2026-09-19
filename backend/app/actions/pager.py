@@ -1,22 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 
-from app.actions.call_status import CallResult, map_call
-from app.actions.service import PagerTransition
-
-
-def derive_api_base(hook_url: str, api_base: str | None) -> str:
-    if api_base:
-        return api_base.rstrip("/")
-    if "platform.eu.happyrobot.ai" in hook_url:
-        return "https://platform.eu.happyrobot.ai/api/v2"
-    return "https://platform.happyrobot.ai/api/v2"
+from app.actions.call_status import CallResult, derive_api_base, map_call
+from app.actions.types import PagerTransition
 
 
 class PagerError(RuntimeError):
@@ -57,15 +50,20 @@ class HappyRobotPager:
         action_taken: str,
         transition: PagerTransition,
     ) -> None:
-        await transition("running", call_status="queued")
         try:
             self._validate()
+            await transition("running", call_status="queued")
             client = self._client or self._client_factory()
             owns_client = self._client is None
             try:
                 for call_attempt in range(2):
                     run_id = await self._start_call(
-                        client, level, incident_id, intent, action_taken
+                        client,
+                        level,
+                        incident_id,
+                        intent or "critical agent activity",
+                        action_taken or f"Escalated level {level} response",
+                        call_attempt,
                     )
                     result = await self._poll_call(client, run_id, transition)
                     if result.call_status == "no_pickup" and call_attempt == 0:
@@ -106,7 +104,7 @@ class HappyRobotPager:
                 f"Missing HappyRobot configuration: {', '.join(missing)}",
                 "pager_configuration",
             )
-        if self._poll_interval < 0 or self._poll_timeout <= 0:
+        if self._poll_interval <= 0 or self._poll_timeout <= 0:
             raise PagerError("Invalid HappyRobot polling configuration", "pager_configuration")
 
     async def _start_call(
@@ -116,11 +114,12 @@ class HappyRobotPager:
         incident_id: str,
         intent: str,
         action_taken: str,
+        call_attempt: int,
     ) -> str:
         payload = {
             "tipo_emergencia": f"{intent} (level {level}, run {incident_id})",
             "pautas": f"{action_taken.rstrip('.')}.",
-            "nivel_gravedad": "crítico",
+            "nivel_gravedad": level,
             "nombre_contacto": self._name,
             "telefono": self._phone,
         }
@@ -129,6 +128,11 @@ class HappyRobotPager:
             "POST",
             self._hook_url,
             json=payload,
+            request_headers={
+                "Idempotency-Key": self._idempotency_key(
+                    incident_id, level, call_attempt
+                )
+            },
         )
         body = response.json()
         data = body.get("data") if isinstance(body, dict) else None
@@ -210,12 +214,14 @@ class HappyRobotPager:
         client: httpx.AsyncClient,
         method: str,
         url: str,
+        request_headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Accept": "application/json",
         }
+        headers.update(request_headers or {})
         for attempt in range(2):
             response = await client.request(method, url, headers=headers, **kwargs)
             if response.status_code < 500 or attempt == 1:
@@ -231,6 +237,11 @@ class HappyRobotPager:
                 "happyrobot_http_error",
             )
         return response
+
+    @staticmethod
+    def _idempotency_key(incident_id: str, level: int, call_attempt: int) -> str:
+        material = f"hackspain-pager:{incident_id}:{level}:{call_attempt}".encode()
+        return hashlib.sha256(material).hexdigest()
 
     @staticmethod
     async def _report_terminal(result: CallResult, transition: PagerTransition) -> None:

@@ -7,24 +7,13 @@ from typing import Protocol
 from app.actions.call_status import CallStatus
 from app.actions.journal import ActionJournal
 from app.actions.models import (
-    ActionStatus,
     ActionTransition,
     DispatchAccepted,
     IncidentActionState,
     PlannedAction,
 )
+from app.actions.types import ActionStatus, PagerTransition
 from app.config import settings
-
-
-class PagerTransition(Protocol):
-    async def __call__(
-        self,
-        status: ActionStatus,
-        detail: str | None = None,
-        error_code: str | None = None,
-        *,
-        call_status: CallStatus | None = None,
-    ) -> None: ...
 
 
 class DispatchRequest(Protocol):
