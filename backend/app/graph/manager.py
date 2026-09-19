@@ -81,6 +81,11 @@ class ActionGraph:
                 raise ValueError(f"edge {src.id!r} -> {dst.id!r} already exists")
             src.neighbors.append(dst)
 
+    def predecessors(self, node: Node) -> list[Node]:
+        """Reverse view: nodes with an edge pointing at node (undirected read of a directed graph)."""
+        with self._lock:
+            return [n for n in self._nodes.values() if node in n.neighbors]
+
     def ensure_run(self, run_id: str) -> Node:
         if not isinstance(run_id, str) or not run_id:
             raise ValueError(f"run id must be a non-empty string, got {run_id!r}")

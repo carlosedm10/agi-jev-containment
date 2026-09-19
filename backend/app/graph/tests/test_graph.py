@@ -117,6 +117,17 @@ class TestConnect:
         with pytest.raises(ValueError, match="not in the graph"):
             other.connect(stale, root)
 
+    def test_predecessors_gives_the_reverse_view(self, g: ActionGraph):
+        root = g.add_node("root")
+        a = g.add_node("a", connect=root)
+        b = g.add_node("b", connect=a)
+        c = g.add_node("c", connect=a)
+        g.connect(b, c)
+
+        assert g.predecessors(c) == [a, b]  # two predecessors, no parent concept
+        assert g.predecessors(root) == []
+        assert g.predecessors(a) == [root]
+
 
 class TestPersistence:
     def test_save_load_roundtrip(self, g: ActionGraph, tmp_path):
