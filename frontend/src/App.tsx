@@ -3,11 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionLadder } from "./ladder/ActionLadder";
 import { toLadderState } from "./ladder/state";
 import type { IncidentState } from "./ladder/types";
+import { actionModeLabel, newestActions } from "./ladder/wallboard";
 import "./App.css";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const LATEST_INCIDENT_URL = `${API_BASE_URL}/api/demo/incidents/latest`;
+const REQUEST_TIMEOUT_MS = 5_000;
 
 export default function App() {
   const [incident, setIncident] = useState<IncidentState | null>(null);
@@ -21,6 +23,11 @@ export default function App() {
       if (controller) return;
       const requestController = new AbortController();
       controller = requestController;
+      let timedOut = false;
+      const timeout = window.setTimeout(() => {
+        timedOut = true;
+        requestController.abort();
+      }, REQUEST_TIMEOUT_MS);
 
       try {
         const response = await fetch(LATEST_INCIDENT_URL, {
@@ -37,14 +44,21 @@ export default function App() {
           throw new Error(`Feed request failed (${response.status})`);
         }
 
-        setIncident((await response.json()) as IncidentState);
+        const nextIncident = (await response.json()) as IncidentState;
+        if (!active || requestController.signal.aborted) return;
+        setIncident(nextIncident);
         setError(null);
       } catch (cause) {
-        if (!active || requestController.signal.aborted) return;
+        if (!active || (requestController.signal.aborted && !timedOut)) return;
         setError(
-          cause instanceof Error ? cause.message : "Feed request failed",
+          timedOut
+            ? "Feed request timed out"
+            : cause instanceof Error
+              ? cause.message
+              : "Feed request failed",
         );
       } finally {
+        window.clearTimeout(timeout);
         if (controller === requestController) controller = null;
       }
     }
@@ -62,6 +76,10 @@ export default function App() {
 
   const ladderState = useMemo(
     () => (incident ? toLadderState(incident) : null),
+    [incident],
+  );
+  const timelineActions = useMemo(
+    () => (incident ? newestActions(incident.actions) : []),
     [incident],
   );
 
@@ -98,9 +116,9 @@ export default function App() {
           <ActionLadder state={ladderState} />
           <section className="timeline" aria-labelledby="timeline-heading">
             <h2 id="timeline-heading">Action timeline</h2>
-            {incident.actions.length ? (
+            {timelineActions.length ? (
               <ol>
-                {incident.actions.map((action, index) => (
+                {timelineActions.map((action, index) => (
                   <li key={`${action.action_id}:${action.timestamp}:${index}`}>
                     <div className="action-heading">
                       <strong>{action.name}</strong>
@@ -109,7 +127,8 @@ export default function App() {
                       </span>
                     </div>
                     <p className="action-meta">
-                      {action.mode} · {formatUpdatedAt(action.timestamp)}
+                      {actionModeLabel(action.mode)} ·{" "}
+                      {formatUpdatedAt(action.timestamp)}
                     </p>
                     {action.detail ? <p>{action.detail}</p> : null}
                     {action.error_code ? (
