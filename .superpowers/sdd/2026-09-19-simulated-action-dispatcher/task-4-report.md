@@ -81,3 +81,15 @@ The token comparison now encodes both values before constant-time comparison,
 the route documents its real 200 no-op response, and the polling defaults are
 documented beside the HappyRobot settings. Existing unstaged `.env_template`
 edits were preserved through partial staging.
+
+## Fix round 2
+
+Removed the backend pytest that read the repository-root `.env_template`,
+because the canonical backend container mounts only the backend project. The
+actual polling documentation remains in `.env_template`; no replacement
+filesystem test was added.
+
+- `uv run pytest app/actions/tests/test_router.py -q` — 20 passed.
+- `uv run pytest -q` — 207 passed.
+- `uv run ruff check .` — all checks passed.
+- `git diff --check` — clean.
