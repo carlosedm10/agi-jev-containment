@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8" />
+<title>QuiverAI — HackSpain preview</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0b1220; color: #e8eef8; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 1.4rem; font-weight: 600; }
+  h2 { font-size: 1rem; font-weight: 600; margin: 40px 0 8px; }
+  p { color: #9aa8bf; max-width: 70ch; }
+  figure { margin: 0; background: #132038; border: 1px solid #24324a; border-radius: 16px; padding: 16px; }
+  figcaption { margin-top: 12px; font-size: 0.9rem; color: #c5d0e0; }
+  img { width: 100%; height: auto; background: #041B39; border-radius: 8px; }
+  .icon { max-width: 280px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 16px; }
+</style>
+<main>
+  <h1>QuiverAI — casos que cortamos</h1>
+  <p>Loops de 6s. UC1: el agente dispara hacia internet y el borde lo para (L3, un sandbox). UC2: salta al vecino, toca la DB, y se corta toda agentnet (L4).</p>
+  <section class="grid">
+    <figure>
+      <img src="uc1-exfil.animated.svg" alt="UC1 exfil animated" />
+      <figcaption>UC1 · Exfil — hacia fuera, cortamos este agente</figcaption>
+    </figure>
+    <figure>
+      <img src="uc2-lateral.animated.svg" alt="UC2 lateral animated" />
+      <figcaption>UC2 · Lateral — vecino → DB, cortamos el entorno</figcaption>
+    </figure>
+  </section>
+  <h2>Kill-switch y escalera</h2>
+  <p>La escalera viva (nivel + contención + llamada) está en <a href="ladder-live.html" style="color:#fda80c">ladder-live.html</a>. El loop de 6s se queda como ilustración.</p>
+  <section class="grid">
+    <figure>
+      <img class="icon" src="killswitch-icon.animated.svg" alt="Unplug animated" />
+      <figcaption>Desenchufar (4s)</figcaption>
+    </figure>
+    <figure>
+      <img src="l1-l5-ladder.animated.svg" alt="L1-L5 ladder animated" />
+      <figcaption>L1→L5 (6s)</figcaption>
+    </figure>
+  </section>
+</main>
+</html>

@@ -15,7 +15,7 @@ export function ActivityPanel({
       aria-label="Protective actions"
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-xs"
     >
-      <header className="shrink-0 border-b border-zinc-200 px-4 py-4">
+      <header className="flex h-10 shrink-0 items-center border-b border-zinc-200 px-4">
         <h2 className="text-sm font-semibold text-zinc-900">
           Protective actions
         </h2>

@@ -53,6 +53,8 @@ services:
   frontend-hackspain:
     container_name: hackspain_frontend
     restart: unless-stopped
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8000}
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile

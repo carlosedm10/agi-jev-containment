@@ -149,7 +149,7 @@ lint-fix:
 	make lint-fix-frontend
 
 # ----------------------------- Testing ----------------------------- #
-.PHONY: test-backend test-frontend test-agent test
+.PHONY: test-backend test-frontend test-agent eval-integrity monitor-eval test
 
 test-backend:
 	docker compose exec -T backend-hackspain uv run pytest $(TEST)
@@ -159,6 +159,12 @@ test-frontend:
 
 test-agent:
 	$(MAKE) -C agent test TEST="$(TEST)"
+
+eval-integrity:
+	docker compose exec -T backend-hackspain uv run pytest app/evals/tests/test_happyrobot_cases.py
+
+monitor-eval:
+	docker compose exec -T backend-hackspain uv run python -m app.evals.run_monitor_regression --output /tmp/monitor-eval.json
 
 test:
 	make test-backend

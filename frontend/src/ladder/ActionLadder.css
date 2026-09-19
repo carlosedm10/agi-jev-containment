@@ -1,0 +1,271 @@
+.rungs {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rung {
+  --row: #e4c441;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  opacity: 0.34;
+  transition:
+    opacity 0.2s ease,
+    background 0.25s ease;
+}
+
+.rung.is-reached {
+  opacity: 1;
+}
+
+.rung-main {
+  display: grid;
+  grid-template-columns: 56px 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 0 14px 0 0;
+  border: 1px solid #2c2a24;
+  background: #17150f;
+}
+
+.rung.is-current .rung-main {
+  border-color: color-mix(in srgb, var(--row) 70%, #2c2a24);
+  background: #1d1a13;
+}
+
+.rung.has-call {
+  grid-template-columns: minmax(0, 1fr) 168px;
+}
+
+.rung-index {
+  display: grid;
+  height: 100%;
+  min-height: 64px;
+  place-items: center;
+  background: var(--row);
+  color: #12110d;
+  font:
+    700 0.92rem "IBM Plex Sans",
+    sans-serif;
+}
+
+.rung-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+}
+
+.rung-icon svg {
+  display: block;
+  width: 32px;
+  height: 32px;
+}
+
+.rung-copy {
+  min-width: 0;
+}
+
+.rung-copy h3 {
+  margin: 0;
+  color: #f2eee6;
+  font:
+    600 1rem/1.15 "IBM Plex Sans",
+    sans-serif;
+}
+
+.rung-copy p {
+  margin: 3px 0 0;
+  color: #8d877b;
+  font:
+    400 0.78rem/1.3 "IBM Plex Mono",
+    ui-monospace,
+    monospace;
+}
+
+.rung-status {
+  color: #8d877b;
+  font:
+    500 0.72rem/1 "IBM Plex Mono",
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rung-status.is-ok {
+  color: #3ddc97;
+}
+
+.rung-status.is-running,
+.rung-status.is-partial {
+  color: #e4c441;
+}
+
+.rung-status.is-failed {
+  color: #ff6b6b;
+}
+
+.rung-call {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid #3a3424;
+  background: #1a160e;
+  color: #e4c441;
+  font:
+    500 0.72rem/1 "IBM Plex Mono",
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.phone-glyph {
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+}
+
+.phone-wave {
+  fill: none;
+  stroke: #e4c441;
+  stroke-width: 1.5;
+  transform-origin: 24px 24px;
+  transform-box: fill-box;
+}
+
+.phone-handset {
+  fill: #e4c441;
+  transform-origin: 24px 24px;
+}
+
+.rung-call.is-ringing .phone-wave,
+.rung-call.is-queued .phone-wave {
+  animation: phone-ring 1.15s ease-out infinite;
+}
+
+.rung-call.is-ringing .phone-wave-late,
+.rung-call.is-queued .phone-wave-late {
+  animation-delay: 0.38s;
+}
+
+.rung-call.is-ringing .phone-handset {
+  animation: phone-shake 0.32s ease-in-out infinite;
+}
+
+.rung-call.is-answered {
+  border-color: #245c45;
+  color: #3ddc97;
+}
+
+.rung-call.is-answered .phone-wave,
+.rung-call.is-answered .phone-handset {
+  stroke: #3ddc97;
+  fill: #3ddc97;
+}
+
+.rung-call.is-failed {
+  border-color: #6a2a2a;
+  color: #ff6b6b;
+}
+
+.rung-call.is-failed .phone-wave,
+.rung-call.is-failed .phone-handset {
+  stroke: #ff6b6b;
+  fill: #ff6b6b;
+}
+
+.rung-call.is-hung_up .phone-handset,
+.rung-call.is-no_pickup .phone-handset {
+  fill: #8d877b;
+  stroke: #8d877b;
+}
+
+.rung-call.is-hung_up .phone-handset {
+  transform: rotate(110deg);
+}
+
+.rung-call.is-queued,
+.rung-call.is-hung_up,
+.rung-call.is-no_pickup {
+  color: #cfc6b4;
+}
+
+@keyframes phone-ring {
+  from {
+    opacity: 0.85;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@keyframes phone-shake {
+  0%,
+  100% {
+    transform: rotate(-9deg);
+  }
+  50% {
+    transform: rotate(9deg);
+  }
+}
+
+.rungs.is-kill .rung:not(.rung-l5) {
+  opacity: 0.22;
+}
+
+.rungs.is-kill .rung-l5 {
+  opacity: 1;
+}
+
+.rungs.is-kill .rung-l5.has-call {
+  grid-template-columns: minmax(0, 1fr) 168px;
+}
+
+.rungs.is-kill .rung-l5 .rung-main {
+  grid-template-columns: 56px 88px minmax(0, 1fr) auto;
+  border-color: #c4122f;
+  background:
+    radial-gradient(120% 140% at 18% 50%, #3a1016 0%, #140407 58%),
+    #140407;
+}
+
+.rungs.is-kill .rung-l5 .rung-icon.is-killswitch {
+  width: 88px;
+  height: 44px;
+  overflow: hidden;
+}
+
+.rungs.is-kill .rung-l5 .killswitch {
+  display: block;
+  width: 88px;
+  height: 44px;
+  object-fit: cover;
+  object-position: center;
+}
+
+.rungs.is-kill .rung-l5 .rung-call {
+  border-color: #c4122f;
+  background: #1a080c;
+}
+
+@media (max-width: 700px) {
+  .rung.has-call,
+  .rungs.is-kill .rung-l5.has-call {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rung-call {
+    min-height: 64px;
+  }
+}

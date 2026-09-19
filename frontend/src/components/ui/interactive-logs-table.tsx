@@ -53,7 +53,7 @@ function LogRow({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={detailsId}
-        className={`grid w-full min-w-0 grid-cols-[4rem_3.5rem_minmax(0,1fr)_1rem] items-center gap-2 px-4 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 ${rowStyles[log.level]}`}
+        className={`grid w-full min-w-0 grid-cols-[4rem_3.5rem_minmax(0,1fr)_1rem] items-center gap-2 px-4 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 ${rowStyles[log.level]}`}
       >
         <time
           dateTime={log.timestamp}
@@ -138,7 +138,7 @@ export function InteractiveLogsTable({ logs }: { logs: Log[] }) {
       aria-label="Container logs"
       className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-white"
     >
-      <header className="shrink-0 border-b border-zinc-200 px-4 py-4">
+      <header className="flex h-10 shrink-0 items-center border-b border-zinc-200 px-4">
         <h2 className="text-sm font-semibold text-zinc-900">Container logs</h2>
       </header>
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
