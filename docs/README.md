@@ -10,7 +10,7 @@ browser :3000  →  frontend-hackspain (Vite :5173)  →  backend-hackspain :800
                                                       →  postgres-hackspain :5432
 ```
 
-- **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`.
+- **frontend/** — React/Vite UI, host port 3000. Compose maps `3000:5173` and expects `frontend/package.json`. Vite proxies `/api` to `backend-hackspain:8000`, so the browser talks to one origin. The UI renders nothing today: it mirrors the live graph in memory ([docs/Graph.md](Graph.md)).
 - **backend/** — FastAPI app (`app.main:app`), uv, SQLAlchemy, Alembic. **CORS allows only `http://localhost:3000`.**
 - **postgres-hackspain** — Postgres 18. Backend waits on a healthy `pg_isready`. Named volume `postgres_data_hackspain`.
 - **neo4j-hackspain** — Neo4j Community. Persistent event/entity/assessment graph plus resumable realtime messages.
@@ -26,7 +26,7 @@ These names repeat in compose, Makefile targets, and env vars.
 | **Runs** | HTTP ingest + JSONL tape: `POST /api/runs/{run_id}/events`, run lookup, run list | `backend/app/runs/` |
 | **Realtime monitor API** | Contrato frontend: snapshot, SSE, lifecycle y grafo Neo4j | [docs/RealtimeGraphAPI.md](RealtimeGraphAPI.md) |
 | **Classification** | `jev` client, watcher client, two-tier pipeline (τ trigger, gate, degraded path) | `backend/app/classification/` |
-| **Monitoring Graph** | Complete Neo4j event/entity/assessment graph; sparse `key_nodes` only for Jev context | `backend/app/graph/` · [docs/Graph.md](Graph.md) |
+| **Monitoring Graph** | Complete Neo4j event/entity/assessment graph; sparse `key_nodes` only for Jev context; transitional ActionGraph SSE | `backend/app/graph/` · `frontend/src/graph/` · [docs/Graph.md](Graph.md) |
 | **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
 | **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
 | **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
@@ -56,9 +56,9 @@ GitHub Actions copies `.env_template` to `.env`, then calls Make targets for bui
 
 Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environment. Compose injects `DATABASE_URL` with host `postgres-hackspain` (not `localhost`). Pydantic settings also accept a `.env` next to the process cwd (`/app` in the container), and ignore extra keys such as `POSTGRES_*`.
 
-- **Reads**: `GET /health` hits no database. `GET /api/runs/{run_id}` returns the in-memory derived level and key nodes; `GET /api/runs` lists runs seen on the JSONL tape; `/timeline` and `/graph` read Neo4j.
+- **Reads**: `GET /health` hits no database. Run `snapshot`, `stream`, `timeline` and `graph` read the persistent Neo4j monitor; `/api/graph/stream` remains the transitional whole-ActionGraph SSE used by the headless mirror already on `main`.
 - **Writes**: `POST /api/runs/{run_id}/events` normalizes, redacta y añade el evento al tape JSONL; ejecuta clasificación, drift, Sentinel, gate y dispatch; y persiste grafo y `StreamMessage` en Neo4j. Postgres no almacena ninguna parte del grafo. La demo de contramedidas usa un world state mínimo en memoria.
-- **Sync / background**: none.
+- **Sync / background**: Neo4j `StreamMessage` ofrece replay SSE por run; el ActionGraph transitorio también fan-out mutations a sus clientes conectados.
 - **Agent run (product path)**: tool preflight → tape completo → SafetyDrift/Sentinel → Jev → gate determinista → ejecución o rechazo → Neo4j persiste evento, entidades, assessment y stream SSE → dispatcher registra playbooks y ejecuta counters del world demo.
 
 ### Entities
@@ -90,6 +90,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **Classification state and persistent state are distinct**: the transitional ActionGraph derives level as `max` over nodes stamped with `run_id`, while Neo4j stores an escalate-only `Run.level`. There is no SQL run table yet.
 - **There are two graph representations during migration**: the ActionGraph used by classification is an undirected in-memory chain isolated by `run_id`; the persistent Neo4j monitoring graph is directed (`HAS_EVENT`, `NEXT`, causal and entity edges) and is the source intended for visualization.
 - **The tape and the graphs are different things**: JSONL keeps each normalized event for short-term context, replay and recovery; the ActionGraph keeps classified chain nodes for Jev; Neo4j keeps the persistent directed event/entity/assessment graph. Their exact frontend boundary is [RealtimeGraphAPI.md](RealtimeGraphAPI.md).
+- **Frontend tests are DOM tests, not typechecks**: `bun test` mounts the hook in happy-dom against a fake `EventSource` — it proves snapshots and updates are applied, that a revision gap reconnects, and that the page stays blank. `bun run lint` (`tsc --noEmit`) still owns typechecking; `make test` no longer just re-runs it.
 - **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty).
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
 - **L4/L5 paging is designed as parallel notification, not authorization**: the dispatcher records `page_oncall` beside containment actions, but execution is still pending. A missing pager integration must never block infrastructure containment.
@@ -97,7 +98,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 ## Where the details live
 
 - [docs/cli.md](cli.md) — participant CLI commands, flags, exit codes.
-- [docs/Graph.md](Graph.md) — action graph spec (undirected adjacency, loops allowed, `run_id`-stamped nodes, one node per action with key nodes at level ≥ 1, short/long context, save/load). Code: `backend/app/graph/`.
+- [docs/Graph.md](Graph.md) — persistent Neo4j graph plus the transitional ActionGraph/SSE projection. Code: `backend/app/graph/`, existing headless mirror: `frontend/src/graph/`.
 - [docs/RealtimeGraphAPI.md](RealtimeGraphAPI.md) — contrato implementable en español para snapshot + SSE, payloads, lifecycle, grafo Neo4j y world state.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import tempfile
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,17 +16,10 @@ from app.config import settings
 from app.graph.models import Node
 
 _UPDATABLE_FIELDS = frozenset({"level", "threshold", "intent", "event", "action_id"})
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class GraphUpdate:
-    """One atomic batch of graph changes, broadcast to stream subscribers.
-
-    ``upsert_nodes`` carries full node payloads (neighbors by id), so applying
-    it replaces the client-side version of each node wholesale.
-    """
-
     revision: int
     root: str | None
     upsert_nodes: list[dict[str, Any]]
@@ -42,19 +34,11 @@ class ActionGraph:
         self._lock = threading.RLock()
         self._nodes: dict[str, Node] = {}
         self._root_id: str | None = None
-        # Streaming state: monotonically increasing revision, batched change
-        # tracking, and listeners notified after each top-level mutation.
         self._revision = 0
         self._listeners: list[GraphListener] = []
         self._batch_depth = 0
-        self._dirty_upserts: dict[str, None] = {}  # ordered set
+        self._dirty_upserts: dict[str, None] = {}
         self._dirty_removed: set[str] = set()
-
-    # -- Streaming support ------------------------------------------------------
-    #
-    # subscribe() registers the listener and captures the initial snapshot
-    # under a single lock acquisition, so a client can never miss an update
-    # committed between "read snapshot" and "register".
 
     def subscribe(self, listener: GraphListener) -> dict[str, Any]:
         with self._lock:
@@ -74,7 +58,6 @@ class ActionGraph:
             return self._revision
 
     def _snapshot(self) -> dict[str, Any]:
-        """Capture {revision, root, nodes}; caller must hold the lock."""
         return {
             "revision": self._revision,
             "root": self._root_id,
@@ -83,11 +66,6 @@ class ActionGraph:
 
     @contextmanager
     def _batch(self) -> Iterator[None]:
-        """Group mutations so composite ops emit a single GraphUpdate.
-
-        Nested batches (e.g. append -> ensure_run -> add_node) only emit at
-        the outermost boundary. Caller must hold the lock.
-        """
         self._batch_depth += 1
         try:
             yield
@@ -97,7 +75,6 @@ class ActionGraph:
             self._emit()
 
     def _emit(self) -> None:
-        """Publish the pending batch as one update; caller must hold the lock."""
         if not self._dirty_upserts and not self._dirty_removed:
             return
         self._revision += 1
@@ -112,10 +89,8 @@ class ActionGraph:
         self._dirty_upserts = {}
         self._dirty_removed = set()
         for listener in list(self._listeners):
-            try:
+            with suppress(Exception):
                 listener(update)
-            except Exception:
-                logger.exception("Graph stream listener failed at revision %s", update.revision)
 
     def _mark_upsert(self, node: Node) -> None:
         self._dirty_upserts[node.id] = None
@@ -169,15 +144,14 @@ class ActionGraph:
                 self._nodes[node_id] = node
                 if connect is not None:
                     connect.neighbors.append(node)
-                    node.neighbors.append(connect)  # mutual: undirected adjacency
-                    self._mark_upsert(connect)  # its neighbor list changed too
+                    node.neighbors.append(connect)
+                    self._mark_upsert(connect)
                 else:
                     self._root_id = node_id
                 self._mark_upsert(node)
             return node
 
     def connect(self, src: Node, dst: Node) -> None:
-        """Add a mutual edge between two existing nodes (undirected; loops allowed)."""
         with self._lock:
             if self._nodes.get(src.id) is not src:
                 raise ValueError(f"source node {src.id!r} is not in the graph")
@@ -200,7 +174,6 @@ class ActionGraph:
             run_node = self._nodes.get(f"run:{run_id}")
             if run_node is not None:
                 return run_node
-            # Composite op: may create root and run node in one go.
             with self._batch():
                 if self._root_id is None:
                     self.add_node("root")
@@ -341,7 +314,7 @@ class ActionGraph:
                     neighbor = created.get(neighbor_id)
                     if neighbor is None:
                         raise ValueError(f"snapshot references unknown neighbor {neighbor_id!r}")
-                    if neighbor not in node.neighbors:  # already wired from the other side
+                    if neighbor not in node.neighbors:
                         node.neighbors.append(neighbor)
                         neighbor.neighbors.append(node)
 
@@ -362,7 +335,6 @@ class ActionGraph:
                     self._mark_upsert(node)
 
     def reachable(self, node: Node) -> list[Node]:
-        """Cycle-safe traversal of node's connected component (node itself excluded)."""
         ordered: list[Node] = []
         visited: set[str] = {node.id}
 
@@ -379,7 +351,6 @@ class ActionGraph:
 
 
 def _node_payload(node: Node) -> dict[str, Any]:
-    """Serializable stream payload for a node: every field but the live tool."""
     return {
         "id": node.id,
         "neighbors": [n.id for n in node.neighbors],
