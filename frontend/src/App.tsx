@@ -1,158 +1,136 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
+import { ArrowUpRight, X } from "lucide-react";
+import { MotionConfig } from "framer-motion";
 
-import { ActionLadder } from "./ladder/ActionLadder";
-import { toLadderState } from "./ladder/state";
-import type { IncidentState } from "./ladder/types";
-import { actionModeLabel, newestActions } from "./ladder/wallboard";
-import "./App.css";
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-const LATEST_INCIDENT_URL = `${API_BASE_URL}/api/demo/incidents/latest`;
-const REQUEST_TIMEOUT_MS = 5_000;
+import { Button } from "@/components/ui/button";
+import { InteractiveLogsTable } from "@/components/ui/interactive-logs-table";
+import { ActivityPanel } from "@/dashboard/ActivityPanel";
+import { GraphPanel } from "@/dashboard/GraphPanel";
+import { LEVEL_LABELS, useDemo } from "@/dashboard/demo";
+import { cn } from "@/lib/utils";
 
 export default function App() {
-  const [incident, setIncident] = useState<IncidentState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    let controller: AbortController | null = null;
-
-    async function poll() {
-      if (controller) return;
-      const requestController = new AbortController();
-      controller = requestController;
-      let timedOut = false;
-      const timeout = window.setTimeout(() => {
-        timedOut = true;
-        requestController.abort();
-      }, REQUEST_TIMEOUT_MS);
-
-      try {
-        const response = await fetch(LATEST_INCIDENT_URL, {
-          signal: requestController.signal,
-        });
-        if (!active) return;
-
-        if (response.status === 404) {
-          setIncident(null);
-          setError(null);
-          return;
-        }
-        if (!response.ok) {
-          throw new Error(`Feed request failed (${response.status})`);
-        }
-
-        const nextIncident = (await response.json()) as IncidentState;
-        if (!active || requestController.signal.aborted) return;
-        setIncident(nextIncident);
-        setError(null);
-      } catch (cause) {
-        if (!active || (requestController.signal.aborted && !timedOut)) return;
-        setError(
-          timedOut
-            ? "Feed request timed out"
-            : cause instanceof Error
-              ? cause.message
-              : "Feed request failed",
-        );
-      } finally {
-        window.clearTimeout(timeout);
-        if (controller === requestController) controller = null;
-      }
-    }
-
-    void poll();
-    const timer = window.setInterval(() => void poll(), 500);
-
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      controller?.abort();
-      controller = null;
-    };
-  }, []);
-
-  const ladderState = useMemo(
-    () => (incident ? toLadderState(incident) : null),
-    [incident],
-  );
-  const timelineActions = useMemo(
-    () => (incident ? newestActions(incident.actions) : []),
-    [incident],
-  );
+  const demo = useDemo();
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const selected = selectedNodeId ? demo.graph.nodes.get(selectedNodeId) : null;
+  const pendingSelected =
+    selectedNodeId === demo.pending?.id ? demo.pending : null;
+  const inspectorTitle =
+    pendingSelected?.label ??
+    String(selected?.event?.label ?? selected?.id ?? "");
 
   return (
-    <main className="app">
-      <header className="wallboard-header">
-        <div>
-          <h1>hackspain</h1>
-          <span className="feed-label">SIMULATED FEED</span>
-        </div>
-        {incident ? (
-          <dl className="incident-meta">
-            <div>
-              <dt>Incident</dt>
-              <dd>{incident.incident_id}</dd>
+    <MotionConfig reducedMotion="user">
+      <main
+        id="dashboard"
+        aria-label="Agent safety dashboard · simulated data"
+        className="mx-auto min-h-dvh max-w-[1920px] bg-white p-4 text-zinc-900"
+      >
+        <header
+          aria-label="AngryRobot"
+          className="mb-2 flex h-14 items-center justify-center"
+        >
+          <h1>
+            <img
+              src="/angry-robot-wordmark.svg"
+              alt="AngryRobot"
+              width={110}
+              height={48}
+              className="h-12 w-auto"
+            />
+          </h1>
+        </header>
+        <div
+          key={demo.run}
+          className="dashboard-grid grid gap-2 lg:grid-cols-2"
+        >
+          <section
+            aria-label="Action graph and analysis"
+            className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border shadow-xs"
+          >
+            <div className="min-h-0 flex-1">
+              <GraphPanel
+                graph={demo.graph}
+                pending={demo.pending}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={setSelectedNodeId}
+                onRestart={() => {
+                  setSelectedNodeId(null);
+                  demo.restart();
+                }}
+              />
             </div>
-            <div>
-              <dt>Updated</dt>
-              <dd>{formatUpdatedAt(incident.updated_at)}</dd>
-            </div>
-          </dl>
-        ) : null}
-      </header>
-
-      {error ? (
-        <p className="feed-error" role="status">
-          {error}
-          {incident ? " · showing last good state" : ""}
-        </p>
-      ) : null}
-
-      {incident && ladderState ? (
-        <>
-          <ActionLadder state={ladderState} />
-          <section className="timeline" aria-labelledby="timeline-heading">
-            <h2 id="timeline-heading">Action timeline</h2>
-            {timelineActions.length ? (
-              <ol>
-                {timelineActions.map((action, index) => (
-                  <li key={`${action.action_id}:${action.timestamp}:${index}`}>
-                    <div className="action-heading">
-                      <strong>{action.name}</strong>
-                      <span className={`action-status is-${action.status}`}>
-                        {action.status}
-                      </span>
-                    </div>
-                    <p className="action-meta">
-                      {actionModeLabel(action.mode)} ·{" "}
-                      {formatUpdatedAt(action.timestamp)}
-                    </p>
-                    {action.detail ? <p>{action.detail}</p> : null}
-                    {action.error_code ? (
-                      <p className="action-error">{action.error_code}</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="empty-actions">No action transitions yet.</p>
+            {(selected || pendingSelected) && (
+              <section
+                aria-label="Selected action analysis"
+                className="max-h-56 shrink-0 overflow-y-auto border-t bg-white p-4"
+              >
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <h3 className="text-sm font-semibold">{inspectorTitle}</h3>
+                  <Button
+                    aria-label="Close analysis"
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => setSelectedNodeId(null)}
+                  >
+                    <X />
+                  </Button>
+                </div>
+                <p className="text-xs leading-relaxed text-zinc-600">
+                  {pendingSelected
+                    ? "Awaiting Jev. No safety verdict or protective action has been assigned to this event."
+                    : String(
+                        selected?.event?.summary ??
+                          "Structural graph node. This groups the session or run; it is not a safety verdict.",
+                      )}
+                </p>
+                {selected?.event && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                    <span
+                      className={cn(
+                        "rounded-md border px-2 py-1 font-medium",
+                        selected.level >= 3
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : selected.level > 0
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700",
+                      )}
+                    >
+                      L{selected.level} · {LEVEL_LABELS[selected.level]}
+                    </span>
+                    <span className="rounded-md bg-zinc-100 px-2 py-1">
+                      {Math.round(selected.threshold * 100)}% confidence
+                    </span>
+                    <span className="font-mono text-zinc-500">
+                      {selected.intent}
+                    </span>
+                  </div>
+                )}
+                {selected?.action_id && (
+                  <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-500">
+                    <ArrowUpRight className="size-3" />
+                    Response trace:{" "}
+                    <span className="font-mono">{selected.action_id}</span>
+                  </p>
+                )}
+              </section>
             )}
           </section>
-        </>
-      ) : (
-        <section className="waiting" aria-live="polite">
-          <p>Waiting for a simulated incident…</p>
-        </section>
-      )}
-    </main>
+          <div className="grid min-h-0 min-w-0 grid-rows-[minmax(250px,0.95fr)_minmax(280px,1fr)] gap-2">
+            <ActivityPanel
+              actions={demo.actions}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={setSelectedNodeId}
+            />
+            <section
+              aria-label="Container log viewer"
+              className="min-h-0 min-w-0 overflow-hidden rounded-xl border shadow-xs"
+            >
+              <InteractiveLogsTable logs={demo.logs} />
+            </section>
+          </div>
+        </div>
+      </main>
+    </MotionConfig>
   );
-}
-
-function formatUpdatedAt(timestamp: string | null): string {
-  if (!timestamp) return "Waiting for first transition";
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleTimeString();
 }
