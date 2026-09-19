@@ -31,3 +31,4 @@ known-third-party = ["alembic"]
 testpaths = ["app"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+pythonpath = ["..", "/experiments"]

@@ -6,6 +6,14 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     debug: bool = True
     typesafe_api_key: str = ""
+    helmcode_base_url: str = "https://api.helmcode.com/v1"
+    helmcode_api_key: str = ""
+    supervisor_model: str = ""
+    watcher_tau: float = 0.6
+    watcher_persistence: int = 1
+    action_gate: float = 0.7
+    short_term_n: int = 20
+    run_log_dir: str = "/var/lib/hackspain/runs"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

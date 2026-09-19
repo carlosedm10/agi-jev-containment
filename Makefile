@@ -164,6 +164,19 @@ test:
 	make test-backend
 	make test-frontend
 
+# ----------------------------- Experiments ----------------------------- #
+.PHONY: bench bench-analyze bench-plots
+
+# Subset: make bench ARGS="pipeline slow_burn_50"
+bench:
+	docker compose exec -T backend-hackspain uv run python /experiments/bench.py $(ARGS)
+
+bench-analyze:
+	docker compose exec -T backend-hackspain uv run python /experiments/analysis.py $(ARGS)
+
+bench-plots:
+	docker compose exec -T backend-hackspain uv run python /experiments/plots.py
+
 # ----------------------------- ⛔️ DANGER ZONE ⛔️ ----------------------------- #
 .PHONY: clean clean-builder
 
