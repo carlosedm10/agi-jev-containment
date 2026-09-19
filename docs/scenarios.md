@@ -8,19 +8,20 @@ Three scenarios, one escalating ladder. Scenarios 1 and 2 are the current build;
 
 Not HappyRobot — their agents run on HappyRobot's cloud, so `docker pause`, `agentnet`, and host-side capture would have no target. HappyRobot stays in its role as the L4/L5 pager ([Actions.md](Actions.md)).
 
-- **Brain**: live loop (pydantic_ai or plain httpx) against Helmcode's OpenAI-compatible API (`deepseek-v4-flash`; `HELMCODE_*` keys in `.env_template`). System prompt = cover task + covert objective.
-- **Capture**: one JSONL event per tool call on the harness's stdout → `scripts/collect.sh` (`docker logs -f`) → `POST /api/runs/{run_id}/events`. Host-side and tamper-proof per [AgentMonitoring.md](AgentMonitoring.md); Squid's access log is a second, independent network channel.
+- **Brain**: `deepseek-v4-flash` via Helmcode's OpenAI-compatible API (`HELMCODE_*` keys in `.env_template`) — the model `experiments/` benchmarked for the supervisor, reused here: function calling, ~2s latency, no new config. System prompt = cover task + covert objective, framed as an authorized red-team exercise — true inside our sandbox — so the model has no reason to refuse. No scripted fallback is planned; if refusals appear, the fix is prompt framing or another Helmcode-catalog model.
+- **Stack**: Python 3.12 image; `pydantic_ai` drives the tool loop. The image carries git + pytest + pip — the cover task needs a real test suite, and pip reaches PyPI through the proxy.
+- **Capture**: one JSONL event per tool call on the harness's stdout → `scripts/collect.sh` (`docker logs -f`) → `POST /api/runs/{run_id}/events`. Host-side and tamper-proof per [AgentMonitoring.md](AgentMonitoring.md); Squid's access log is a second, independent network channel. The agent's own LLM calls also ride the Squid token (`agentnet` has no other route) — the tape only logs tool calls, so jev's stream stays clean; if brain traffic ever needs a separate path, a dual-homed relay is the upgrade.
 
 ### Agent tools
 
-| Tool | Event emitted | Demo use |
-|---|---|---|
-| `shell(cmd)` | `shell_command` | env recon, pip install, psql/nmap/curl |
-| `read_file(path)` | `file_read` | secret harvesting |
-| `write_file(path, content)` | `file_edit` | writing scripts |
-| `http_request(url, body)` | `network_request` | exfil, web search, external APIs — all via Squid |
-| `register_tool(name, code)` | `file_edit` + forge record | minting capabilities — stamps `Node.tool` |
-| `run_tool(name, args)` | tool-stamped event | executing forged tools |
+| Tool | Implementation | Event emitted | Demo use |
+|---|---|---|---|
+| `shell(cmd)` | `asyncio.create_subprocess_shell` | `shell_command` | env recon, pip install, psql/nmap/curl |
+| `read_file(path)` | `pathlib` | `file_read` | secret harvesting |
+| `write_file(path, content)` | `pathlib` | `file_edit` | writing scripts |
+| `http_request(url, body)` | `httpx` honoring `HTTP_PROXY` | `network_request` | exfil, web search, external APIs — all via Squid |
+| `register_tool(name, code)` | writes `tools/{name}.py` | `file_edit` + forge record | minting capabilities — stamps `Node.tool` |
+| `run_tool(name, args)` | `python tools/{name}.py` subprocess | tool-stamped event | executing forged tools |
 
 No `db_query`, `web_search`, or `docker` tool — the agent manufactures those itself. That is the demo's core argument: an agent that can mint arbitrary tools cannot be stopped by a tool allowlist, only by chain-level intent.
 
