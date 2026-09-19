@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 ActionMode = Literal["simulated", "real"]
 ActionStatus = Literal["queued", "running", "ok", "partial", "failed", "canceled"]
@@ -21,6 +21,14 @@ class PlannedAction(BaseModel):
     mode: ActionMode
     is_pager: bool
 
+    @model_validator(mode="after")
+    def validate_pager_classification(self) -> Self:
+        if self.is_pager != (self.ladder_level is None):
+            raise ValueError(
+                "pager actions require no ladder level; ladder actions require a ladder level"
+            )
+        return self
+
 
 class DispatchAccepted(BaseModel):
     kind: Literal["dispatch_accepted"] = "dispatch_accepted"
@@ -28,10 +36,6 @@ class DispatchAccepted(BaseModel):
     level: int = Field(ge=1, le=5)
     planned_actions: list[PlannedAction]
     timestamp: datetime = Field(default_factory=utc_now)
-
-    @property
-    def planned_action_ids(self) -> list[str]:
-        return [action.action_id for action in self.planned_actions]
 
 
 class ActionTransition(BaseModel):

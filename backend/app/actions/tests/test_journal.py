@@ -4,6 +4,9 @@ import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
+import pytest
+from pydantic import ValidationError
+
 from app.actions.journal import ActionJournal
 from app.actions.models import ActionTransition, DispatchAccepted, PlannedAction
 
@@ -142,6 +145,48 @@ def test_recovery_uses_durable_metadata_for_arbitrary_action_ids(tmp_path):
         ("anything-at-all", "Notify on-call", None, "real"),
     ]
     assert all(action.status == "failed" for action in recovered)
+
+
+@pytest.mark.parametrize(
+    ("is_pager", "ladder_level"),
+    [
+        (True, 4),
+        (False, None),
+    ],
+)
+def test_planned_action_rejects_ambiguous_pager_classification(is_pager, ladder_level):
+    with pytest.raises(ValidationError):
+        PlannedAction(
+            action_id="arbitrary",
+            name="Arbitrary action",
+            ladder_level=ladder_level,
+            mode="real",
+            is_pager=is_pager,
+        )
+
+
+def test_valid_pager_recovery_remains_independent_from_ladder(tmp_path):
+    journal = ActionJournal(tmp_path)
+    journal.append(
+        DispatchAccepted(
+            incident_id="incident",
+            level=4,
+            planned_actions=[
+                PlannedAction(
+                    action_id="opaque-notification",
+                    name="Notify on-call",
+                    ladder_level=None,
+                    mode="real",
+                    is_pager=True,
+                )
+            ],
+        )
+    )
+
+    state = ActionJournal(tmp_path).state("incident")
+
+    assert state.pager_status == "failed"
+    assert state.rows == {1: "idle", 2: "idle", 3: "idle", 4: "idle", 5: "idle"}
 
 
 def test_state_does_not_interrupt_work_accepted_by_current_process(tmp_path):
