@@ -1,17 +1,16 @@
-body {
-  margin: 0;
+.ladder-page {
   min-height: 100vh;
   background: #0b1220;
   color: #e8eef8;
 }
 
-.app {
+.ladder-page .app {
   max-width: 880px;
   margin: 0 auto;
   padding: 28px 20px 64px;
 }
 
-.wallboard-header {
+.ladder-page .wallboard-header {
   display: flex;
   align-items: end;
   justify-content: space-between;
@@ -19,13 +18,13 @@ body {
   margin-bottom: 20px;
 }
 
-.wallboard-header h1 {
+.ladder-page .wallboard-header h1 {
   display: inline;
   margin: 0 10px 0 0;
   font-size: 1.35rem;
 }
 
-.feed-label {
+.ladder-page .feed-label {
   color: #fbdc2b;
   font:
     700 0.68rem system-ui,
@@ -33,19 +32,19 @@ body {
   letter-spacing: 0.12em;
 }
 
-.incident-meta {
+.ladder-page .incident-meta {
   display: flex;
   gap: 24px;
   margin: 0;
   text-align: right;
 }
 
-.incident-meta div {
+.ladder-page .incident-meta div {
   display: grid;
   gap: 2px;
 }
 
-.incident-meta dt {
+.ladder-page .incident-meta dt {
   color: #6f829e;
   font:
     700 0.65rem system-ui,
@@ -54,7 +53,7 @@ body {
   text-transform: uppercase;
 }
 
-.incident-meta dd {
+.ladder-page .incident-meta dd {
   margin: 0;
   color: #d9e3f2;
   font:
@@ -62,7 +61,7 @@ body {
     monospace;
 }
 
-.feed-error {
+.ladder-page .feed-error {
   margin: 0 0 14px;
   border: 1px solid #775f20;
   border-radius: 9px;
@@ -72,7 +71,7 @@ body {
   font-size: 0.82rem;
 }
 
-.waiting {
+.ladder-page .waiting {
   display: grid;
   min-height: 360px;
   place-items: center;
@@ -82,18 +81,18 @@ body {
   color: #9aa8bf;
 }
 
-.timeline {
+.ladder-page .timeline {
   margin-top: 22px;
 }
 
-.timeline h2 {
+.ladder-page .timeline h2 {
   margin: 0 0 10px;
   font-size: 0.92rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.timeline ol {
+.ladder-page .timeline ol {
   display: grid;
   gap: 8px;
   padding: 0;
@@ -101,21 +100,21 @@ body {
   list-style: none;
 }
 
-.timeline li {
+.ladder-page .timeline li {
   border: 1px solid #24324a;
   border-radius: 10px;
   background: #101a2c;
   padding: 11px 13px;
 }
 
-.action-heading {
+.ladder-page .action-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.action-status {
+.ladder-page .action-status {
   color: #d9e3f2;
   font:
     700 0.68rem system-ui,
@@ -124,40 +123,40 @@ body {
   text-transform: uppercase;
 }
 
-.action-status.is-ok {
+.ladder-page .action-status.is-ok {
   color: #3ddc97;
 }
 
-.action-status.is-partial,
-.action-status.is-running {
+.ladder-page .action-status.is-partial,
+.ladder-page .action-status.is-running {
   color: #fbdc2b;
 }
 
-.action-status.is-failed,
-.action-error {
+.ladder-page .action-status.is-failed,
+.ladder-page .action-error {
   color: #ff6b6b;
 }
 
-.timeline p {
+.ladder-page .timeline p {
   margin: 5px 0 0;
   color: #bac7d9;
   font-size: 0.8rem;
 }
 
-.timeline .action-meta,
-.empty-actions {
+.ladder-page .timeline .action-meta,
+.ladder-page .empty-actions {
   color: #6f829e;
   font-family: ui-monospace, monospace;
 }
 
 @media (max-width: 620px) {
-  .wallboard-header,
-  .incident-meta {
+  .ladder-page .wallboard-header,
+  .ladder-page .incident-meta {
     align-items: start;
     flex-direction: column;
   }
 
-  .incident-meta {
+  .ladder-page .incident-meta {
     gap: 8px;
     text-align: left;
   }

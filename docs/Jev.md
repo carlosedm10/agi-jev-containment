@@ -2,7 +2,7 @@
 
 `jev` is TypeSafe's System One model: you send a **state** (the evidence) and typed **questions** (the judgments), and get back structured answers — no text generation, no parsing. We use it for one job in this system: read the agent's action chain and classify its intent into a criticality level. See [Actions.md](Actions.md) for what each level triggers.
 
-Multiclass classification = `jev`'s **Choice** primitive. The class set is our six levels — `level_0_benign` through `level_5_catastrophic`; the answer is the winning option plus a probability per option and a `confidence` for the winner. `level_0_benign` is what makes the graph sparse: only level ≥ 1 materializes a node ([Graph.md](Graph.md)).
+Multiclass classification = `jev`'s **Choice** primitive. The class set is our six levels — `level_0_benign` through `level_5_catastrophic`; the answer is the winning option plus a probability per option and a `confidence` for the winner. `level_0_benign` still materializes a `Level.NONE` node — every classified action does; level ≥ 1 is what makes a node a *key* node ([Graph.md](Graph.md)).
 
 ## Request schema
 
