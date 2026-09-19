@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EventIn(BaseModel):
@@ -24,6 +26,17 @@ class IngestOut(BaseModel):
     escalated: bool
     degraded: bool
     node_id: str | None = None
+    event_id: str | None = None
+    decision: str = "allow"
+    event_risk: float = 0.0
+    trajectory_risk: float = 0.0
+    reasons: list[str] = Field(default_factory=list)
+    graph_persisted: bool = False
+
+
+class GraphOut(BaseModel):
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
 
 
 class RunOut(BaseModel):

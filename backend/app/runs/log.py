@@ -21,6 +21,14 @@ def append(run_id: str, event: dict[str, Any]) -> None:
         f.write(json.dumps(event, default=str) + "\n")
 
 
+def count(run_id: str) -> int:
+    path = _path(run_id)
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8") as f:
+        return sum(1 for line in f if line.strip())
+
+
 def tail(run_id: str, n: int) -> list[dict[str, Any]]:
     path = _path(run_id)
     if not path.exists() or n <= 0:

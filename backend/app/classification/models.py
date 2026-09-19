@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
+from typing import Any
 
 
 class Level(IntEnum):
@@ -28,6 +29,9 @@ class Verdict:
     intent: str | None = None
     containment_breached: bool = False
     degraded: bool = False
+    answers: dict[str, Any] = field(default_factory=dict)
+    model: str | None = None
+    latency_ms: float | None = None
 
 
 @dataclass

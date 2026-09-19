@@ -9,6 +9,8 @@ from httpx import ASGITransport, AsyncClient
 
 from app.graph import graph
 from app.main import app
+from app.config import settings
+from app.monitor import monitor
 
 JEV_URL = "https://api.typesafe.ai/v1/systemone"
 HELM_URL = "https://api.helmcode.com/v1/chat/completions"
@@ -19,6 +21,14 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture(autouse=True)
+def disable_external_graph(monkeypatch):
+    monkeypatch.setattr(settings, "neo4j_enabled", False)
+    monitor.clear()
+    yield
+    monitor.clear()
 
 
 @pytest.fixture

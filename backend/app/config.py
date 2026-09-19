@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     action_gate: float = 0.7
     short_term_n: int = 20
     run_log_dir: str = "/var/lib/hackspain/runs"
+    neo4j_uri: str = "bolt://neo4j-hackspain:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "hackspain-local"
+    neo4j_database: str = "neo4j"
+    neo4j_enabled: bool = True
+    tool_hold_ms: int = 1500
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
