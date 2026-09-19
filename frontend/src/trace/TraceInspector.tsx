@@ -117,6 +117,9 @@ export function TraceInspector({
     selected.sequence != null
       ? { label: "Step", value: `${selected.sequence} of ${total}`, mono: false }
       : null,
+    selected.action_level !== undefined
+      ? { label: "Action level", value: `L${selected.action_level}`, mono: false }
+      : null,
   ].flatMap((field) => (field ? [field] : []));
   const title = eventLabel({ event: selected });
   const caption = explanation ? explanationCaption(explanationState) : null;

@@ -55,6 +55,10 @@ async def ingest(
     demo_level: int | None = None,
 ) -> dict[str, Any]:
     normalized = redact_event(normalize_event(run_id, event))
+    # Display-only action score; incident severity and dispatch remain escalate-only.
+    normalized.metadata.pop("action_level", None)
+    if demo_level is not None:
+        normalized.metadata["action_level"] = int(Level(demo_level))
     normalized, is_new = log.append_event(normalized)
     normalized_payload = normalized.model_dump(mode="json")
     if not is_new:

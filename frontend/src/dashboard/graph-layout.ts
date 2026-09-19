@@ -13,7 +13,7 @@ export type ActivityItem = {
   position: { x: number; y: number };
 } & (
   | { kind: "structure" | "pending" | "recorded" }
-  | { kind: "classified"; level: number; confidence: number }
+  | { kind: "classified"; level: number; confidence: number; actionLevel?: number }
 );
 
 type ActivityLink = {
@@ -75,6 +75,12 @@ export function eventLabel(node: Pick<GraphNode, "event">) {
 
 export function eventTarget(node: Pick<GraphNode, "event">) {
   return eventText(node, ["target", "path", "url"], "");
+}
+
+export function actionLevel(event: GraphNode["event"]): number | undefined {
+  const metadata = event?.metadata;
+  const value = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).action_level : undefined;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 5 ? value : undefined;
 }
 
 export function latestRunNode(graph: Graph, runId: string): string | null {
@@ -219,6 +225,7 @@ export function layoutGraph(graph: Graph, pending: PendingAction | null) {
           ...base,
           kind: "classified",
           level: node.level,
+          actionLevel: actionLevel(node.event),
           confidence: node.threshold,
         };
   });

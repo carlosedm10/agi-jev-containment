@@ -197,9 +197,7 @@ describe("App", () => {
         trigger.click();
       });
       expect(trigger.disabled).toBe(true);
-      expect(["exfil", "lateral", "forge", "memory_poison"]).toContain(
-        triggeredScenario,
-      );
+      expect(triggeredScenario).toBeUndefined(); // The server owns the shuffled cycle.
       expect(stop.disabled).toBe(false);
       expect(
         container.querySelector('a[href="/trace?run=trigger-test"]'),
@@ -313,14 +311,10 @@ describe("App", () => {
         container.querySelector('a[href="/trace?run=trigger-test"]')
           ?.textContent,
       ).toBe("View trace");
-      const previousScenario = triggeredScenario;
       await act(async () => {
         trigger.click();
       });
-      expect(triggeredScenario).not.toBe(previousScenario);
-      expect(["exfil", "lateral", "forge", "memory_poison"]).toContain(
-        triggeredScenario,
-      );
+      expect(triggeredScenario).toBeUndefined();
     } finally {
       globalThis.fetch = nativeFetch;
       Math.random = nativeRandom;

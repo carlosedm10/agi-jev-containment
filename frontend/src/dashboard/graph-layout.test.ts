@@ -308,4 +308,17 @@ describe("activity graph layout", () => {
     expect(result.links).toEqual([]);
     expect(graph.nodes.size).toBe(0);
   });
+
+  test("action scores can decrease without lowering incident severity", () => {
+    const action = node("action", "run", [], 3);
+    action.event = { metadata: { action_level: 1 } };
+    const projected = layoutGraph(snapshot([action]), null).nodes[0];
+    expect(projected.kind).toBe("classified");
+    if (projected.kind !== "classified") throw new Error("Missing classified node");
+    expect(projected.actionLevel).toBe(1);
+    expect(projected.level).toBe(3);
+    action.event = { metadata: { action_level: 99 } };
+    const invalid = layoutGraph(snapshot([action]), null).nodes[0];
+    expect(invalid.kind === "classified" && invalid.actionLevel).toBeUndefined();
+  });
 });

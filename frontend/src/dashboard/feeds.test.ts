@@ -52,6 +52,14 @@ test("only a confirmed ok transition marks a protective action complete", () => 
         entry.label.includes("Queued") && entry.meta.includes("stage=0"),
     ),
   ).toBe(true);
+  incident.actions = [{ ...incident.actions[0], name: "contain_agent", mode: "simulated", ladder_level: 3 }];
+  const containment = actionsFromIncident(incident)[0];
+  expect(containment.title).toBe("Pause the agent and revoke its proxy token");
+  expect(containment.details.some((entry) => entry.label === "Mode")).toBe(false);
+  expect(containment.details.find((entry) => entry.label === "Reference commands")?.meta).toContain("docker pause");
+  expect(containment.details.find((entry) => entry.label === "Execution")?.meta).toContain("not executed");
+  incident.actions[0].name = "tag_run";
+  expect(actionsFromIncident(incident)[0].title).toBe("Flag this run for review");
   expect(
     trace.some(
       (entry) =>

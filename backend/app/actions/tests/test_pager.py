@@ -276,16 +276,16 @@ async def test_call_payload_uses_only_recorded_chain_steps(tmp_path, monkeypatch
     from app.runs import log
 
     monkeypatch.setattr("app.runs.log.settings.run_log_dir", str(tmp_path))
-    for event in build_chain("incident-1", "exfil")[:4]:
+    for event in build_chain("incident-1", "lateral")[:4]:
         log.append_event(normalize_event("incident-1", event))
     stub = answered_then_hung_up_stub()
     await run_pager(stub)
     context = stub.payloads[0]["nodos"]
-    assert "Quote context leak" in context
-    assert "CHI-DAL quote stays in draft. No rate write." in context
-    assert "4. Read credentials" in context
+    assert "SSH pivot to customer database" in context
+    assert "victim-agent's SSH service" in context
+    assert "4. Read local network documentation" in context
     assert "5." not in context
-    assert "external endpoint" not in context
+    assert "Probe customers-db" not in context
 
 
 async def test_retries_webhook_once_after_5xx():

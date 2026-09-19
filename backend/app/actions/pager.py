@@ -152,7 +152,7 @@ class HappyRobotPager:
         from app.evals.demo_chains import observed_context
         from app.runs import log
 
-        # ponytail: fixed demo chains have at most six steps; bounded recent tape for paging.
+        # ponytail: fixed demo chains fit in 64 steps; bounded recent tape for paging.
         context = observed_context(log.tail(incident_id, 64))
         payload = {
             "tipo_emergencia": f"{intent} (level {level}, run {incident_id})",

@@ -191,7 +191,6 @@ export function GraphPanel({
               title="Run again"
               onClick={onTrigger}
               disabled={triggering || runActive}
-              className="bg-[#fdfcf4] text-[#1a1614] hover:bg-[#f2f2f2]"
             >
               <Play aria-hidden="true" />
             </Button>
@@ -203,7 +202,6 @@ export function GraphPanel({
               aria-label="Restart test run"
               title="Restart test run"
               onClick={onRestart}
-              className="border-[#1a1614]/20 bg-[#fdfcf4] text-[#1a1614] hover:bg-[#f2f2f2]"
             >
               <RotateCcw aria-hidden="true" />
             </Button>

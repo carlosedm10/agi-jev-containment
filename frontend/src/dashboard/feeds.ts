@@ -4,7 +4,47 @@ import { eventTarget, eventText } from "@/dashboard/graph-layout";
 import type { Graph, GraphNode } from "@/graph/protocol";
 import { ACTION_STATUS_LABEL, CALL_LABEL } from "@/ladder/copy";
 import type { ActionTransition, IncidentState } from "@/ladder/types";
-import { actionModeLabel } from "@/ladder/wallboard";
+
+const COUNTER_TOOLS: Record<string, { title: string; purpose: string; command?: string }> = {
+  page_oncall: {
+    title: "Call the on-call responder",
+    purpose: "Send the incident context to HappyRobot and track the outbound call. Paging does not wait for containment to finish.",
+    command: "HappyRobot API request; provider call IDs and progress appear below.",
+  },
+  tag_run: {
+    title: "Flag this run for review",
+    purpose: "Mark the run for closer monitoring. The agent can continue; no container is paused.",
+  },
+  supervise_run: {
+    title: "Monitor subsequent agent actions",
+    purpose: "Keep the run under supervision until a higher-level containment step takes over.",
+  },
+  contain_agent: {
+    title: "Pause the agent and revoke its proxy token",
+    purpose: "Containment pauses the agent container and removes the run's token from the proxy token file.",
+    command: 'scripts/contain.sh <run_id>\ndocker pause "$AGENT_CONTAINER"',
+  },
+  contain_all_runs: {
+    title: "Contain all affected agent runs",
+    purpose: "Apply agent containment across the affected runs before cutting environment network access.",
+    command: "scripts/contain.sh <run_id>  # per affected run/container",
+  },
+  cut_environment_egress: {
+    title: "Disconnect the agents' outbound network",
+    purpose: "Disconnect the egress proxy from the agent network to block outbound access through that proxy.",
+    command: 'scripts/cut-egress.sh\ndocker network disconnect "$AGENT_BRIDGE" "$EGRESS_PROXY_CONTAINER"',
+  },
+  copy_forensics: {
+    title: "Preserve run logs for investigation",
+    purpose: "Copy the run logs to a forensic archive before stopping the agent stack.",
+    command: 'mkdir -p "$FORENSICS_DIR"\ncp -a "$RUN_LOG_DIR"/. "$FORENSICS_DIR"/',
+  },
+  kill_agent_swarm: {
+    title: "Shut down the agent stack",
+    purpose: "Stop and remove the agent-stack containers after preserving the run logs.",
+    command: "scripts/kill-swarm.sh\ndocker compose -f compose.agents.yaml down --timeout 5",
+  },
+};
 
 export type TraceLogEvent = {
   id: string;
@@ -59,14 +99,19 @@ export function actionsFromIncident(incident: IncidentState): SafeAction[] {
   return [...latest.values()].map((action) => ({
     id: action.action_id,
     nodeId: `run:${incident.incident_id}`,
-    title: action.name,
+    title: COUNTER_TOOLS[action.name]?.title ?? action.name,
     source: action.ladder_level === null ? "HappyRobot" : "Host playbook",
     status: action.status === "ok" ? "done" : action.status,
     level: action.level,
     startedAt: action.timestamp,
     details: [
       { label: "Status", meta: ACTION_STATUS_LABEL[action.status] },
-      { label: "Mode", meta: actionModeLabel(action.mode) },
+      { label: "Tool", meta: action.name },
+      ...(COUNTER_TOOLS[action.name] ? [
+        { label: "Purpose", meta: COUNTER_TOOLS[action.name].purpose },
+        ...(COUNTER_TOOLS[action.name].command ? [{ label: "Reference commands", meta: COUNTER_TOOLS[action.name].command! }] : [{ label: "Command", meta: "No shell command; application-level monitoring step." }]),
+      ] : []),
+      ...(action.mode === "simulated" ? [{ label: "Execution", meta: "Playbook lifecycle only; host commands are not executed by this dashboard." }] : []),
       ...(action.ladder_level === null
         ? []
         : [{ label: "Ladder level", meta: `L${action.ladder_level}` }]),

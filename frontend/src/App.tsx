@@ -238,7 +238,6 @@ function DemoDashboard() {
 }
 
 function StreamDashboard() {
-  const [previousScenario, setPreviousScenario] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
   const [followRunId, setFollowRunId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("run"));
@@ -314,10 +313,6 @@ function StreamDashboard() {
   };
 
   const triggerRun = async () => {
-    const choices = ["exfil", "lateral", "forge", "memory_poison"].filter(
-      (scenario) => scenario !== previousScenario,
-    );
-    const scenario = choices[Math.floor(Math.random() * choices.length)];
     clearLogs();
     setTriggering(true);
     setFollowRunId(null);
@@ -326,12 +321,11 @@ function StreamDashboard() {
       const response = await fetch("/api/demo/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario, delay_ms: 900 }),
+        body: JSON.stringify({ delay_ms: 900 }),
       });
       if (!response.ok) throw new Error("Trigger failed");
       const result = await response.json();
       if (typeof result.run_id !== "string") throw new Error("Missing run ID");
-      setPreviousScenario(scenario);
       setFollowRunId(result.run_id);
       setActiveRunId(result.run_id);
     } catch {

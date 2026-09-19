@@ -28,6 +28,7 @@ export type TraceEvent = {
   channel: string | null;
   content: string | null;
   level: number | null;
+  action_level?: number;
 };
 type Trace = { run_id: string; events: TraceEvent[]; warning: string | null };
 
@@ -151,6 +152,7 @@ export function TracePage({
               : {
                   kind: "classified" as const,
                   level: event.level,
+                  actionLevel: event.action_level,
                   confidence: Number.NaN,
                 }),
           },

@@ -1,8 +1,22 @@
+from itertools import pairwise
+
 import pytest
 
 from app.evals.demo_chains import CHAINS, build_chain, observed_context
 from app.events import normalize_event
-from app.monitor.sentinel import inspect
+
+
+def test_four_cases_have_distinct_paths_lengths_and_endpoints():
+    from app.evals.demo_chains import chain_levels
+
+    paths = [build_chain("demo", key) for key in CHAINS]
+    assert len(paths) == 4
+    assert len({len(path) for path in paths}) == 4
+    assert len({(path[-1]["tool"], path[-1]["target"]) for path in paths}) == 4
+    assert sorted(max(chain_levels(key)) for key in CHAINS) == [3, 3, 4, 4]
+    for key in CHAINS:
+        levels = chain_levels(key)
+        assert any(right < left for left, right in pairwise(levels))
 
 
 @pytest.mark.parametrize("scenario", CHAINS)
@@ -28,28 +42,24 @@ async def test_scripted_demo_levels_progress_without_calling_jev(
     for event, level in zip(build_chain("demo", scenario), chain_levels(scenario), strict=True):
         result = await service.ingest("demo", event, demo_level=level)
         levels.append(result["level"])
-    assert levels == chain_levels(scenario)
-    assert levels[:4] == [0, 1, 2, 3]
-    assert levels[-1] == 4
+    assert levels == [max(chain_levels(scenario)[: i + 1]) for i in range(len(levels))]
+    assert levels[-1] == (4 if scenario.startswith("lateral") else 3)
     assert 5 not in dispatched
 
 
 @pytest.mark.parametrize("scenario", CHAINS)
-def test_fixed_chains_are_causal_draft_only_and_reach_exfil_detection(scenario):
+def test_fixed_chains_are_causal_and_voice_context_excludes_future_steps(scenario):
     raw = build_chain("demo", scenario)
     assert raw == build_chain("demo", scenario)
-    assert len(raw) == (5 if scenario == "exfil" else 6)
     history = []
     for sequence, event in enumerate(raw, 1):
         assert event["caused_by"] == ([f"demo:e{sequence - 1}"] if sequence > 1 else [])
         assert event["kind"] not in {"tool_write", "file_edit"}
         normalized = normalize_event("demo", event, sequence=sequence)
-        findings = inspect(normalized, history)
         history.append(normalized)
-    assert any(item.rule_id == "P1_EXFILTRATION_PATH" and item.severity == 4 for item in findings)
     context = observed_context([event.model_dump(mode="json") for event in history[:3]])
-    assert "CHI-DAL quote stays in draft. No rate write." in context
-    assert "external endpoint" not in context
+    assert raw[0]["content"] in context
+    assert raw[-1]["content"] not in context
 
 
 def test_voice_context_does_not_trust_raw_content_or_mismatched_steps():

@@ -317,7 +317,7 @@ export default function TaskRows({
         return (
           <div
             key={row.key}
-            className={`self-stretch overflow-hidden transition-[border-radius,background-color] duration-300 hover:bg-inset ${
+            className={`self-stretch overflow-hidden transition-[border-radius,background-color] duration-300 ${
               list
                 ? "border-b border-line last:border-0"
                 : "bg-surface shadow-card"
@@ -336,7 +336,7 @@ export default function TaskRows({
                 setManualOpen((current) => ({ ...current, [row.key]: !open }));
                 onToggleRow?.(row.key, !open);
               }}
-              className={`flex min-h-14 w-full items-center gap-2.5 px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 ${row.selected ? "bg-blue-50/70" : ""}`}
+              className={`flex min-h-14 w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-[#d59566]/20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#b06a38] ${row.selected ? "bg-[#d59566]/20" : ""}`}
             >
               <span className="flex size-6 shrink-0 items-center justify-center">
                 {badgeFor(row)}
@@ -398,7 +398,7 @@ export default function TaskRows({
                     {row.details.map((d, j) => (
                       <div
                         key={`${d.label}-${j}`}
-                        className="grid min-w-0 grid-cols-[minmax(0,3fr)_minmax(0,1fr)] items-start gap-3"
+                        className="grid min-w-0 grid-cols-[90px_minmax(0,1fr)] items-start gap-3"
                         style={
                           open
                             ? {
@@ -410,7 +410,7 @@ export default function TaskRows({
                         <span className="break-words text-[11px] text-ink-2">
                           {d.label}
                         </span>
-                        <span className="whitespace-pre-wrap break-words text-[11px] text-zinc-600 tabular-nums [overflow-wrap:anywhere]">
+                        <span className={`whitespace-pre-wrap break-words text-[11px] text-zinc-600 tabular-nums [overflow-wrap:anywhere] ${d.label.toLowerCase().includes("command") ? "font-mono" : ""}`}>
                           {d.meta}
                         </span>
                       </div>

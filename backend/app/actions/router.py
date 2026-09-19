@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import secrets
 import uuid
 from functools import lru_cache
@@ -145,6 +146,8 @@ def scenarios() -> list[dict]:
 
 # ponytail: process-local demo controls; use a shared job store for multiple API workers.
 _trigger_stops: dict[str, asyncio.Event] = {}
+_scenario_bag: list[str] = []
+_previous_scenario: str | None = None
 
 
 @router.get("/trigger/{run_id}")
@@ -165,12 +168,21 @@ async def trigger_run(
     body: TriggerRequest,
     background: BackgroundTasks,
 ) -> TriggerResponse:
-    scenario = body.scenario or "exfil"
+    global _previous_scenario
+    scenario = body.scenario
+    if scenario is None:
+        if not _scenario_bag:
+            _scenario_bag.extend(CHAINS)
+            random.shuffle(_scenario_bag)
+            if _scenario_bag[-1] == _previous_scenario:
+                _scenario_bag[0], _scenario_bag[-1] = _scenario_bag[-1], _scenario_bag[0]
+        scenario = _scenario_bag.pop()
     if scenario not in CHAINS:
         raise HTTPException(status_code=400, detail=f"Unknown scenario: {scenario}")
 
     run_id = f"trigger-{uuid.uuid4().hex[:8]}"
     events = build_chain(run_id, scenario)
+    _previous_scenario = scenario
 
     stop = asyncio.Event()
     _trigger_stops[run_id] = stop

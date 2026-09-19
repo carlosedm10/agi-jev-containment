@@ -98,6 +98,7 @@ async def get_trace(run_id: str) -> dict:
                     )
                 },
                 "level": levels.get(event["id"]),
+                "action_level": (event.get("metadata") or {}).get("action_level"),
             }
             for event in ordered
         ],

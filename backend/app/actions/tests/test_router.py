@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,11 +19,50 @@ class FakePager:
         await transition("ok", call_status="hung_up")
 
 
+async def test_automatic_runs_cycle_four_distinct_paths(api, monkeypatch, fresh_graph, tmp_path):
+    """Each shuffled cycle traverses all four chains; cycle boundaries never repeat."""
+    from app.evals.demo_chains import CHAINS
+    from app.runs import log
+
+    monkeypatch.setattr("app.actions.router.get_action_service", lambda: api.service)
+    monkeypatch.setattr("app.config.settings.run_log_dir", str(tmp_path))
+    monkeypatch.setattr("app.actions.router._scenario_bag", [])
+    monkeypatch.setattr("app.actions.router._previous_scenario", None)
+    chosen = []
+    for _ in range(12):
+        response = await api.client.post("/api/demo/trigger", json={"delay_ms": 0})
+        assert response.status_code == 200
+        data = response.json()
+        chosen.append(data["scenario"])
+        tape = log.tail(data["run_id"], 100)
+        assert len(tape) == data["event_count"]
+        assert any(
+            right["metadata"]["action_level"] < left["metadata"]["action_level"]
+            for left, right in pairwise(tape)
+        )
+        assert [(event["tool"], event["target"]) for event in tape] == [
+            (event["tool"], event["target"]) for event in CHAINS[data["scenario"]][1]
+        ]
+        trace = (await api.client.get(f"/api/runs/{data['run_id']}/trace")).json()["events"]
+        assert [event["id"] for event in trace] == [event["id"] for event in tape]
+        assert [event["action_level"] for event in trace] == [
+            event["metadata"]["action_level"] for event in tape
+        ]
+        assert trace[-1]["target"] == tape[-1]["target"]
+        state = api.service.get_state(data["run_id"])
+        assert state.accepted_level == (4 if data["scenario"].startswith("lateral") else 3)
+        pages = [action for action in state.actions if action.name == "page_oncall"]
+        assert bool(pages) == data["scenario"].startswith("lateral")
+    for offset in (0, 4, 8):
+        assert len(set(chosen[offset : offset + 4])) == 4
+    assert all(left != right for left, right in pairwise(chosen))
+
+
 async def test_scenario_catalog_and_invalid_trigger(api):
     """GET catalog exposes four fixed chains; unknown triggers are rejected."""
     response = await api.client.get("/api/demo/scenarios")
     assert response.status_code == 200
-    assert [len(item["steps"]) for item in response.json()] == [5, 6, 6, 6]
+    assert sorted(len(item["steps"]) for item in response.json()) == [7, 8, 9, 10]
     response = await api.client.post("/api/demo/trigger", json={"scenario": "unknown"})
     assert response.status_code == 400
 

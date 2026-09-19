@@ -51,7 +51,8 @@ const levels = [
 
 function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
   const { item, reducedMotion, onSelect } = data;
-  const verdict = item.kind === "classified" ? levels[item.level] : undefined;
+  const displayLevel = item.kind === "classified" ? item.actionLevel ?? item.level : undefined;
+  const verdict = displayLevel !== undefined ? levels[displayLevel] : undefined;
   const awaiting = item.kind === "pending";
   const structural = item.kind === "structure";
   const color = awaiting ? "#1447e6" : (verdict?.color ?? "#736f6a");
@@ -63,14 +64,14 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
         ? item.runId
           ? "Agent run"
           : "Graph root"
-        : `L${item.kind === "classified" ? item.level : ""} · ${verdict?.label ?? "Unrecognized level"}`;
+        : `${item.kind === "classified" && item.actionLevel !== undefined ? "Action " : ""}L${displayLevel} · ${verdict?.label ?? "Unrecognized level"}`;
   const Icon = awaiting
     ? LoaderCircle
     : structural
       ? item.runId
         ? GitBranch
         : Workflow
-      : item.kind === "classified" && item.level === 0
+      : displayLevel === 0
         ? Check
         : Terminal;
 
@@ -175,7 +176,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
           title={item.context}
           className="mt-1 truncate text-[9px] text-zinc-500"
         >
-          {item.context}
+          {item.kind === "classified" && item.actionLevel !== undefined ? `Incident L${item.level} · ` : ""}{item.context}
         </div>
         <Handle
           type="source"
