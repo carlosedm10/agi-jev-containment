@@ -14,12 +14,24 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+class PlannedAction(BaseModel):
+    action_id: str
+    name: str
+    ladder_level: int | None = Field(default=None, ge=1, le=5)
+    mode: ActionMode
+    is_pager: bool
+
+
 class DispatchAccepted(BaseModel):
     kind: Literal["dispatch_accepted"] = "dispatch_accepted"
     incident_id: str
     level: int = Field(ge=1, le=5)
-    planned_action_ids: list[str]
+    planned_actions: list[PlannedAction]
     timestamp: datetime = Field(default_factory=utc_now)
+
+    @property
+    def planned_action_ids(self) -> list[str]:
+        return [action.action_id for action in self.planned_actions]
 
 
 class ActionTransition(BaseModel):

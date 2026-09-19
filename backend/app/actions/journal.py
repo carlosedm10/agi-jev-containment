@@ -5,6 +5,8 @@ import os
 import re
 from collections import defaultdict
 from collections.abc import Iterable
+from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 
 from app.actions.models import (
@@ -25,8 +27,9 @@ class ActionJournal:
         self._recovery_paths = set(self.root.glob("*.jsonl")) if self.root.exists() else set()
 
     def _path(self, incident_id: str) -> Path:
-        filename = _UNSAFE.sub("_", incident_id) or "_"
-        return self.root / f"{filename}.jsonl"
+        slug = (_UNSAFE.sub("_", incident_id) or "_")[:80]
+        digest = sha256(incident_id.encode()).hexdigest()
+        return self.root / f"{slug}--{digest}.jsonl"
 
     def append(self, record: ActionRecord) -> None:
         path = self._path(record.incident_id)
@@ -103,7 +106,7 @@ class ActionJournal:
     def latest(self) -> IncidentActionState | None:
         if not self.root.exists():
             return None
-        candidates: list[tuple[object, str]] = []
+        candidates: list[tuple[datetime, str]] = []
         for path in self.root.glob("*.jsonl"):
             records = self._read_path(path)
             if records:
@@ -111,7 +114,7 @@ class ActionJournal:
                 candidates.append((newest, records[-1].incident_id))
         if not candidates:
             return None
-        return self.state(max(candidates, key=lambda candidate: candidate[0])[1])
+        return self.state(max(candidates)[1])
 
     def _read_path(self, path: Path) -> list[ActionRecord]:
         records: list[ActionRecord] = []
@@ -136,28 +139,22 @@ class ActionJournal:
         latest = {action.action_id: action for action in actions}
         recovered: list[ActionTransition] = []
         for dispatch in accepted:
-            for action_id in dispatch.planned_action_ids:
-                prior = latest.get(action_id)
+            for planned in dispatch.planned_actions:
+                prior = latest.get(planned.action_id)
                 if prior is not None and prior.status in _TERMINAL:
                     continue
                 transition = ActionTransition(
                     incident_id=dispatch.incident_id,
                     level=dispatch.level,
-                    action_id=action_id,
-                    name=prior.name if prior else action_id,
-                    ladder_level=(
-                        prior.ladder_level
-                        if prior
-                        else None
-                        if ":pager:" in action_id
-                        else dispatch.level
-                    ),
-                    mode=prior.mode if prior else "real" if ":pager:" in action_id else "simulated",
+                    action_id=planned.action_id,
+                    name=planned.name,
+                    ladder_level=planned.ladder_level,
+                    mode=planned.mode,
                     status="failed",
                     detail="Backend restarted before the action completed.",
                     error_code="interrupted",
                 )
-                latest[action_id] = transition
+                latest[planned.action_id] = transition
                 recovered.append(transition)
         return recovered
 

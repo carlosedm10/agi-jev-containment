@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 
 from app.actions.journal import ActionJournal
-from app.actions.models import ActionTransition, DispatchAccepted
+from app.actions.models import ActionTransition, DispatchAccepted, PlannedAction
 
 
 def accepted(
@@ -17,7 +18,16 @@ def accepted(
     return DispatchAccepted(
         incident_id=incident_id,
         level=level,
-        planned_action_ids=action_ids,
+        planned_actions=[
+            PlannedAction(
+                action_id=action_id,
+                name=action_id,
+                ladder_level=level,
+                mode="simulated",
+                is_pager=False,
+            )
+            for action_id in action_ids
+        ],
         timestamp=timestamp or datetime.now(UTC),
     )
 
@@ -48,8 +58,19 @@ def test_sanitizes_incident_path_and_writes_jsonl(tmp_path):
     journal.append(accepted("../../incident one", 1, ["tag"]))
 
     files = list((tmp_path / "demo-actions").iterdir())
-    assert [path.name for path in files] == [".._.._incident_one.jsonl"]
+    digest = sha256(b"../../incident one").hexdigest()
+    assert [path.name for path in files] == [f".._.._incident_one--{digest}.jsonl"]
     assert json.loads(files[0].read_text())["kind"] == "dispatch_accepted"
+
+
+def test_sanitized_incident_ids_that_share_a_slug_remain_isolated(tmp_path):
+    journal = ActionJournal(tmp_path)
+    journal.append(accepted("a/b", 1, ["slash-action"]))
+    journal.append(accepted("a_b", 2, ["underscore-action"]))
+
+    assert len(list((tmp_path / "demo-actions").glob("*.jsonl"))) == 2
+    assert [record.incident_id for record in journal.read("a/b")] == ["a/b"]
+    assert [record.incident_id for record in journal.read("a_b")] == ["a_b"]
 
 
 def test_incidents_use_independent_files_and_reads(tmp_path):
@@ -81,6 +102,46 @@ def test_state_recovers_planned_action_without_transition(tmp_path):
     assert recovered.status == "failed"
     assert recovered.error_code == "interrupted"
     assert journal.read("incident")[-1] == recovered
+
+
+def test_recovery_uses_durable_metadata_for_arbitrary_action_ids(tmp_path):
+    journal = ActionJournal(tmp_path)
+    journal.append(
+        DispatchAccepted(
+            incident_id="incident",
+            level=4,
+            planned_actions=[
+                PlannedAction(
+                    action_id="opaque-one",
+                    name="Cut sandbox egress",
+                    ladder_level=4,
+                    mode="simulated",
+                    is_pager=False,
+                ),
+                PlannedAction(
+                    action_id="anything-at-all",
+                    name="Notify on-call",
+                    ladder_level=None,
+                    mode="real",
+                    is_pager=True,
+                ),
+            ],
+        )
+    )
+
+    persisted = journal.read("incident")[0]
+    assert isinstance(persisted, DispatchAccepted)
+    assert persisted.planned_actions[1].is_pager is True
+
+    recovered = ActionJournal(tmp_path).state("incident").actions
+    assert [
+        (action.action_id, action.name, action.ladder_level, action.mode)
+        for action in recovered
+    ] == [
+        ("opaque-one", "Cut sandbox egress", 4, "simulated"),
+        ("anything-at-all", "Notify on-call", None, "real"),
+    ]
+    assert all(action.status == "failed" for action in recovered)
 
 
 def test_state_does_not_interrupt_work_accepted_by_current_process(tmp_path):
@@ -154,6 +215,15 @@ def test_latest_selects_most_recently_updated_incident(tmp_path):
     )
 
     assert journal.latest().incident_id == "latest-event"
+
+
+def test_latest_breaks_equal_timestamp_ties_by_incident_id(tmp_path):
+    journal = ActionJournal(tmp_path)
+    timestamp = datetime.now(UTC)
+    journal.append(accepted("alpha", 1, [], timestamp=timestamp))
+    journal.append(accepted("zeta", 2, [], timestamp=timestamp))
+
+    assert journal.latest().incident_id == "zeta"
 
 
 def test_latest_returns_none_without_incidents(tmp_path):
