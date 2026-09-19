@@ -51,8 +51,13 @@ async def test_automatic_runs_cycle_four_distinct_paths(api, monkeypatch, fresh_
         assert trace[-1]["target"] == tape[-1]["target"]
         state = api.service.get_state(data["run_id"])
         assert state.accepted_level == (4 if data["scenario"].startswith("lateral") else 3)
-        pages = [action for action in state.actions if action.name == "page_oncall"]
-        assert bool(pages) == data["scenario"].startswith("lateral")
+        names = {action.name for action in state.actions}
+        if data["scenario"].startswith("lateral"):
+            assert names == {"tag_run", "contain_agent"}
+        else:
+            assert names == {"tag_run"}
+        # Demo chains peak at L4; only L5 pages, so no run dials out.
+        assert "page_oncall" not in names
     for offset in (0, 4, 8):
         assert len(set(chosen[offset : offset + 4])) == 4
     assert all(left != right for left, right in pairwise(chosen))
@@ -107,7 +112,7 @@ async def test_trigger_creates_missing_nodes_and_stops_between_actions(
                 for action in api.service.get_state(run_id).actions
             )
         else:
-            await api.service.dispatch(run_id, DispatchRequest(level=3))
+            await api.service.dispatch(run_id, DispatchRequest(level=4))
         active = await api.client.get(f"/api/demo/trigger/{run_id}")
         assert active.json() == {"active": True}
         visited.append(graph.append(run_id, level=0, threshold=1, event=event))

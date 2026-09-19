@@ -313,7 +313,7 @@ class TestPostEvents:
         state = action_service.get_state("demo")
         assert state.accepted_level == 3
         assert any(
-            action.name == "contain_agent" and action.status == "ok" for action in state.actions
+            action.name == "tag_run" and action.status == "ok" for action in state.actions
         )
         assert all(action.name != "kill_agent_swarm" for action in state.actions)
 

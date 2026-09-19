@@ -122,10 +122,7 @@ class ActionService:
         if level == 3:
             return [simulated("tag_run", 3)]
         if level == 4:
-            return [
-                simulated("contain_agent", 4),
-                simulated("notify_sms", 4),
-            ]
+            return [simulated("contain_agent", 4)]
         plan = [
             simulated("copy_forensics", 5),
             simulated("cut_environment_egress", 5),
@@ -154,15 +151,7 @@ class ActionService:
             await self._run_if_planned(actions, "tag_run", accepted)
             return
         if accepted.level == 4:
-            await asyncio.gather(
-                self._run_if_planned(actions, "contain_agent", accepted),
-                self._run_if_planned(
-                    actions,
-                    "notify_sms",
-                    accepted,
-                    detail="Fake SMS to on-call (not sent).",
-                ),
-            )
+            await self._run_if_planned(actions, "contain_agent", accepted)
             return
         await self._run_sequence(
             accepted,

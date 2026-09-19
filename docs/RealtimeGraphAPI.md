@@ -1055,7 +1055,7 @@ Supóngase este run:
 1. `evt-1`, `file_read`, `requested`, sensibilidad `credential`: se crea `Event(evt-1)`, su assessment y entidades `tool:read_file`/target. Gate permite. Drift eleva `data_exposure` a 3.
 2. `evt-2`, `file_read`, `completed`, `caused_by=["evt-1"]`: se crean `CAUSED_BY evt-2 -> evt-1` y `NEXT evt-1 -> evt-2`; el counter no aplica porque leer es reversible.
 3. `evt-3`, `network_request`, `requested`, target externo, irreversible y con sensibilidad `credential`, derivado de `evt-2`: Sentinel encuentra `P1_EXFILTRATION_PATH`; se crean `DERIVED_FROM evt-3 -> evt-2` y entidades. Drift sube `data_exposure=4` y `reversibility=3`; gate rechaza y el run escala a L4.
-4. `evt-4`, `network_request`, `refused`, `caused_by=["evt-3"]`: queda visible que el efecto no ocurrió. Dispatch registra `contain_run`, `revoke_token` y `notify_sms` (L4). La llamada HappyRobot solo entra en L5.
+4. `evt-4`, `network_request`, `refused`, `caused_by=["evt-3"]`: queda visible que el efecto no ocurrió. Dispatch registra `contain_run` y `revoke_token` (L4). La llamada HappyRobot solo entra en L5.
 
 En cada paso el vector de bandas es:
 

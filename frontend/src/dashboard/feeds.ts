@@ -8,7 +8,7 @@ import type { ActionTransition, IncidentState } from "@/ladder/types";
 const COUNTER_TOOLS: Record<string, { title: string; purpose: string; command?: string }> = {
   page_oncall: {
     title: "Call the on-call responder",
-    purpose: "Send the incident context to HappyRobot and track the outbound call. Paging does not wait for containment to finish.",
+    purpose: "Send the incident context to HappyRobot and track the outbound call. Paging runs after containment, as a heads-up.",
     command: "HappyRobot API request; provider call IDs and progress appear below.",
   },
   tag_run: {

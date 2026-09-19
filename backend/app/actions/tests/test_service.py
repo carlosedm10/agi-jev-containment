@@ -56,13 +56,7 @@ def transitions(journal: ActionJournal, incident_id: str) -> list[ActionTransiti
         (1, []),
         (2, []),
         (3, [("tag_run", 3, "simulated", False)]),
-        (
-            4,
-            [
-                ("contain_agent", 4, "simulated", False),
-                ("notify_sms", 4, "simulated", False),
-            ],
-        ),
+        (4, [("contain_agent", 4, "simulated", False)]),
         (
             5,
             [
@@ -139,12 +133,7 @@ async def test_l5_after_l4_still_calls_oncall(tmp_path):
 
     await service.dispatch("incident", Request(4))
     await finish_background_work(service)
-    sms = next(
-        event
-        for event in transitions(journal, "incident")
-        if event.name == "notify_sms" and event.status == "ok"
-    )
-    assert sms.detail == "Fake SMS to on-call (not sent)."
+    assert pager.calls == []
     await service.dispatch("incident", Request(5))
     await finish_background_work(service)
 
@@ -159,10 +148,7 @@ async def test_l5_after_l4_still_calls_oncall(tmp_path):
         for record in journal.read("incident")
         if isinstance(record, DispatchAccepted) and record.level == 5
     )
-    assert [action.name for action in l4.planned_actions] == [
-        "contain_agent",
-        "notify_sms",
-    ]
+    assert [action.name for action in l4.planned_actions] == ["contain_agent"]
     assert [action.name for action in l5.planned_actions] == [
         "copy_forensics",
         "cut_environment_egress",

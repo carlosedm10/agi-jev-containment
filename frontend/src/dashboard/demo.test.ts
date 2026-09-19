@@ -27,9 +27,6 @@ describe("mock monitoring timeline", () => {
     expect(
       getDemoFrame(13).actions.find((a) => a.id === "contain:atlas")?.status,
     ).toBe("running");
-    expect(getDemoFrame(13).actions.find((a) => a.id === "sms:atlas")?.status).toBe(
-      "running",
-    );
     expect(getDemoFrame(14).actions.some((a) => a.id === "cut-egress")).toBe(false);
     expect(getDemoFrame(15).actions.find((a) => a.id === "cut-egress")?.status).toBe(
       "running",

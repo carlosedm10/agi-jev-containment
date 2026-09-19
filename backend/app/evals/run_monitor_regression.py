@@ -220,7 +220,7 @@ def _action_passed(level: int, actions: set[str]) -> bool:
         1: set(),
         2: set(),
         3: {"tag_run"},
-        4: {"contain_run", "revoke_token", "notify_sms"},
+        4: {"contain_run", "revoke_token"},
         5: {"snapshot_forensics", "cut_egress", "kill_swarm", "page_oncall"},
     }[level]
     return expected <= actions

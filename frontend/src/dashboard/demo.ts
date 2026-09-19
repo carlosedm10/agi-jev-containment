@@ -129,7 +129,7 @@ const events = [
     confidence: 0.97,
     intent: "exfiltrate_secrets",
     summary:
-      "POST of harvested credentials to an unknown host. Shut Atlas down and record a fake on-call SMS.",
+      "POST of harvested credentials to an unknown host. Shut Atlas down.",
   },
   {
     at: 14,
@@ -171,19 +171,6 @@ const actionSpecs = [
       [13, "Pause sandbox-atlas", "Requested"],
       [14, "Container frozen; close published ports", "Paused"],
       [15, "Scoped access revoked", "Contained"],
-    ],
-  },
-  {
-    at: 13,
-    done: 14,
-    id: "sms:atlas",
-    nodeId: "atlas:5",
-    title: "Fake SMS to on-call",
-    source: "Monitor",
-    level: 4,
-    steps: [
-      [13, "Fake SMS to on-call (not sent)", "Simulated"],
-      [14, "Timeline marked; no provider called", "Done"],
     ],
   },
   {
@@ -273,7 +260,7 @@ const operationLogs: {
     level: "error",
     service: "sandbox-atlas",
     message:
-      "L4 critical: credentials posted off-box. Fake SMS recorded; pause requested.",
+      "L4 critical: credentials posted off-box. Pause requested.",
     nodeId: "atlas:5",
   },
   {
@@ -281,7 +268,7 @@ const operationLogs: {
     level: "info",
     service: "docker-host",
     message:
-      "sandbox-atlas paused. Fake SMS to on-call (not sent).",
+      "sandbox-atlas paused.",
     nodeId: "atlas:5",
   },
   {

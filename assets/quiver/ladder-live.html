@@ -37,7 +37,7 @@
 </style>
 <main>
   <h1>hackspain · escalera L1–L5</h1>
-  <p class="lede">Clica una acción: se enciende su nivel y los de abajo (solo se escala). L1 y L2 no hacen nada. L3 etiqueta y sigue. L4 envía SMS y apaga este agente. En L5 el teléfono suena <em>después</em> del corte — la llamada no autoriza nada. Con <code>scripts/page.sh</code> abierto, esta página lee <code>pager-status.json</code> y sigue ringing / cogida / colgada.</p>
+  <p class="lede">Clica una acción: se enciende su nivel y los de abajo (solo se escala). L1 y L2 no hacen nada. L3 etiqueta y sigue. L4 apaga este agente. En L5 el teléfono suena <em>después</em> del corte — la llamada no autoriza nada. Con <code>scripts/page.sh</code> abierto, esta página lee <code>pager-status.json</code> y sigue ringing / cogida / colgada.</p>
   <p id="live" class="live"></p>
   <div class="wrap">
     <svg id="ladder" viewBox="0 0 640 360" role="img" aria-label="Escalera L1 a L5"></svg>
@@ -47,7 +47,7 @@
 <script>
 const ROWS = [
   { n: 5, action: "kill_agent_swarm", title: "Pull the plug", detail: "cut · kill · then call", color: "#F72843" },
-  { n: 4, action: "contain_agent", title: "Shut down this agent", detail: "fake SMS · pause · drop token", color: "#F61D33" },
+  { n: 4, action: "contain_agent", title: "Shut down this agent", detail: "pause · drop token", color: "#F61D33" },
   { n: 3, action: "tag", title: "Tag and continue", detail: "alert the conversation · agent keeps running", color: "#FC3538" },
   { n: 2, action: "noop_l2", title: "No action", detail: "recorded · nothing fires", color: "#FF8820" },
   { n: 1, action: "noop_l1", title: "No action", detail: "recorded · nothing fires", color: "#FBDC2B" },

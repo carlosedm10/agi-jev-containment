@@ -8,5 +8,5 @@ Tracked flaws that are knowingly left in place. Resolve an entry by fixing it, t
 
 ## Not built
 
-- The in-process `app.dispatch` dispatcher records idempotent L1–L5 kinds and executes demo-world counters for the lab at L4+. Host-side playbooks and the L5 HappyRobot call live in `app.actions.ActionService` after the deterministic gate; automatic Docker containment from the backend container remains separate because the API does not mount the Docker socket. L4 `notify_sms` is deliberately faked.
+- The in-process `app.dispatch` dispatcher records idempotent L1–L5 kinds and executes demo-world counters for the lab at L4+. Host-side playbooks and the L5 HappyRobot call live in `app.actions.ActionService` after the deterministic gate; automatic Docker containment from the backend container remains separate because the API does not mount the Docker socket.
 - [docs/Actions.md](docs/Actions.md) references containment scripts (`scripts/contain.sh`, `scripts/cut-egress.sh`, `scripts/kill-swarm.sh`) that exist in-repo but are not invoked automatically from the backend container.

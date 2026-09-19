@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 describe("ActionLadder", () => {
-  test("puts the ringing phone to the right of the live level", () => {
+  test("keeps the phone off the ladder below L5", () => {
     mount(
       <ActionLadder
         state={state({
@@ -43,9 +43,7 @@ describe("ActionLadder", () => {
       />,
     );
 
-    const call = container.querySelector(".rung-l4 .rung-call");
-    expect(call?.textContent).toContain("Ringing");
-    expect(container.querySelector(".rung-l5 .rung-call")).toBeNull();
+    expect(container.querySelector(".rung-call")).toBeNull();
   });
 
   test("opens the kill-switch on L5 with the animated plug", () => {

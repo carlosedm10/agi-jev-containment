@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1080" viewBox="0 0 1120 1080" role="img" aria-labelledby="title desc">
   <title id="title">Cinco niveles de criticidad</title>
-  <desc id="desc">L1 y L2 no hacen nada. L3 alerta y etiqueta la conversación, que sigue. L4 registra un SMS falso y apaga este agente. L5 corta el cable, desactiva el sistema y luego llama. L1 a L4 son un agente; L5 el entorno. Los niveles solo suben.</desc>
+  <desc id="desc">L1 y L2 no hacen nada. L3 alerta y etiqueta la conversación, que sigue. L4 apaga este agente. L5 corta el cable, desactiva el sistema y luego llama. L1 a L4 son un agente; L5 el entorno. Los niveles solo suben.</desc>
   <style>
     .k { font: 500 16px "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.22em; fill: #8D877B; }
     .ln { font: 700 22px "IBM Plex Sans", Inter, Helvetica, sans-serif; fill: #12110D; }
@@ -69,7 +69,7 @@
     </g>
     <text x="264" y="708">
       <tspan class="h">Apagar</tspan>
-      <tspan class="p" dx="28">SMS falso. Pausa este agente.</tspan>
+      <tspan class="p" dx="28">Pausa este agente.</tspan>
     </text>
   </g>
   <line x1="64" y1="784" x2="1056" y2="784" stroke="#E4E1DA" stroke-width="1"/>

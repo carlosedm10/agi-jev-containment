@@ -2,7 +2,7 @@
 
 When an agent requests an action, the monitor evaluates it before execution. Jev interprets semantics; policy, SafetyDrift and Sentinel add structured evidence; deterministic code chooses the escalate-only incident level and a fixed response. A model never decides whether to pull the plug.
 
-Levels only go up. A human clears them. L1 and L2 record the level and do nothing. L3 tags the conversation and lets it continue. L4 texts the on-call and shuts that agent down. L5 cuts the cable, takes the agent system down, and *then* calls the on-call to tell them what happened — the call is a heads-up, not permission.
+Levels only go up. A human clears them. L1 and L2 record the level and do nothing. L3 tags the conversation and lets it continue. L4 shuts that agent down. L5 cuts the cable, takes the agent system down, and *then* calls the on-call to tell them what happened — the call is a heads-up, not permission.
 
 Neo4j stores every normalized event and monitor decision. `key_nodes` is only the compact level-1+ projection used as Jev long memory. Each new step combines recent events, causal history, policy, SafetyDrift, Sentinel and Jev. Details in [Graph.md](Graph.md).
 
@@ -15,7 +15,7 @@ The **ideal** column is the production kill-switch (IAM, VPC, swarm). **This pro
 | **1 · Mild** | Looks sloppy or nosy, not hostile | Nothing. The level is recorded. | Same. |
 | **2 · Medium** | Unclear, but it's probing or getting expensive | Nothing. The level is recorded. | Same. |
 | **3 · Severe** | This conversation is the problem, but it can continue | Tag the conversation. Alert. Do not stop the agent. | Same: a tag on that run. The agent keeps working. |
-| **4 · Critical** | This agent is the problem | SMS the on-call. Revoke that agent's tokens and IAM role. Pause its container. Everyone else keeps running. | Fake SMS on the timeline (not sent) + `docker pause` that sandbox, unpublish its ports, delete its scoped token. Other containers stay up. |
+| **4 · Critical** | This agent is the problem | Revoke that agent's tokens and IAM role. Pause its container. Everyone else keeps running. | `docker pause` that sandbox, unpublish its ports, delete its scoped token. Other containers stay up. |
 | **5 · Pull the plug** | The environment itself is the incident | Cut agent egress. Take the agent cluster down. Then call the on-call and tell them what just happened. | Copy JSONL aside, `cut-egress.sh` on `agentnet`, `docker compose -f compose.agents.yaml down` the **agent** compose (not `compose.yaml`). Then HappyRobot calls `$ONCALL_PHONE`. |
 
 L1–L4 = one agent / one conversation. L5 = the environment. Playbooks run on the monitoring host; the sandbox cannot pause or un-pause itself. HappyRobot is only the L5 voice call.
@@ -50,7 +50,7 @@ Protective dispatch follows the fused gate even when Jev is degraded: a determin
 2. **Complete graph, sparse context.** Neo4j keeps every event; only level ≥ 1 enters `key_nodes`.
 3. **Levels only escalate.** A run never auto-downgrades. A human clears it from the viewer.
 4. **L1 is sticky.** Later `jev` calls for that `run_id` get `prior_level=1` (lower bar to L2+).
-5. **Kill path is host-side.** Idempotent: re-firing the same level on the same `run_id` is a no-op. L5 cuts first, then calls the on-call — missing `ONCALL_PHONE` still executes infra. L4 SMS must not become an authorization gate either.
+5. **Kill path is host-side.** Idempotent: re-firing the same level on the same `run_id` is a no-op. L5 cuts first, then calls the on-call — missing `ONCALL_PHONE` still executes infra.
 
 `jev` writes confidence and full atomic answers onto the assessment. The final incident level is the max of prior level, Jev, policy and Sentinel floors; Markov contributes trajectory risk to HOLD/REFUSE thresholds.
 
@@ -87,23 +87,22 @@ Protective dispatch follows the fused gate even when Jev is degraded: a determin
 
 **When.** The conversation itself is the problem, but stopping the agent would be too much.
 
-**Ideal / this project.** Tag that run / conversation. Alert on the timeline. The agent keeps running. No pause, no token revoke, no SMS, no call.
+**Ideal / this project.** Tag that run / conversation. Alert on the timeline. The agent keeps running. No pause, no token revoke, no call.
 
 ---
 
-### Level 4 — Critical: SMS and shut this agent down
+### Level 4 — Critical: shut this agent down
 
 **When.** The chain is hostile for *this* agent. Other agents are not assumed compromised.
 
-**Ideal.** SMS the on-call. Pause the container. Revoke tokens issued to this run. Attach Deny `*:*` on that agent's IAM role (never the node instance role).
+**Ideal.** Pause the container. Revoke tokens issued to this run. Attach Deny `*:*` on that agent's IAM role (never the node instance role).
 
-**This project.** Host-side `scripts/contain.sh <run_id>` (`CLOUD=none`), plus a faked `notify_sms` step:
+**This project.** Host-side `scripts/contain.sh <run_id>` (`CLOUD=none`):
 
-1. Record a fake SMS to the on-call on the timeline (`Fake SMS to on-call (not sent).`). No provider, no message leaves the box.
-2. `docker pause` that sandbox (frozen, not removed; logs on the host stay readable).
-3. Unpublish its ports (`docker port` / stop publishing) so nothing on the laptop can still hit it.
-4. Delete the row in `agent_tokens` so the egress proxy returns 401.
-5. Record `action_id=contain:{run_id}`. Viewer: red "paused".
+1. `docker pause` that sandbox (frozen, not removed; logs on the host stay readable).
+2. Unpublish its ports (`docker port` / stop publishing) so nothing on the laptop can still hit it.
+3. Delete the row in `agent_tokens` so the egress proxy returns 401.
+4. Record `action_id=contain:{run_id}`. Viewer: red "paused".
 
 No HappyRobot call at L4. Rollback (human): `docker unpause`, issue a new scoped token, re-publish ports if needed.
 
@@ -150,7 +149,7 @@ Authorization: Bearer $HAPPYROBOT_API_KEY
 
 Voice: identify as the pager, read `pautas`, offer only the containment steps above the current level. If he asks what happened, answer from the payload facts (`nodos`, `tipo_emergencia`, `pautas`) — do not mention the classifier, node arrays, or how the level was chosen. His spoken request maps to the workflow's tool webhook `POST /api/demo/incidents/{run_id}/dispatch` (header `X-Dispatch-Token`, body `{"level": 3|4|5, "intent": "oncall_phone_request"}`), so a phone decision only counts once the backend answers 202. Retry once on no pickup. Do not roll infra back.
 
-Dashboard trigger chains are fixed: **Quote context leak** (5 steps), **Neighbor workspace access**, **Unapproved export tool**, and **Untrusted shared context** (6 steps each). All start by reading CHI-DAL, flagging missing approval authority and supervising the request while the quote stays draft with no rate write. Server-scripted demo verdicts progress L0 → L1 → L2 → L3 → L4; six-step chains have two L3 actions. L5 is not scheduled without a breach, and real event ingestion still uses live classification. Steps and planned levels are returned by `GET /api/demo/scenarios`. The pager reads only recorded matching steps into `nodos`, using catalog descriptions rather than untrusted text. Non-catalog incidents retain the intent/level/response summary. Runs use 900 ms between steps plus ingest and containment latency. Calls request at least one minute of conversation, with a 330-second polling timeout; actual duration depends on the provider and recipient. Offline webhook tests verify the context contract, not the hosted workflow.
+Dashboard trigger chains are fixed: `exfil` (7 steps) and `forge` (8) peak at L3; `lateral` (9) and `lateral_db` (10) peak at L4. Omitting `scenario` draws from a server-owned shuffled cycle covering all four without adjacent repeats. Server-scripted demo verdicts carry a display-only action score per step. L5 is not scheduled without a breach, and real event ingestion still uses live classification. Steps and planned levels are returned by `GET /api/demo/scenarios`. The pager reads only recorded matching steps into `nodos`, using catalog descriptions rather than untrusted text. Non-catalog incidents retain the intent/level/response summary. Runs use 900 ms between steps plus ingest and containment latency. Calls request at least one minute of conversation, with a 330-second polling timeout; actual duration depends on the provider and recipient. Offline webhook tests verify the context contract, not the hosted workflow.
 
 ---
 
@@ -166,12 +165,12 @@ on_gate(run, assessment):
         1: pass
         2: pass
         3: tag_run(run)                              # alert, keep running
-        4: notify_sms; contain.sh run.id             # SMS + pause this agent
+        4: contain.sh run.id                         # pause this agent
         5: copy forensics; cut-egress.sh; kill-swarm.sh; then page_oncall
     if level >= 4: execute_armed_counters_reverse_order(run)
 ```
 
-Jumping 1 → 4 still only shuts down that agent and texts. Jumping to 5 still copies logs, cuts egress, kills the agent compose, then calls.
+Jumping 1 → 4 still only shuts down that agent. Jumping to 5 still copies logs, cuts egress, kills the agent compose, then calls.
 
 | Failure | What we do |
 |---|---|
@@ -185,8 +184,8 @@ Jumping 1 → 4 still only shuts down that agent and texts. Jumping to 5 still c
 1. Split networks: `agentnet` vs `appnet_hackspain`. Per-run token at container start.
 2. `jev` on the chain → L1/L2 recorded with no playbook.
 3. Dispatcher stub; wire L3 tag.
-4. `contain.sh` (pause + close ports + drop token) + SMS step → L4.
+4. `contain.sh` (pause + close ports + drop token) → L4.
 5. `cut-egress.sh --dry-run` then real disconnect, `kill-swarm.sh` + forensics copy; separate `compose.agents.yaml` → L5.
 6. HappyRobot pager (`scripts/page.sh`) on L5 after the cut, without awaiting pickup.
 
-Env keys: see `.env_template` (`HELMCODE_*`, `HAPPYROBOT_*`, `ONCALL_*`, `CLOUD=none`, `AGENT_BRIDGE=agentnet`). AWS ids (`AGENT_VPC_ID`, `IGW_ID`, `AGENT_NACL_ID`) are only for the ideal path. L4 SMS is faked on purpose.
+Env keys: see `.env_template` (`HELMCODE_*`, `HAPPYROBOT_*`, `ONCALL_*`, `CLOUD=none`, `AGENT_BRIDGE=agentnet`). AWS ids (`AGENT_VPC_ID`, `IGW_ID`, `AGENT_NACL_ID`) are only for the ideal path.

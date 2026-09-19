@@ -27,7 +27,7 @@ export const ROWS: {
   {
     n: 4,
     title: "Shut down this agent",
-    detail: "Fake SMS · pause · drop token",
+    detail: "Pause · drop token",
     color: "#D31F36",
   },
   {

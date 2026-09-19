@@ -122,7 +122,7 @@ def _playbook(level: Level) -> list[str]:
     if level == Level.SEVERE:
         return ["tag_run"]
     if level == Level.CRITICAL:
-        return ["contain_run", "revoke_token", "notify_sms"]
+        return ["contain_run", "revoke_token"]
     if level == Level.CATASTROPHIC:
         return ["snapshot_forensics", "cut_egress", "kill_swarm", "page_oncall"]
     return []
