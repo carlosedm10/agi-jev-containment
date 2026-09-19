@@ -152,8 +152,66 @@ describe("useGraphStream", () => {
 });
 
 describe("App", () => {
-  test("renders a mock dashboard without opening the backend stream", () => {
+  test("streams the shared graph and reuses upserted nodes", () => {
     mount(<App />);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.last.url).toBe(STREAM_URL);
+    expect(container.textContent).toContain("CONNECTING");
+    expect(
+      container.querySelector('[aria-label="Restart test run"]'),
+    ).toBeNull();
+
+    emit("snapshot", {
+      revision: 1,
+      root: "root",
+      nodes: [
+        node("root", ["run:r1"]),
+        { ...node("run:r1", ["root", "r1:1"]), run_id: "r1" },
+        {
+          ...node("r1:1", ["run:r1"]),
+          run_id: "r1",
+          level: 2,
+          threshold: 0.9,
+          event: { label: "Read file" },
+          created_at: "2026-01-01T00:00:01Z",
+        },
+      ],
+    });
+    expect(container.textContent).toContain("LIVE");
+    expect(
+      container.querySelector('.react-flow__node[data-id="r1:1"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Protective actions"]')
+        ?.textContent,
+    ).toContain("Read file");
+    expect(
+      container.querySelector('[aria-label="Container logs"]')?.textContent,
+    ).toContain("Read file");
+
+    emit("update", {
+      revision: 2,
+      root: "root",
+      upsert_nodes: [
+        {
+          ...node("r1:1", ["run:r1"]),
+          run_id: "r1",
+          level: 3,
+          threshold: 0.9,
+          event: { label: "Read file" },
+          created_at: "2026-01-01T00:00:01Z",
+        },
+      ],
+      removed_node_ids: [],
+    });
+    expect(
+      container.querySelectorAll('.react-flow__node[data-id="r1:1"]'),
+    ).toHaveLength(1);
+    expect(container.textContent).toContain("L3");
+  });
+
+  test("renders a mock dashboard without opening the backend stream", () => {
+    mount(<App demo />);
     expect(FakeEventSource.instances).toHaveLength(0);
     expect(container.textContent).toContain("Agent activity");
     expect(container.textContent).toContain("Protective actions");
@@ -212,7 +270,7 @@ describe("App", () => {
   });
 
   test("restarts the test run and clears old activity and selection", () => {
-    mount(<App />);
+    mount(<App demo />);
     act(() =>
       container
         .querySelector<HTMLDivElement>('.react-flow__node[data-id="atlas:3"]')!
