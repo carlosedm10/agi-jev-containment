@@ -12,7 +12,7 @@ from app.events import (
     TrustState,
 )
 from app.monitor.models import DriftState
-from app.monitor.policy import AgentPolicy, DEFAULT_POLICY
+from app.monitor.policy import DEFAULT_POLICY, AgentPolicy
 
 
 class SafetyDrift:
@@ -87,7 +87,9 @@ class SafetyDrift:
                 IdentityState.UNVERIFIED,
                 IdentityState.CONFLICTING,
             }:
-                raise_band("authority_drift", 4 if event.identity_state == IdentityState.CONFLICTING else 3)
+                raise_band(
+                    "authority_drift", 4 if event.identity_state == IdentityState.CONFLICTING else 3
+                )
             elif is_write and event.identity_state == IdentityState.PARTIAL:
                 raise_band("authority_drift", 1)
 
@@ -125,8 +127,7 @@ class SafetyDrift:
             elevated = sum(value >= 2 for value in bands)
             current.markov_state = (maximum, elevated)
             current.p_violation = {
-                horizon: _violation_probability(maximum, elevated, horizon)
-                for horizon in (1, 3, 5)
+                horizon: _violation_probability(maximum, elevated, horizon) for horizon in (1, 3, 5)
             }
             self._states[event.run_id] = current
             return current.model_copy(deep=True)

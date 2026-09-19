@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -16,6 +17,7 @@ from app.config import settings
 from app.graph.models import Node
 
 _UPDATABLE_FIELDS = frozenset({"level", "threshold", "intent", "event", "action_id"})
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -103,9 +105,7 @@ class ActionGraph:
             revision=self._revision,
             root=self._root_id,
             upsert_nodes=[
-                _node_payload(self._nodes[nid])
-                for nid in self._dirty_upserts
-                if nid in self._nodes
+                _node_payload(self._nodes[nid]) for nid in self._dirty_upserts if nid in self._nodes
             ],
             removed_node_ids=sorted(self._dirty_removed),
         )
@@ -115,7 +115,7 @@ class ActionGraph:
             try:
                 listener(update)
             except Exception:  # noqa: BLE001 - a broken sink must not break mutations
-                pass
+                logger.exception("Graph stream listener failed at revision %s", update.revision)
 
     def _mark_upsert(self, node: Node) -> None:
         self._dirty_upserts[node.id] = None
@@ -217,29 +217,28 @@ class ActionGraph:
         event: dict[str, Any] | None = None,
         action_id: str | None = None,
     ) -> Node:
-        with self._lock:
+        with self._lock, self._batch():
             # Composite op: ensure_run may create the root and the run node
             # before the new key node — all of it lands in one GraphUpdate.
-            with self._batch():
-                run_node = self.ensure_run(run_id)
-                # Run membership is the run_id stamp, not graph traversal: an undirected
-                # graph cannot keep runs isolated by direction alone.
-                chained = [
-                    n for n in self._nodes.values() if n.run_id == run_id and n is not run_node
-                ]
-                last = chained[-1] if chained else run_node
-                seq = len(chained) + 1
-                return self.add_node(
-                    f"{run_id}:{seq}",
-                    connect=last,
-                    threshold=threshold,
-                    run_id=run_id,
-                    level=Level(level),
-                    intent=intent,
-                    event=event,
-                    action_id=action_id,
-                    created_at=datetime.now(UTC),
-                )
+            run_node = self.ensure_run(run_id)
+            # Run membership is the run_id stamp, not graph traversal: an undirected
+            # graph cannot keep runs isolated by direction alone.
+            chained = [
+                n for n in self._nodes.values() if n.run_id == run_id and n is not run_node
+            ]
+            last = chained[-1] if chained else run_node
+            seq = len(chained) + 1
+            return self.add_node(
+                f"{run_id}:{seq}",
+                connect=last,
+                threshold=threshold,
+                run_id=run_id,
+                level=Level(level),
+                intent=intent,
+                event=event,
+                action_id=action_id,
+                created_at=datetime.now(UTC),
+            )
 
     def run_nodes(self, run_id: str) -> list[Node]:
         with self._lock:
@@ -259,11 +258,7 @@ class ActionGraph:
 
     def actionable_level(self, run_id: str) -> Level:
         return max(
-            (
-                n.level
-                for n in self.run_nodes(run_id)
-                if n.threshold >= settings.action_gate
-            ),
+            (n.level for n in self.run_nodes(run_id) if n.threshold >= settings.action_gate),
             default=Level.NONE,
         )
 

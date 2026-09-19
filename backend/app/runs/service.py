@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
 import logging
+from typing import Any
 
 import httpx
 
 from app.classification import pipeline
 from app.dispatch import dispatcher
-from app.classification.models import Level
 from app.events import EventPhase, normalize_event, redact_event
 from app.graph import graph
 from app.graph.neo4j import neo4j_graph
@@ -70,7 +69,7 @@ async def ingest(
     graph_persisted = True
     try:
         await neo4j_graph.persist(normalized, assessment)
-    except Exception:  # noqa: BLE001
+    except Exception:
         graph_persisted = False
         logger.exception("Neo4j persistence failed for event %s", normalized.id)
 

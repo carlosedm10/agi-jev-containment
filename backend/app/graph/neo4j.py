@@ -263,9 +263,7 @@ class Neo4jGraphStore:
             for edge in unique_edges:
                 role = (edge.get("properties") or {}).get("role")
                 suffix = f":{role}" if role else ""
-                edge["id"] = (
-                    f"{edge['type']}:{edge['source']}:{edge['target']}{suffix}"
-                )
+                edge["id"] = f"{edge['type']}:{edge['source']}:{edge['target']}{suffix}"
             return {"nodes": _dedupe(nodes, "id"), "edges": unique_edges}
 
     async def persist_stream(self, envelopes: list[dict[str, Any]]) -> None:
@@ -301,9 +299,7 @@ class Neo4jGraphStore:
         async with self._get_driver().session(database=settings.neo4j_database) as session:
             await session.run(query, messages=messages)
 
-    async def stream_after(
-        self, run_id: str, cursor: str | None = None
-    ) -> list[dict[str, Any]]:
+    async def stream_after(self, run_id: str, cursor: str | None = None) -> list[dict[str, Any]]:
         if not self.enabled:
             return []
         boundary = """

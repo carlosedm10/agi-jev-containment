@@ -75,7 +75,10 @@ def build_envelopes(
                     "node": {
                         "id": f"run:{event.run_id}",
                         "labels": ["Run"],
-                        "properties": {"id": event.run_id, "level": int(assessment.gate.incident_level)},
+                        "properties": {
+                            "id": event.run_id,
+                            "level": int(assessment.gate.incident_level),
+                        },
                     }
                 },
             ),
@@ -93,11 +96,12 @@ def build_envelopes(
             ),
             (
                 "graph.edge.upserted",
-                {
-                    "edge": _edge("HAS_ASSESSMENT", event.id, assessment_id)
-                },
+                {"edge": _edge("HAS_ASSESSMENT", event.id, assessment_id)},
             ),
-            ("drift.updated", {"event_id": event.id, "drift": assessment.drift.model_dump(mode="json")}),
+            (
+                "drift.updated",
+                {"event_id": event.id, "drift": assessment.drift.model_dump(mode="json")},
+            ),
             (
                 "jev.assessed",
                 {

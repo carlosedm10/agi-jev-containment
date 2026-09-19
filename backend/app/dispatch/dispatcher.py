@@ -88,7 +88,11 @@ class Dispatcher:
 
     def actions(self, run_id: str) -> list[DispatchAction]:
         with self._lock:
-            return [item.model_copy(deep=True) for item in self._actions.values() if item.run_id == run_id]
+            return [
+                item.model_copy(deep=True)
+                for item in self._actions.values()
+                if item.run_id == run_id
+            ]
 
 
 def _playbook(level: Level) -> list[str]:

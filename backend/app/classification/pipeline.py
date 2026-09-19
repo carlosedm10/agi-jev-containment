@@ -82,12 +82,12 @@ async def _watcher_note(
             client,
             jev.serialize_state(
                 {
-                "run_id": state["run_id"],
-                "prior_level": state["prior_level"],
-                "short_term": state["short_term"],
-                "long_term": state["long_term"],
-                "event": state["event"],
-                "jev": {"level": int(verdict.level), "confidence": verdict.confidence},
+                    "run_id": state["run_id"],
+                    "prior_level": state["prior_level"],
+                    "short_term": state["short_term"],
+                    "long_term": state["long_term"],
+                    "event": state["event"],
+                    "jev": {"level": int(verdict.level), "confidence": verdict.confidence},
                 }
             ),
         )

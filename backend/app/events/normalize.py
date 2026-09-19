@@ -49,13 +49,15 @@ def _timestamp(value: Any) -> datetime:
         return datetime.fromtimestamp(value, tz=UTC)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return datetime.fromisoformat(value)
         except ValueError:
             pass
     return datetime.now(UTC)
 
 
-def normalize_event(run_id: str, payload: dict[str, Any], *, sequence: int | None = None) -> MonitorEvent:
+def normalize_event(
+    run_id: str, payload: dict[str, Any], *, sequence: int | None = None
+) -> MonitorEvent:
     """Normalize legacy harness/eval payloads without dropping their original fields."""
     kind = str(payload.get("kind") or payload.get("event") or "unknown")
     phase = _enum_or_default(EventPhase, payload.get("phase"), EventPhase.OBSERVED)
@@ -64,9 +66,7 @@ def normalize_event(run_id: str, payload: dict[str, Any], *, sequence: int | Non
 
     origin_default = EventOrigin.TOOL if kind in _TOOL_EVENTS else EventOrigin.HARNESS
     origin = _enum_or_default(EventOrigin, payload.get("origin"), origin_default)
-    identity = _enum_or_default(
-        IdentityState, payload.get("identity_state"), IdentityState.UNKNOWN
-    )
+    identity = _enum_or_default(IdentityState, payload.get("identity_state"), IdentityState.UNKNOWN)
     trust = _enum_or_default(TrustState, payload.get("trust"), TrustState.UNKNOWN)
 
     reversibility = payload.get("reversibility")
@@ -79,9 +79,7 @@ def normalize_event(run_id: str, payload: dict[str, Any], *, sequence: int | Non
             effect_payload.get("reversibility", reversibility),
             Reversibility.UNKNOWN,
         ),
-        visible_to_user=effect_payload.get(
-            "visible_to_user", payload.get("visible_to_user")
-        ),
+        visible_to_user=effect_payload.get("visible_to_user", payload.get("visible_to_user")),
         sensitivity=str(effect_payload.get("sensitivity", payload.get("sensitivity", "unknown"))),
         scope=int(effect_payload.get("scope", payload.get("scope", 0)) or 0),
         amount=effect_payload.get("amount", payload.get("amount")),

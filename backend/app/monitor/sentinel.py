@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from app.events import IdentityState, MonitorEvent, TrustState
 from app.monitor.models import SentinelFinding
-from app.monitor.policy import AgentPolicy, DEFAULT_POLICY
+from app.monitor.policy import DEFAULT_POLICY, AgentPolicy
 
 
 def inspect(

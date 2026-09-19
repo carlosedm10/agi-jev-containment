@@ -41,9 +41,7 @@ class TestManagerSubscription:
 
     async def test_snapshot_captures_existing_graph(self, g: ActionGraph):
         root = g.add_node("root", tool=object())
-        node = g.add_node(
-            "run:r1:1", connect=root, run_id="r1", event={"event": "file_read"}
-        )
+        g.add_node("run:r1:1", connect=root, run_id="r1", event={"event": "file_read"})
         collector = Collector()
         snapshot = g.subscribe(collector)
 
@@ -60,11 +58,11 @@ class TestManagerSubscription:
     async def test_updates_are_ordered_and_gapless(self, g: ActionGraph):
         collector = Collector()
         g.subscribe(collector)
-        root = g.add_node("root")                          # 1
-        left = g.add_node("left", connect=root)            # 2
-        right = g.add_node("right", connect=root)          # 3
-        g.connect(left, right)                             # 4
-        g.update("left", intent="recon")                    # 5
+        root = g.add_node("root")  # 1
+        left = g.add_node("left", connect=root)  # 2
+        right = g.add_node("right", connect=root)  # 3
+        g.connect(left, right)  # 4
+        g.update("left", intent="recon")  # 5
 
         revisions = [u.revision for u in collector.updates]
         assert revisions == [1, 2, 3, 4, 5]
@@ -267,9 +265,10 @@ class TestStreamEndpoint:
             assert data == {"revision": fresh_graph.revision, "root": None, "nodes": []}
 
     async def test_multiple_clients_each_get_updates(self, client, fresh_graph: ActionGraph):
-        async with client.stream("GET", "/api/graph/stream") as first, client.stream(
-            "GET", "/api/graph/stream"
-        ) as second:
+        async with (
+            client.stream("GET", "/api/graph/stream") as first,
+            client.stream("GET", "/api/graph/stream") as second,
+        ):
             await _read_event(first.aiter_lines())
             await _read_event(second.aiter_lines())
             base = fresh_graph.revision

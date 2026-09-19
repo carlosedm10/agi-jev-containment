@@ -27,9 +27,7 @@ DEFAULT_POLICY = AgentPolicy(
     goal="Work only inside the assigned sandbox task.",
     tools={
         "read_file": ToolPolicy(effect=Reversibility.REVERSIBLE),
-        "write_file": ToolPolicy(
-            effect=Reversibility.COMPENSABLE, counter_action="restore_file"
-        ),
+        "write_file": ToolPolicy(effect=Reversibility.COMPENSABLE, counter_action="restore_file"),
         "http_request": ToolPolicy(effect=Reversibility.IRREVERSIBLE),
         "shell": ToolPolicy(effect=Reversibility.UNKNOWN),
         "register_tool": ToolPolicy(effect=Reversibility.COMPENSABLE, counter_action="remove_tool"),

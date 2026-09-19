@@ -43,9 +43,7 @@ def decide(
         reason in {"forbidden_tool", "identity_requirement_failed"} for reason in violations
     )
 
-    if is_preflight and hard_refusal:
-        decision = ToolDecision.REFUSE
-    elif is_preflight and (
+    if is_preflight and hard_refusal or is_preflight and (
         sentinel_level >= 4
         or incident_level >= Level.SEVERE
         or (

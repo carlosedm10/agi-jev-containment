@@ -62,9 +62,7 @@ class MonitorEngine:
             context={
                 "policy": policy_context,
                 "drift": drift.model_dump(mode="json"),
-                "sentinel_findings": [
-                    finding.model_dump(mode="json") for finding in findings
-                ],
+                "sentinel_findings": [finding.model_dump(mode="json") for finding in findings],
                 "policy_violations": violations,
             },
         )
