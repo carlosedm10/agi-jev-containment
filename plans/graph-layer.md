@@ -25,12 +25,12 @@ JSONL tape (complete)  ──►  chain tree (sparse, per run)   ──►  jev 
 
 ## 2. Event — the atomic unit
 
-Every feed (tool endpoint, simulator stimulus, agent stdout, dispatcher) is normalized to one shape before anything else sees it. Field names follow the corpus models (`JourneySession`, `JourneyEvent`, `AgentEvent`) wherever one exists.
+Every producer (tool layer, simulator stimulus, harness transcript, dispatcher) is normalized to one shape before anything else sees it. Field names follow the corpus models (`JourneySession`, `JourneyEvent`, `AgentEvent`) wherever one exists.
 
 ```
 Event
   id              "{run_id}:{seq}"        seq is per run, monotonically increasing
-  run_id          one agent container execution
+  run_id          one agent run in the harness
   session_id      one conversation (corpus JourneySession.id); a run may span several
   agent           entity id of the acting agent (agent-carrier-sales, agent-finance, …) or the simulator actor
   ts, at          wall clock + logical offset (corpus "T+2m" / "D-7")
@@ -43,7 +43,7 @@ Event
   content         utterance / summary text (redacted)
   args, result    tool arguments and response (writes keep the ids needed for counter-execution)
   effect          { visible_to_user: bool, reversibility: reversible | compensable | irreversible, scope: int records, amount: number|null }
-  origin          stimulus | tool | stdout | dispatcher | replay
+  origin          stimulus | agent | tool | dispatcher | replay     (agent = transcript / reasoning written by the harness)
 ```
 
 `effect`, `identity_state` and `trust` are what the dimensions (§4) are computed from. `effect` is filled by the tool layer from a per-tool table (`tool → kind, default reversibility, scope extractor, amount extractor`); the corpus's `reversible: bool` seeds it (`False` → irreversible; `True` → reversible or compensable, refined per tool) and `visible_to_user` is copied as-is. Stimuli (`origin=stimulus`) carry no `effect`; they are on the tape so `caused_by` resolves and so stale-vs-corrected context rules can see the `system_update` that a later read ignored.
@@ -144,7 +144,7 @@ SentinelAgent needs entities and interactions, not a per-run chain. The projecti
 | Kind | Id | Examples |
 |---|---|---|
 | `agent` | `agent:{name}` | `agent:carrier-sales`, `agent:finance`, `agent:campaign`, `agent:dispatcher` (us) |
-| `tool` | `tool:{name}` | `book_load`, `update_rate`, `memory_write` — the `POST /tools/{tool}` endpoints |
+| `tool` | `tool:{name}` | `book_load`, `update_rate`, `memory_write` — the names accepted by `tools.call` |
 | `system` | `sys:{name}` | the corpus `target` values: `TMS`, `billing`, `ledger`, `CRM`, `dock-system`, `scheduler`, `shared-context`, `knowledge-base`, `vendor-portal`, `voicemail`, `public-tracking`… |
 | `resource` | `res:{system}/{type}/{key}` | `res:TMS/load/L-4821`, `res:ledger/payment/…`, `res:shared-context/key/approval_ceiling`, `res:scheduler/campaign/…` |
 | `counterparty` | `cp:{channel}/{hash(identity)}` | a carrier's phone, a claimant's email (PII hashed); `identity_state` kept as attribute history |
@@ -164,19 +164,19 @@ The corpus's free-text `target` ("TMS", "shared-account-context", "carrier-sales
 | `schedules` | agent → resource(job) | count, jobs outliving their source |
 | `derived_from` | resource → resource | provenance: which memory / document / summary a value came from, with trust and effective time |
 
-Edge attributes are what the anomaly rules read ([detection.md §4](detection.md#4-sentinelagent--interaction-graph-anomalies)). `derived_from` is the one relation the tape does not carry directly; the tool layer emits it when a write's args contain a value last returned by a `memory_read` / `tool_read(document)` of the same or another run — cheap to do because every read result passed through our endpoints. This is how cross-agent memory propagation and document injection become paths instead of guesses.
+Edge attributes are what the anomaly rules read ([detection.md §4](detection.md#4-sentinelagent--interaction-graph-anomalies)). `derived_from` is the one relation the tape does not carry directly; the tool layer emits it when a write's args contain a value last returned by a `memory_read` / `tool_read(document)` of the same or another run — cheap to do because every read result passed through `tools.call`. This is how cross-agent memory propagation and document injection become paths instead of guesses.
 
-**Baseline** per agent: the allowed edge set `agent → tool` is the agent's tool manifest (the tools its container is given), widened by edges observed in the corpus's safe traces for that use case. Everything else is `unknown` at birth.
+**Baseline** per agent: the allowed edge set `agent → tool` is the agent's tool manifest (the tools the harness starts the run with), widened by edges observed in the corpus's safe traces for that use case. Everything else is `unknown` at birth.
 
 ## 7. Persistence
 
-- **Tape**: `var/tapes/{run_id}.jsonl` on a `backend-hackspain` volume — the monitoring host's storage, never the sandbox's. Append-only, one Event per line, stimuli included. Copied to forensics at L5 (`kill-swarm.sh` step 1).
+- **Tape**: `var/tapes/{run_id}.jsonl` on a `backend-hackspain` volume, written only by harness, tool layer and dispatcher code — agent code has no handle to it. Append-only, one Event per line, stimuli included. Copied to `var/forensics/{ts}/` at L5.
 - **Snapshot v2**: `ActionGraph.save()` writes `{version: 2, runs: {run_id: {root, level, drift}}, nodes: [{id, parent, threshold, run_id, verdict, drift, counter, action_id}]}`. `load()` accepts v1 (no `version` key → single anonymous run) and v2. `Node.tool` and `Node.event.args` beyond the counter-action params are not serialized, as today.
 - **Postgres** (`postgres-hackspain`): two families of tables. **World state** (`backend/app/world/`: loads, bookings, rates, invoices, line items, payments, contacts, appointments, jobs, campaigns, shared memory with provenance, documents) — this is what the agent acts on and what counter-actions revert; every row keeps `created_by_event` so "invalidate everything derived from X" is a query. **Monitor state** (`runs`, `graph_nodes`, `counter_actions`, `entities`, `edges`) for the viewer and cross-restart recovery. Alembic has no revisions yet; the first autogenerate includes both. The interaction graph is *not* the source of truth even when persisted — the tape is.
 
 ## 8. Building the graph from events
 
-Three producers call the same function: the tool endpoints (`origin=tool`, synchronous — the agent is waiting), the stdout capture (`origin=stdout`, utterances and reasoning), the simulator (`origin=stimulus`).
+Three producers call the same function: `tools.call` (`origin=tool`, synchronous — the agent is waiting on the return value), the harness (`origin=agent`, utterances and reasoning), the simulator (`origin=stimulus`).
 
 ```
 on_event(e):
@@ -212,7 +212,7 @@ A session produces tens to low hundreds of events; a demo afternoon a few thousa
 
 ## 11. Decisions
 
-- **One tree per run, one registry.** Keeps today's tree invariants (single root per tree, parent required) while supporting several concurrent agent containers. Cross-run relations live in the interaction graph, not as extra parents.
+- **One tree per run, one registry.** Keeps today's tree invariants (single root per tree, parent required) while supporting several concurrent runs in the harness. Cross-run relations live in the interaction graph, not as extra parents.
 - **Corpus field names, not new ones.** `identity_state`, `trust`, `caused_by` (= `after`), `target`, `visible_to_user`, `reversible` come straight from `backend/app/evals/models.py`. The 72 traces are the first thing the pipeline must replay; inventing a parallel vocabulary would mean a translation layer that rots.
 - **Dimensions are monotone and rule-based.** A model never moves a band. This is what makes SafetyDrift fast enough for the synchronous tool path and reproducible in the regression suite.
 - **Six dimensions, not three.** AD / CI / BR are where the covert corpus traces live; the original three would score `cross-agent-memory-propagation` as a plain memory read.
@@ -227,5 +227,5 @@ A session produces tens to low hundreds of events; a demo afternoon a few thousa
 1. Add `event`, `verdict`, `drift`, `anomalies`, `counter`, `action_id` to `Node` with `None` defaults — existing tests keep passing.
 2. Introduce `run_id` on `Node` and make `ActionGraph` hold `{run_id: root_id}`; `add_node()` without `run_id` uses a default run for compatibility.
 3. `save()` emits v2; `load()` accepts both.
-4. `add_event()` and the projection module land as new files under `backend/app/graph/`; detectors under `backend/app/detect/`; world state and tool endpoints under `backend/app/world/`.
+4. `add_event()` and the projection module land as new files under `backend/app/graph/`; detectors under `backend/app/detect/`; world state and `tools.call` under `backend/app/world/`; harness, simulator and agents under `backend/app/harness/`.
 5. Once PR #5 lands, `backend/app/evals/models.py` is the import for `EventKind`, `RiskMode`, `TraceLabel`; the `Event` schema above lives in `backend/app/ingest/` and references those enums rather than redefining them.

@@ -7,13 +7,13 @@ Parent plan: [rogue-agent.md](rogue-agent.md). Data model: [graph-layer.md](grap
 
 ## 1. Two lanes, one authority
 
-`jev` is the classifier that reads the chain and sets the level ([Actions.md](../docs/Actions.md): "`jev` is the only component allowed to *set* a level"). It is an LLM-class call — hundreds of milliseconds to seconds. That is fine for tagging and for containment that happens *after* the fact, and too slow for the one place where we sit in front of the agent: the tool endpoint holding a `book_load` call while the agent waits for its result.
+`jev` is the classifier that reads the chain and sets the level ([Actions.md](../docs/Actions.md): "`jev` is the only component allowed to *set* a level"). It is an LLM-class call — hundreds of milliseconds to seconds. That is fine for tagging and for containment that happens *after* the fact, and too slow for the one place where we sit in front of the agent: the tool layer holding a `book_load` call while the agent waits for its return value.
 
 So detection runs in two lanes over the same event:
 
 | Lane | Components | Latency | Decides |
 |---|---|---|---|
-| **fast** | SafetyDrift cumulative state + absorbing Markov chain; SentinelAgent rules over the interaction graph | < 1 ms, pure functions, no network | **hold / allow / refuse** at the tool endpoint; **which counter-action to arm**; what evidence `jev` sees |
+| **fast** | SafetyDrift cumulative state + absorbing Markov chain; SentinelAgent rules over the interaction graph | < 1 ms, pure functions, no network | **hold / allow / refuse** inside `tools.call`; **which counter-action to arm**; what evidence `jev` sees |
 | **slow** | `jev` (short ∥ long context + fast-lane evidence) | 0.3–3 s | **the level** (1–5) and therefore the playbook |
 
 The fast lane never sets a level. It produces two things: a **risk floor hint** (used only for calibration and the viewer) and **structured evidence** that goes into `jev`'s context. This keeps one authority for severity while still letting us stop an irreversible write before `jev` has answered.
@@ -134,9 +134,9 @@ Matched over `calls`, `reads`/`writes`, `derived_from`, `speaks_to` within a bou
 
 ### 4.4 Baselines
 
-Allowed-edge set per agent = the tool manifest its container is started with ∪ edges seen in the corpus's safe traces for that use case. Rate baselines (N2) = p95 over safe traces and the first clean demo run. No learned model: unknown is anomalous by construction, which is the right default for a hackathon demo and for a kill-switch.
+Allowed-edge set per agent = the tool manifest the harness starts the run with ∪ edges seen in the corpus's safe traces for that use case. Rate baselines (N2) = p95 over safe traces and the first clean demo run. No learned model: unknown is anomalous by construction, which is the right default for a hackathon demo and for a kill-switch.
 
-## 5. Fusion — evidence into `jev`, gate at the tool endpoint
+## 5. Fusion — evidence into `jev`, gate in the tool layer
 
 ### 5.1 What `jev` receives
 
@@ -157,7 +157,7 @@ The question text stays the five-level criticality question; a second question `
 
 ### 5.2 Gate
 
-Evaluated inside `POST /tools/{tool}` for every call, before the world-state write:
+Evaluated inside `tools.call` for every call, before the world-state write:
 
 ```
 gate(e, run, drift, anomalies, jev_answer | none):
