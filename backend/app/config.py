@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     oncall_phone: str = ""
     oncall_name: str = ""
     happyrobot_poll_interval: PositiveFloat = 1.5
-    happyrobot_poll_timeout: PositiveFloat = 180
+    happyrobot_poll_timeout: PositiveFloat = 240
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

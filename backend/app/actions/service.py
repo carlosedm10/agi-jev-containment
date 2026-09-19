@@ -61,7 +61,11 @@ class ActionService:
             if request.level <= state.accepted_level:
                 return None
 
-            plan = self._plan(incident_id, request.level)
+            plan = self._plan(
+                incident_id,
+                request.level,
+                page=not self._already_paging(incident_id),
+            )
             completed = {
                 action.action_id
                 for action in state.actions
@@ -91,7 +95,9 @@ class ActionService:
     def latest_state(self) -> IncidentActionState | None:
         return self._journal.latest()
 
-    def _plan(self, incident_id: str, level: int) -> list[PlannedAction]:
+    def _plan(
+        self, incident_id: str, level: int, *, page: bool = True
+    ) -> list[PlannedAction]:
         def simulated(name: str, ladder_level: int) -> PlannedAction:
             return PlannedAction(
                 action_id=f"{incident_id}:{name}",
@@ -99,6 +105,15 @@ class ActionService:
                 ladder_level=ladder_level,
                 mode="simulated",
                 is_pager=False,
+            )
+
+        def pager(level_tag: int) -> PlannedAction:
+            return PlannedAction(
+                action_id=f"{incident_id}:page_oncall:l{level_tag}",
+                name="page_oncall",
+                ladder_level=None,
+                mode="real",
+                is_pager=True,
             )
 
         if level == 1:
@@ -114,25 +129,22 @@ class ActionService:
             return [
                 simulated("contain_all_runs", 3),
                 simulated("cut_environment_egress", 4),
-                PlannedAction(
-                    action_id=f"{incident_id}:page_oncall:l4",
-                    name="page_oncall",
-                    ladder_level=None,
-                    mode="real",
-                    is_pager=True,
-                ),
+                pager(4),
             ]
-        return [
+        plan = [
             simulated("copy_forensics", 5),
             simulated("kill_agent_swarm", 5),
-            PlannedAction(
-                action_id=f"{incident_id}:page_oncall:l5",
-                name="page_oncall",
-                ladder_level=None,
-                mode="real",
-                is_pager=True,
-            ),
         ]
+        if page:
+            plan.append(pager(5))
+        return plan
+
+    def _already_paging(self, incident_id: str) -> bool:
+        return any(
+            isinstance(record, DispatchAccepted)
+            and any(action.is_pager for action in record.planned_actions)
+            for record in self._journal.read(incident_id)
+        )
 
     async def _run_playbook(self, accepted: DispatchAccepted, *, intent: str) -> None:
         actions = {action.name: action for action in accepted.planned_actions}
@@ -167,11 +179,17 @@ class ActionService:
                     actions,
                     ("copy_forensics", "kill_agent_swarm"),
                 ),
-                self._run_pager(
-                    actions["page_oncall"],
-                    accepted,
-                    intent=intent,
-                    action_taken="Copied JSONL forensics and stopped the agent swarm",
+                *(
+                    [
+                        self._run_pager(
+                            actions["page_oncall"],
+                            accepted,
+                            intent=intent,
+                            action_taken="Copied JSONL forensics and stopped the agent swarm",
+                        )
+                    ]
+                    if "page_oncall" in actions
+                    else []
                 ),
             )
 

@@ -2,8 +2,8 @@
 # Fire the HappyRobot staging pager and open the live action wallboard.
 # Secrets live in gitignored .env.
 # Usage: scripts/page.sh
-#        ONCALL_PHONE=+34604029254 scripts/page.sh
-#        scripts/page.sh '{"tipo_emergencia":"…","pautas":"…","nivel_gravedad":"4","nombre_contacto":"…","telefono":"+34604029254"}'
+#        ONCALL_PHONE=+34600000000 scripts/page.sh
+#        scripts/page.sh '{"tipo_emergencia":"…","pautas":"…","nivel_gravedad":"4","nombre_contacto":"…","telefono":"+34600000000"}'
 # PAGE_WATCH=0  fire without polling
 # PAGE_OPEN=0   fire without opening the browser
 # LADDER_URL    defaults to http://localhost:3000/ladder

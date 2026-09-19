@@ -138,7 +138,36 @@ async def test_l3_cancels_running_supervision_before_containment(tmp_path):
     assert service.get_state("incident").rows[2] == "canceled"
 
 
-async def test_l5_copies_forensics_before_killing_swarm(tmp_path):
+async def test_l5_after_l4_does_not_page_again(tmp_path):
+    journal = ActionJournal(tmp_path)
+    pager = FakePager()
+    service = ActionService(journal, pager, simulation_delay=0)
+
+    await service.dispatch("incident", Request(4))
+    await finish_background_work(service)
+    await service.dispatch("incident", Request(5))
+    await finish_background_work(service)
+
+    assert [call[0] for call in pager.calls] == [4]
+    l5 = next(
+        record
+        for record in journal.read("incident")
+        if isinstance(record, DispatchAccepted) and record.level == 5
+    )
+    assert [action.name for action in l5.planned_actions] == [
+        "copy_forensics",
+        "kill_agent_swarm",
+    ]
+
+
+async def test_direct_l5_pages_once(tmp_path):
+    pager = FakePager()
+    service = ActionService(ActionJournal(tmp_path), pager, simulation_delay=0)
+
+    await service.dispatch("incident", Request(5))
+    await finish_background_work(service)
+
+    assert [call[0] for call in pager.calls] == [5]
     journal = ActionJournal(tmp_path)
     service = ActionService(journal, FakePager(), simulation_delay=0)
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ActionLadder } from "./ActionLadder";
+import { ACTION_STATUS_LABEL } from "./copy";
 import { toLadderState } from "./state";
 import type { IncidentState } from "./types";
 import { actionModeLabel, newestActions } from "./wallboard";
@@ -83,13 +84,17 @@ export function LadderPage() {
     [incident],
   );
 
+  const kill = ladderState?.level === 5;
+
   return (
-    <div className="ladder-page">
+    <div className={`ladder-page ${kill ? "is-kill" : ""}`}>
       <main className="app">
         <header className="wallboard-header">
           <div>
-            <h1>hackspain</h1>
-            <span className="feed-label">SIMULATED FEED</span>
+            <h1>{kill ? "Pull the plug" : "Hack Spain"}</h1>
+            <span className="feed-label">
+              {kill ? "Kill path" : "Live ladder"}
+            </span>
           </div>
           {incident ? (
             <dl className="incident-meta">
@@ -124,7 +129,7 @@ export function LadderPage() {
                       <div className="action-heading">
                         <strong>{action.name}</strong>
                         <span className={`action-status is-${action.status}`}>
-                          {action.status}
+                          {ACTION_STATUS_LABEL[action.status]}
                         </span>
                       </div>
                       <p className="action-meta">
@@ -145,7 +150,7 @@ export function LadderPage() {
           </>
         ) : (
           <section className="waiting" aria-live="polite">
-            <p>Waiting for a simulated incident…</p>
+            <p>Waiting for an incident.</p>
           </section>
         )}
       </main>

@@ -14,7 +14,7 @@ import pytest
 from app.actions.call_status import CallResult, derive_api_base, map_call
 from app.actions.journal import ActionJournal
 from app.actions.models import ActionTransition
-from app.actions.pager import HappyRobotPager
+from app.actions.pager import HappyRobotPager, voice_pautas
 
 
 @pytest.mark.parametrize(
@@ -245,12 +245,13 @@ async def test_posts_documented_payload_with_telefono_and_numeric_level():
     assert stub.payloads == [
         {
             "tipo_emergencia": "sandbox_escape (level 4, run incident-1)",
-            "pautas": "Contained all live runs.",
+            "pautas": voice_pautas("Contained all live runs"),
             "nivel_gravedad": "4",
             "nombre_contacto": "Guli",
             "telefono": "+34600000000",
         }
     ]
+    assert "one minute" in stub.payloads[0]["pautas"]
 
 
 async def test_reports_answered_then_hung_up():
@@ -280,17 +281,17 @@ async def test_retries_webhook_once_after_5xx():
     assert transitions[-1] == ("failed", "failed", "invalid_phone_number")
 
 
-async def test_retries_completed_no_pickup_once_then_fails():
+async def test_completed_no_pickup_fails_without_a_second_call():
     no_pickup = (
         {"status": "completed"},
         {"status": "completed", "failure_reason": "no_answer"},
         None,
     )
-    stub = HappyRobotStub([[no_pickup], [no_pickup]])
+    stub = HappyRobotStub([[no_pickup]])
 
     transitions = await run_pager(stub)
 
-    assert stub.hook_calls == 2
+    assert stub.hook_calls == 1
     assert transitions[-1] == ("failed", "no_pickup", "no_pickup")
 
 
@@ -360,7 +361,7 @@ async def test_l5_payload_keeps_level_and_uses_defensive_fallbacks():
     assert stub.payloads[0]["tipo_emergencia"] == (
         "critical agent activity (level 5, run incident-1)"
     )
-    assert stub.payloads[0]["pautas"] == "Escalated level 5 response."
+    assert stub.payloads[0]["pautas"] == voice_pautas("Escalated level 5 response")
 
 
 def test_pager_watch_imports_under_system_python_without_backend_package():
@@ -402,6 +403,25 @@ def test_pager_import_does_not_load_service_or_config():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+async def test_default_http_client_timeout_survives_slow_hooks():
+    pager = HappyRobotPager(
+        hook_url="https://platform.happyrobot.ai/hooks/page",
+        api_key="secret",
+        api_base="https://platform.happyrobot.ai/api/v2",
+        phone="+34600000000",
+        name="Guli",
+        poll_interval=0.001,
+        poll_timeout=1,
+    )
+    client = pager._client_factory()
+    try:
+        timeout = client.timeout
+        assert timeout.connect is None or timeout.connect >= 30
+        assert timeout.read is None or timeout.read >= 30
+    finally:
+        await client.aclose()
 
 
 async def test_journal_replay_keeps_final_call_status_separate(tmp_path):

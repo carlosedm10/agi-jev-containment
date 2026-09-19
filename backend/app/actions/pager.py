@@ -11,6 +11,22 @@ import httpx
 from app.actions.call_status import CallResult, derive_api_base, map_call
 from app.actions.types import PagerTransition
 
+HOOK_TIMEOUT = httpx.Timeout(30.0)
+HOLD_THE_LINE = (
+    " Speak slowly and clearly. Pause after every sentence."
+    " Keep this person on the line for at least one minute."
+    " Do not hang up until they confirm they understood."
+    " If they stay silent, wait five seconds and repeat the status once."
+)
+
+
+def _default_http_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=HOOK_TIMEOUT)
+
+
+def voice_pautas(action_taken: str) -> str:
+    return f"{action_taken.rstrip('.')}." + HOLD_THE_LINE
+
 
 class PagerError(RuntimeError):
     def __init__(self, message: str, error_code: str = "happyrobot_error") -> None:
@@ -30,7 +46,7 @@ class HappyRobotPager:
         poll_interval: float,
         poll_timeout: float,
         client: httpx.AsyncClient | None = None,
-        client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient,
+        client_factory: Callable[[], httpx.AsyncClient] = _default_http_client,
     ) -> None:
         self._hook_url = hook_url
         self._api_key = api_key
@@ -56,21 +72,16 @@ class HappyRobotPager:
             client = self._client or self._client_factory()
             owns_client = self._client is None
             try:
-                for call_attempt in range(2):
-                    run_id = await self._start_call(
-                        client,
-                        level,
-                        incident_id,
-                        intent or "critical agent activity",
-                        action_taken or f"Escalated level {level} response",
-                        call_attempt,
-                    )
-                    result = await self._poll_call(client, run_id, transition)
-                    if result.call_status == "no_pickup" and call_attempt == 0:
-                        await transition("running", call_status="queued")
-                        continue
-                    await self._report_terminal(result, transition)
-                    return
+                run_id = await self._start_call(
+                    client,
+                    level,
+                    incident_id,
+                    intent or "critical agent activity",
+                    action_taken or f"Escalated level {level} response",
+                    0,
+                )
+                result = await self._poll_call(client, run_id, transition)
+                await self._report_terminal(result, transition)
             finally:
                 if owns_client:
                     await client.aclose()
@@ -118,7 +129,7 @@ class HappyRobotPager:
     ) -> str:
         payload = {
             "tipo_emergencia": f"{intent} (level {level}, run {incident_id})",
-            "pautas": f"{action_taken.rstrip('.')}.",
+            "pautas": voice_pautas(action_taken),
             "nivel_gravedad": str(level),
             "nombre_contacto": self._name,
             "telefono": self._phone,
