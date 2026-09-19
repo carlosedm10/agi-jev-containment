@@ -1,0 +1,164 @@
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #0b1220;
+  color: #e8eef8;
+}
+
+.app {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 28px 20px 64px;
+}
+
+.wallboard-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.wallboard-header h1 {
+  display: inline;
+  margin: 0 10px 0 0;
+  font-size: 1.35rem;
+}
+
+.feed-label {
+  color: #fbdc2b;
+  font:
+    700 0.68rem system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+}
+
+.incident-meta {
+  display: flex;
+  gap: 24px;
+  margin: 0;
+  text-align: right;
+}
+
+.incident-meta div {
+  display: grid;
+  gap: 2px;
+}
+
+.incident-meta dt {
+  color: #6f829e;
+  font:
+    700 0.65rem system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.incident-meta dd {
+  margin: 0;
+  color: #d9e3f2;
+  font:
+    500 0.82rem ui-monospace,
+    monospace;
+}
+
+.feed-error {
+  margin: 0 0 14px;
+  border: 1px solid #775f20;
+  border-radius: 9px;
+  background: #2a2518;
+  color: #fbdc2b;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+}
+
+.waiting {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  border: 1px solid #24324a;
+  border-radius: 16px;
+  background: #041b39;
+  color: #9aa8bf;
+}
+
+.timeline {
+  margin-top: 22px;
+}
+
+.timeline h2 {
+  margin: 0 0 10px;
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.timeline ol {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.timeline li {
+  border: 1px solid #24324a;
+  border-radius: 10px;
+  background: #101a2c;
+  padding: 11px 13px;
+}
+
+.action-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.action-status {
+  color: #d9e3f2;
+  font:
+    700 0.68rem system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.action-status.is-ok {
+  color: #3ddc97;
+}
+
+.action-status.is-partial,
+.action-status.is-running {
+  color: #fbdc2b;
+}
+
+.action-status.is-failed,
+.action-error {
+  color: #ff6b6b;
+}
+
+.timeline p {
+  margin: 5px 0 0;
+  color: #bac7d9;
+  font-size: 0.8rem;
+}
+
+.timeline .action-meta,
+.empty-actions {
+  color: #6f829e;
+  font-family: ui-monospace, monospace;
+}
+
+@media (max-width: 620px) {
+  .wallboard-header,
+  .incident-meta {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .incident-meta {
+    gap: 8px;
+    text-align: left;
+  }
+}

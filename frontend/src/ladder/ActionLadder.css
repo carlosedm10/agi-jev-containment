@@ -1,0 +1,112 @@
+.ladder-wrap {
+  background: #041b39;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ladder-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ladder-row {
+  opacity: 0.32;
+  transition:
+    opacity 0.25s ease,
+    filter 0.25s ease;
+}
+
+.ladder-row.is-reached {
+  opacity: 1;
+}
+
+.ladder-row.is-current {
+  filter: drop-shadow(0 0 6px var(--row, #fbdc2b));
+}
+
+.ladder-row.is-failed {
+  filter: drop-shadow(0 0 6px #ff4d4d);
+}
+
+.ladder-status {
+  font:
+    600 9px system-ui,
+    sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.ladder-glyph {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.ladder-pager {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.ladder-pager.is-live {
+  opacity: 1;
+}
+
+.pager-wave {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.ladder-pager.is-ringing .pager-wave {
+  animation: pager-ring 1.2s ease-out infinite;
+}
+
+.ladder-pager.is-ringing .pager-wave:nth-child(2) {
+  animation-delay: 0.4s;
+}
+
+.ladder-pager.is-ringing .pager-handset {
+  animation: pager-shake 0.35s ease-in-out infinite;
+}
+
+.ladder-pager.is-answered .pager-handset {
+  fill: #3ddc97;
+}
+
+.ladder-pager.is-queued .pager-handset {
+  fill: #fff;
+}
+
+.ladder-pager.is-failed .pager-handset {
+  fill: #ff6b6b;
+}
+
+.ladder-pager.is-no_pickup .pager-handset,
+.ladder-pager.is-hung_up .pager-handset {
+  fill: #9aa8bf;
+}
+
+.ladder-pager.is-hung_up .pager-handset {
+  transform-origin: 18px 18px;
+  transform: rotate(110deg);
+}
+
+@keyframes pager-ring {
+  from {
+    opacity: 0.9;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@keyframes pager-shake {
+  0%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
