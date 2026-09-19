@@ -8,6 +8,7 @@ import pytest
 from app.actions.journal import ActionJournal
 from app.actions.models import ActionTransition, DispatchAccepted
 from app.actions.service import ActionService
+from app.config import Settings
 
 
 @dataclass
@@ -214,4 +215,28 @@ async def test_dispatch_keeps_background_task_references(tmp_path):
 
     assert service._tasks
     await finish_background_work(service)
+    assert not service._tasks
+
+
+def test_action_step_delay_setting_defaults_to_point_three_five():
+    assert Settings(_env_file=None).action_step_delay == 0.35
+
+
+def test_service_default_delay_comes_from_settings(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.actions.service.settings.action_step_delay", 0.17)
+
+    service = ActionService(ActionJournal(tmp_path), FakePager())
+
+    assert service._simulation_delay == 0.17
+
+
+@pytest.mark.parametrize("level", [0, 6])
+async def test_dispatch_rejects_levels_outside_playbook_range(tmp_path, level):
+    journal = ActionJournal(tmp_path)
+    service = ActionService(journal, FakePager(), simulation_delay=0)
+
+    with pytest.raises(ValueError, match="integer from 1 through 5"):
+        await service.dispatch("incident", Request(level))
+
+    assert journal.read("incident") == []
     assert not service._tasks

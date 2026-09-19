@@ -12,6 +12,7 @@ from app.actions.models import (
     IncidentActionState,
     PlannedAction,
 )
+from app.config import settings
 
 
 class PagerTransition(Protocol):
@@ -44,11 +45,13 @@ class ActionService:
         journal: ActionJournal,
         pager: Pager,
         *,
-        simulation_delay: float = 0.35,
+        simulation_delay: float | None = None,
     ) -> None:
         self._journal = journal
         self._pager = pager
-        self._simulation_delay = simulation_delay
+        self._simulation_delay = (
+            settings.action_step_delay if simulation_delay is None else simulation_delay
+        )
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._tasks: set[asyncio.Task[None]] = set()
         self._canceled_actions: set[str] = set()
@@ -58,6 +61,9 @@ class ActionService:
         incident_id: str,
         request: DispatchRequest,
     ) -> DispatchAccepted | None:
+        if type(request.level) is not int or not 1 <= request.level <= 5:
+            raise ValueError("level must be an integer from 1 through 5")
+
         async with self._locks[incident_id]:
             state = self._journal.state(incident_id)
             if request.level <= state.accepted_level:

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     action_gate: float = 0.7
     short_term_n: int = 20
     run_log_dir: str = "/var/lib/hackspain/runs"
+    action_step_delay: float = 0.35
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
