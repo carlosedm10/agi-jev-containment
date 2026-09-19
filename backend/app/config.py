@@ -1,3 +1,4 @@
+from pydantic import PositiveFloat
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,14 @@ class Settings(BaseSettings):
     short_term_n: int = 20
     run_log_dir: str = "/var/lib/hackspain/runs"
     action_step_delay: float = 0.35
+    action_dispatch_token: str = ""
+    happyrobot_api_key: str = ""
+    happyrobot_hook_url: str = ""
+    happyrobot_api_base: str = ""
+    oncall_phone: str = ""
+    oncall_name: str = ""
+    happyrobot_poll_interval: PositiveFloat = 1.5
+    happyrobot_poll_timeout: PositiveFloat = 180
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
