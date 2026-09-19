@@ -23,6 +23,26 @@ restart:
 	@echo ":: restart: ."
 	docker compose restart
 
+# ----------------------------- Host CD ----------------------------- #
+.PHONY: build-cd
+
+# Host origin + named tunnel, then trigger a demo chain (local API, public links).
+# Usage:
+#   make build-cd
+#   make build-cd SCENARIO=lateral
+#   make build-cd SCENARIO=lateral_db DELAY_MS=900
+#   make build-cd CD_URL=https://jervis.palistapp.com
+CD_URL ?= https://jervis.palistapp.com
+CD_API_URL ?= http://127.0.0.1:8000
+SCENARIO ?=
+DELAY_MS ?= 900
+
+build-cd:
+	@echo ":: build-cd: $(CD_URL)"
+	@./scripts/cd-up.sh
+	@CD_URL="$(CD_URL)" CD_API_URL="$(CD_API_URL)" SCENARIO="$(SCENARIO)" DELAY_MS="$(DELAY_MS)" \
+		python3 scripts/cd-trigger.py
+
 # ----------------------------- Backend Package Management ----------------------------- #
 .PHONY: uv-lock uv-add uv-update uv-remove uv-lock-regenerate
 
