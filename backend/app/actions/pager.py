@@ -119,7 +119,7 @@ class HappyRobotPager:
         payload = {
             "tipo_emergencia": f"{intent} (level {level}, run {incident_id})",
             "pautas": f"{action_taken.rstrip('.')}.",
-            "nivel_gravedad": level,
+            "nivel_gravedad": str(level),
             "nombre_contacto": self._name,
             "telefono": self._phone,
         }
