@@ -351,7 +351,7 @@ describe("App", () => {
         },
       ],
     });
-    expect(container.textContent).toContain("LIVE");
+    expect(container.querySelector('[aria-label="Stream status"]')).toBeNull();
     expect(
       container.querySelector('.react-flow__node[data-id="r1:1"]'),
     ).not.toBeNull();

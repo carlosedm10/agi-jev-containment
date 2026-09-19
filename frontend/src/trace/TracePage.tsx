@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Background, MarkerType, ReactFlow, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Button } from "@/components/ui/button";
+import { PageTabs } from "@/components/page-tabs";
 import {
   FollowViewport,
   GraphControls,
@@ -158,9 +159,7 @@ export function TracePage({
             className="h-12 w-auto"
           />
         </a>
-        <a href="/" className="text-sm underline underline-offset-4">
-          Back to dashboard
-        </a>
+        <PageTabs page="trace" runId={runId} />
       </header>
       <section className="mx-auto max-w-[1920px] overflow-hidden rounded-md border shadow-xs">
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#b06a38] bg-[#d59566] px-4 py-3">
@@ -219,6 +218,7 @@ export function TracePage({
                   <FollowViewport
                     nodeKey={selectedId ?? runId}
                     focusNodeId={selectedId}
+                    zoom={1.25}
                     reducedMotion={reducedMotion}
                   />
                 </ReactFlow>

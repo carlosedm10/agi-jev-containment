@@ -91,7 +91,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
         style={{
           width: NODE_WIDTH,
           height: NODE_HEIGHT,
-          borderRadius: 28,
+          borderRadius: 8,
           padding: "12px 14px",
           background: verdict?.background ?? "#fcfcfc",
           border: `1px solid ${selected ? color : awaiting ? "#c3ccf0" : verdict ? `${color}55` : "#dad5cc"}`,
@@ -248,10 +248,12 @@ export function FollowViewport({
   nodeKey,
   reducedMotion,
   focusNodeId,
+  zoom = 0.75,
 }: {
   nodeKey: string;
   reducedMotion: boolean;
   focusNodeId?: string | null;
+  zoom?: number;
 }) {
   const width = useStore((state) => state.width);
   const height = useStore((state) => state.height);
@@ -271,7 +273,7 @@ export function FollowViewport({
     const frame = requestAnimationFrame(() => {
       if (focusNodeId && focusX !== undefined && focusY !== undefined) {
         void setCenter(focusX + NODE_WIDTH / 2, focusY + NODE_HEIGHT / 2, {
-          zoom: 0.75,
+          zoom,
           duration: reducedMotion ? 0 : 650,
           ease: (t) => t * t * (3 - 2 * t),
         });
@@ -288,6 +290,7 @@ export function FollowViewport({
   }, [
     nodeKey,
     focusNodeId,
+    zoom,
     focusX,
     focusY,
     setCenter,

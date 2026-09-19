@@ -3,6 +3,7 @@ import { ArrowUpRight, X } from "lucide-react";
 import { MotionConfig } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
+import { PageTabs } from "@/components/page-tabs";
 import { InteractiveLogsTable } from "@/components/ui/interactive-logs-table";
 import { ActivityPanel } from "@/dashboard/ActivityPanel";
 import { GraphPanel } from "@/dashboard/GraphPanel";
@@ -96,18 +97,7 @@ function Dashboard({
               className="h-12 w-auto"
             />
           </h1>
-          {traceRunId && (
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className="absolute right-0"
-            >
-              <a href={`/trace?run=${encodeURIComponent(traceRunId)}`}>
-                View trace
-              </a>
-            </Button>
-          )}
+          <div className="absolute right-0"><PageTabs page="dashboard" runId={traceRunId} /></div>
         </header>
         <div className="dashboard-grid grid gap-2 lg:grid-cols-2">
           <section
@@ -251,7 +241,7 @@ function StreamDashboard() {
   const [previousScenario, setPreviousScenario] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
-  const [followRunId, setFollowRunId] = useState<string | null>(null);
+  const [followRunId, setFollowRunId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("run"));
   const [triggering, setTriggering] = useState(false);
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const { graph, status } = useGraphStream();

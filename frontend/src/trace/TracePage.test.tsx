@@ -41,6 +41,8 @@ test("trace renders repeated actions as separate nodes and advances the detail p
       root.render(<TracePage runId="trace" />);
     });
     expect(container.querySelectorAll(".react-flow__node")).toHaveLength(3);
+    expect(container.querySelector('[aria-current="page"]')?.textContent).toBe("View trace");
+    expect(container.querySelector('a[href="/?run=trace"]')?.textContent).toBe("Dashboard");
     expect(container.textContent).not.toContain("3 actions");
     expect(container.querySelectorAll(".react-flow__node time")).toHaveLength(
       3,

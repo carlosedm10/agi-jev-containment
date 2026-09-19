@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -66,6 +66,19 @@ export function GraphPanel({
   status = null,
 }: GraphPanelProps) {
   const reducedMotion = useReducedMotion();
+  const previousFocus = useRef(focusNodeId);
+  const [transition, setTransition] = useState<{ source: string; target: string } | null>(null);
+  useEffect(() => {
+    const source = previousFocus.current;
+    previousFocus.current = focusNodeId;
+    if (!source || !focusNodeId || source === focusNodeId || reducedMotion || !runActive) {
+      setTransition(null);
+      return;
+    }
+    setTransition({ source, target: focusNodeId });
+    const timer = setTimeout(() => setTransition(null), 650);
+    return () => clearTimeout(timer);
+  }, [focusNodeId, reducedMotion, runActive]);
 
   const layout = useMemo(() => layoutGraph(graph, pending), [graph, pending]);
 
@@ -105,18 +118,17 @@ export function GraphPanel({
     ],
   );
   const edges = useMemo<Edge[]>(() => {
+    const active = transition
+      ? layout.links.find((link) =>
+          (link.source === transition.source && link.target === transition.target) ||
+          (link.target === transition.source && link.source === transition.target))
+      : pending ? layout.links.find((link) => link.pending) : undefined;
     return layout.links.map((link) => ({
       id: link.id,
-      source: link.source,
-      target: link.target,
-      type:
-        (link.pending ||
-          link.source === focusNodeId ||
-          link.target === focusNodeId) &&
-        !reducedMotion
-          ? "activity"
-          : "default",
-      data: { duration: 3, path: "bezier" },
+      source: link.id === active?.id && transition ? transition.source : link.source,
+      target: link.id === active?.id && transition ? transition.target : link.target,
+      type: link.id === active?.id && !reducedMotion ? "activity" : "default",
+      data: { duration: 0.65, path: "bezier" },
       style: {
         stroke: link.pending ? "#a8bbef" : "#c8c3bc",
         strokeWidth: 1.5,
@@ -125,7 +137,7 @@ export function GraphPanel({
       selectable: false,
       focusable: false,
     }));
-  }, [layout.links, reducedMotion, focusNodeId]);
+  }, [layout.links, reducedMotion, transition, pending]);
   const focused = focusNodeId ? graph.nodes.get(focusNodeId) : undefined;
   const nodeKey = JSON.stringify([
     focused
@@ -136,12 +148,13 @@ export function GraphPanel({
       : layout.nodes.map((node) => node.id),
     focused ? eventText(focused, ["id", "event_id"], "") : null,
   ]);
-  const pill = status === null ? null : STATUS_PILL[status];
+  const pill = status === null || status === "live" ? null : STATUS_PILL[status];
 
   return (
     <section
       className="graph-panel"
       aria-label="Agent activity graph"
+      data-transition={transition ? `${transition.source}->${transition.target}` : undefined}
       style={{
         height: "100%",
         minHeight: 0,
@@ -150,11 +163,11 @@ export function GraphPanel({
         background: "#fcfcfc",
       }}
     >
-      <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#b06a38] bg-[#d59566] px-4">
+      <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#b06a38] bg-[#d59566] pl-4 pr-1">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-[#1a1614]">
           Agent activity
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {pill && (
             <span
               aria-label="Stream status"
