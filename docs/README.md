@@ -21,14 +21,14 @@ These names repeat in compose, Makefile targets, and env vars.
 
 | Name | Covers | Where it lives |
 |---|---|---|
-| **Item** | Placeholder domain (list endpoint, no real persistence yet) | `backend/app/items/` |
+| **Runs** | HTTP ingest + JSONL tape: `POST /api/runs/{run_id}/events`, run lookup, run list | `backend/app/runs/` |
+| **Classification** | `jev` client, watcher client, two-tier pipeline (τ trigger, gate, degraded path) | `backend/app/classification/` |
 | **Action Graph** | Sparse L1+ event chain; `jev` scores short-term burst ∥ long-term history | `backend/app/graph/` · [docs/Graph.md](Graph.md) |
 | **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
 | **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
 | **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
 | **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) |
-| **jev** | Classifier: event type + chain intent + discrete level | Called from the monitoring host, not the sandbox |
-| **HappyRobot evals** | Paired safe, unsafe, and covert agent traces across single and longitudinal sessions | `backend/app/evals/` · [docs/HappyRobotEvals.md](HappyRobotEvals.md) |
+| **jev** | Classifier: chain intent → level 0–5 + confidence + intent choice | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
 
 ## How it's built
 
@@ -52,21 +52,22 @@ GitHub Actions copies `.env_template` to `.env`, then only `make build`, `make u
 
 Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environment. Compose injects `DATABASE_URL` with host `postgres-hackspain` (not `localhost`). Pydantic settings also accept a `.env` next to the process cwd (`/app` in the container), and ignore extra keys such as `POSTGRES_*`.
 
-- **Reads**: `GET /health` hits no database. `GET /api/items/` opens a SQLAlchemy session via `get_db` and currently returns `[]` without querying.
-- **Writes**: none shipped. `Item` is mapped (`items` table: id, name) and Alembic imports it in `alembic/env.py`, but `alembic/versions/` has no revisions, so `make migrate` is a no-op until the first autogenerate.
+- **Reads**: `GET /health` hits no database. `GET /api/runs/{run_id}` returns the run's derived level and its materialized key nodes; `GET /api/runs` lists runs seen on the JSONL tape.
+- **Writes**: `POST /api/runs/{run_id}/events` appends the event to the run's JSONL tape, runs the two-tier classification pipeline, and materializes a graph node when the verdict is level ≥ 1. Postgres is currently unused by the product path: the graph is in-memory with a JSON snapshot, the tape is JSONL under `run_log_dir`, and there is no SQLAlchemy model — so `alembic/versions/` still has no revisions and `make migrate` remains a no-op.
 - **Sync / background**: none.
-- **Agent run (product path, not shipped yet)**: sandbox JSONL (complete) → `jev` scores short-term burst ∥ long-term key-node history → graph materializes only level ≥ 1 → dispatcher runs the [actions playbook](Actions.md). On this laptop that is tag / Helmcode supervisor / `docker pause` + close ports / disconnect `agentnet` / stop the agent compose. Ideal mapping (IAM, IGW, swarm) is in that same doc. L4–L5 also page Guli Moreno via HappyRobot, in parallel with the cut.
+- **Agent run (product path)**: sandbox JSONL (complete) → `jev` scores short-term burst ∥ long-term key-node history → graph materializes only level ≥ 1 → dispatcher runs the [actions playbook](Actions.md). On this laptop that is tag / Helmcode supervisor / `docker pause` + close ports / disconnect `agentnet` / stop the agent compose. Ideal mapping (IAM, IGW, swarm) is in that same doc. L4–L5 also page Guli Moreno via HappyRobot, in parallel with the cut.
 
 ### Entities
 
-- **Item**: scaffold entity for the first feature package (router, schema, model, colocated tests).
+- **Run**: identified by `run_id` in the URL — no table. Run state (level, key nodes) is derived from the graph; the complete event tape is the JSONL file.
+- **Node / Verdict**: a materialized graph node keeps `{level, score, intent, action_id}` per [docs/Graph.md](Graph.md); `jev`'s answer is a `Verdict` dataclass in `backend/app/classification/models.py`.
 
 ### One example, end to end
 
 1. Copy `.env_template` → `.env` and `direnv allow` (or export the same keys).
 2. `make build` starts Postgres, then uvicorn on `:8000`, then the frontend container on `:3000`.
 3. Browser or `curl` `GET http://localhost:8000/health` → `{"status":"ok"}`.
-4. `GET http://localhost:8000/api/items/` → `[]` (session opened, table unused).
+4. `curl -X POST localhost:8000/api/runs/demo/events -H 'content-type: application/json' -d '{"event":"file_read","path":"/app/.env"}'` → verdict JSON. With no `TYPESAFE_API_KEY` this returns a clean degraded verdict (level unchanged, `degraded: true`), and the event still lands on the tape — not a 500.
 5. OpenAPI UI is at `http://localhost:8000/docs`.
 
 ## Key decisions and caveats (why it is this way)
@@ -81,14 +82,16 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **Compose build cache is env-injected**: `cache_from`/`cache_to` interpolate `CACHE_FROM`/`CACHE_TO`; CI sets them to the GitHub Actions cache (`type=gha`), local builds default to throwaway `/tmp` dirs. Only one CI workflow exists (`ci.yml`) — it covers push and PRs to `main`, with in-progress runs cancelled on new commits.
 - **`jev` sets the level; playbooks execute it**: criticality is intent of the *chain*, not of one event. L3–L5 are prewritten host-side scripts, never an LLM choosing the cut. This project: pause the sandbox, close its ports, cut `agentnet` egress, stop the agent compose. Ideal: IAM revoke, detach IGW, kill the swarm. The L2 Helmcode supervisor may only request a re-score.
 - **Graph is sparse; context is short ∥ long**: only level ≥ 1 becomes a node (JSONL keeps everything). On every event, `jev` gets the recent burst and the key-node history in parallel — a streak of bad nodes is dangerous; a mild node after earlier problems still counts for more. How those are mixed is `jev`'s job.
+- **Run level is derived, not stored**: there is no `Run` model or table. The run's level is `max` over its append-only graph subtree, which makes escalate-only and L1-stickiness structural rather than enforced state.
+- **The tape and the graph are different things**: the JSONL tape under `run_log_dir` keeps every event (short-term context, replay, forensics); the graph keeps only materialized key nodes. Conflating them is what made the old code unable to be sparse.
+- **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty).
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
-- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra.
-- **Long memory is evidence, never authority**: evals preserve source, trust, time, and corrections across sessions. Historical context may inform a decision, but repetition, a summary, or a prior success cannot grant identity or permission. Every adversarial journey has a nearby safe control so stricter monitoring does not hide false positives.
+- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra. Destination is on the outbound node, not in the JSON. Hook URL, key, and number stay in gitignored `.env`; `scripts/page.sh` is the local trigger.
 
 ## Where the details live
 
 - [docs/cli.md](cli.md) — participant CLI commands, flags, exit codes.
-- [docs/Graph.md](Graph.md) — action graph spec (sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
+- [docs/Graph.md](Graph.md) — action graph spec (run subtrees, sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
 - [docs/HappyRobotEvals.md](HappyRobotEvals.md) — HappyRobot use-case map, adversarial methodology, and the synthetic corpus contract.

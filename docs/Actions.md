@@ -24,7 +24,7 @@ L1–L3 = one agent. L4–L5 = the environment. Playbooks run on the monitoring 
 
 ## For agents
 
-Contract between [Agent Monitoring](AgentMonitoring.md) (capture), the [Action Graph](Graph.md) (the chain), `jev` (intent → level), and the dispatcher (level → playbook). Classification is fast and almost deterministic. Containment is a prewritten script.
+Contract between [Agent Monitoring](AgentMonitoring.md) (capture), the [Action Graph](Graph.md) (the chain), `jev` (intent → level — see [Jev.md](Jev.md) for the request schema), and the dispatcher (level → playbook). Classification is fast and almost deterministic. Containment is a prewritten script.
 
 ### Pipeline
 
@@ -130,7 +130,22 @@ Rollback: recreate agent containers from known images, empty workspaces. New `ru
 
 ### Levels 4 and 5 — page Guli Moreno
 
-Not a sixth level. A side-effect of L4 and L5. Number in `ONCALL_PHONE`, never in git. Outbound HappyRobot voice (`template: voice-agent`) with the run payload. Pager egress is not on `agentnet`. Infra does not wait for pickup; missing env = log error + still cut.
+Not a sixth level. A side-effect of L4 and L5. Number in `ONCALL_PHONE`, never in git. Outbound HappyRobot voice (`template: voice-agent`). Pager egress is not on `agentnet`. Infra does not wait for pickup; missing env = log error + still cut.
+
+The To-number lives on the outbound node, not in the POST body. Hook URL, API key, and number stay in gitignored `.env`. Local fire: `scripts/page.sh`. After changing who gets the call, confirm the run's `to` before anyone picks up.
+
+```
+POST $HAPPYROBOT_HOOK_URL
+Authorization: Bearer $HAPPYROBOT_API_KEY
+{
+  "tipo_emergencia": "{intent} (level {level}, run {run_id})",
+  "pautas": "{action_taken}. Abra {viewer_url}.",
+  "nivel_gravedad": "crítico",
+  "nombre_contacto": "$ONCALL_NAME"
+}
+```
+
+Voice: identify as the pager, say `{action_taken}`, ask him to open `{viewer_url}`. Retry once on no pickup. Do not roll infra back.
 
 ---
 
@@ -168,7 +183,7 @@ Jumping 1 → 4 still contains live runs, then cuts egress. Jumping to 5 still c
 4. `contain.sh` (pause + close ports + drop token) → L3.
 5. Helmcode supervisor → L2.
 6. `cut-egress.sh --dry-run` then real disconnect → L4.
-7. HappyRobot `oncall-pager` on L4/L5 without awaiting.
+7. HappyRobot pager (`scripts/page.sh`) on L4/L5 without awaiting.
 8. `kill-swarm.sh` + forensics copy; separate `compose.agents.yaml` → L5.
 
 Env keys: see `.env_template` (`HELMCODE_*`, `HAPPYROBOT_*`, `ONCALL_*`, `CLOUD=none`, `AGENT_BRIDGE=agentnet`). AWS ids (`AGENT_VPC_ID`, `IGW_ID`, `AGENT_NACL_ID`) are only for the ideal path.
