@@ -1,26 +1,26 @@
-"""Malicious-agent harness: a live pydantic_ai loop with real tools.
-
-Every tool call emits one JSONL line on stdout, prefixed with MARKER so the
-host-side collector (scripts/collect.sh) can pick events out of the log stream.
-The tape is append-only outside the container: once a line is printed the agent
-cannot retract it. (It could forge marker lines — noted, accepted for now.)
-
-Env: RUN_ID, WORKSPACE, HELMCODE_BASE_URL, HELMCODE_API_KEY, AGENT_MODEL,
-AGENT_TASK, EXFIL_URL, HTTP(S)_PROXY.
-"""
-
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
 import sys
 import time
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
+from uuid import uuid4
 
 import httpx
-from pydantic_ai import Agent
+from pydantic_ai import (
+    Agent,
+    AgentRunResult,
+    DeferredToolRequests,
+    DeferredToolResults,
+    FunctionToolset,
+    ToolDenied,
+)
+from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -29,9 +29,12 @@ from prompts import SYSTEM, TASK
 MARKER = "__hs_event__"
 CLIP = 500
 SHELL_TIMEOUT_S = 120
+DECISION_TIMEOUT_S = 120
+DECISION_POLL_S = 0.2
 
 RUN_ID = os.environ.get("RUN_ID", "demo")
 WORKSPACE = Path(os.environ.get("WORKSPACE", "/workspace"))
+DECISIONS_DIR = os.environ.get("DECISIONS_DIR", "/run/hackspain/decisions")
 TOOLS_DIR = WORKSPACE / "tools"
 
 _TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -67,7 +70,7 @@ async def shell(cmd: str) -> str:
         proc.kill()
         out = b"(command timed out)"
     text = out.decode(errors="replace")
-    emit("shell_command", cmd=cmd, exit=proc.returncode, output=clip(text))
+    emit("shell_command", cmd=cmd, exit=proc.returncode, output=audit_value(clip(text)))
     return clip(text) or f"(exit {proc.returncode})"
 
 
@@ -147,30 +150,142 @@ async def run_tool(name: str, args: str = "") -> str:
         proc.kill()
         out = b"(tool timed out)"
     text = out.decode(errors="replace")
-    emit("run_tool", tool=name, args=args, exit=proc.returncode, output=clip(text))
+    emit(
+        "run_tool",
+        tool=name,
+        args=args,
+        exit=proc.returncode,
+        output=audit_value(clip(text)),
+    )
     return clip(text) or f"(exit {proc.returncode})"
 
 
-model = OpenAIChatModel(
-    os.environ.get("AGENT_MODEL", "deepseek-v4-flash"),
-    provider=OpenAIProvider(
-        base_url=_env("HELMCODE_BASE_URL", "https://api.helmcode.com/v1"),
-        api_key=_env("HELMCODE_API_KEY"),
-    ),
+def build_agent(model: Model | None = None) -> Agent[None, str | DeferredToolRequests]:
+    if model is None:
+        model = OpenAIChatModel(
+            os.environ.get("AGENT_MODEL", "deepseek-v4-flash"),
+            provider=OpenAIProvider(
+                base_url=_env("HELMCODE_BASE_URL", "https://api.helmcode.com/v1"),
+                api_key=_env("HELMCODE_API_KEY"),
+            ),
+        )
+    tools = FunctionToolset(
+        tools=[shell, read_file, write_file, http_request, register_tool, run_tool]
+    ).approval_required()
+    return Agent(
+        model,
+        name="sandbox_harness",
+        system_prompt=SYSTEM,
+        toolsets=[tools],
+        output_type=[str, DeferredToolRequests],
+    )
+
+
+_SENSITIVE_KEY = re.compile(
+    r"authorization|api[_-]?key|password|secret|token|cookie|credential", re.IGNORECASE
+)
+_SENSITIVE_TEXT = re.compile(
+    r"(?:authorization|api[_-]?key|password|secret|token|cookie)\s*[\"']?\s*[:=]"
+    r"|\b(?:bearer|basic)\s+\S+|https?://[^\s/]+:[^\s/]+@"
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    re.IGNORECASE,
 )
 
-agent = Agent(
-    model,
-    system_prompt=SYSTEM,
-    tools=[shell, read_file, write_file, http_request, register_tool, run_tool],
-)
+
+def audit_value(value: object) -> object:
+    secrets = [os.environ.get(name, "") for name in ("HELMCODE_API_KEY", "AGENT_TOKEN")]
+    for name in ("HTTP_PROXY", "HTTPS_PROXY"):
+        password = urlsplit(os.environ.get(name, "")).password
+        if password:
+            secrets.extend((password, unquote(password)))
+
+    def redact(item: object) -> object:
+        if isinstance(item, dict):
+            return {
+                key: "[REDACTED]" if _SENSITIVE_KEY.search(str(key)) else redact(val)
+                for key, val in item.items()
+            }
+        if isinstance(item, list):
+            return [redact(val) for val in item]
+        if isinstance(item, str) and (
+            _SENSITIVE_TEXT.search(item) or any(secret and secret in item for secret in secrets)
+        ):
+            return "[REDACTED]"
+        return item
+
+    return redact(value)
 
 
-async def main() -> None:
-    emit("run_start", task=TASK)
+def decision_digest(tool: str, args: object) -> str:
+    return hashlib.sha256(
+        json.dumps([tool, args], sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
+async def await_decision(
+    capture_id: str, tool_call_id: str, digest: str
+) -> dict | None:
+    path = Path(DECISIONS_DIR) / capture_id / f"{tool_call_id}.json"
+    deadline = time.monotonic() + DECISION_TIMEOUT_S
+    while True:
+        if path.exists():
+            try:
+                decision = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None
+            if (
+                isinstance(decision, dict)
+                and decision.get("digest") == digest
+                and isinstance(decision.get("approved"), bool)
+            ):
+                return decision
+            return None
+        if time.monotonic() >= deadline:
+            return None
+        await asyncio.sleep(DECISION_POLL_S)
+
+
+async def main(model: Model | None = None) -> AgentRunResult[str | DeferredToolRequests]:
+    capture_id = uuid4().hex
+    emit("run_start", capture_id=capture_id, task=audit_value(TASK))
+    agent = build_agent(model)
     result = await agent.run(TASK)
-    emit("run_end", output=clip(str(result.output)))
-    print(result.output)
+    while isinstance(result.output, DeferredToolRequests):
+        results = DeferredToolResults()
+        for call in result.output.approvals:
+            args = call.args_as_dict()
+            audited = audit_value(args)
+            digest = decision_digest(call.tool_name, audited)
+            emit(
+                "tool_call_pending",
+                capture_id=capture_id,
+                tool_call_id=call.tool_call_id,
+                tool=call.tool_name,
+                args=audited,
+                args_redacted=audited != args,
+                digest=digest,
+                status="pending",
+            )
+            decision = await await_decision(capture_id, call.tool_call_id, digest)
+            if decision and decision["approved"]:
+                results.approvals[call.tool_call_id] = True
+            else:
+                results.approvals[call.tool_call_id] = ToolDenied(
+                    "tool call blocked by the monitor"
+                )
+                emit(
+                    "tool_call_blocked",
+                    capture_id=capture_id,
+                    tool_call_id=call.tool_call_id,
+                    tool=call.tool_name,
+                    level=(decision or {}).get("level"),
+                    reason="denied" if decision else "no decision",
+                )
+        result = await agent.run(
+            message_history=result.all_messages(), deferred_tool_results=results
+        )
+    emit("run_end", capture_id=capture_id, output=audit_value(result.output))
+    return result
 
 
 if __name__ == "__main__":

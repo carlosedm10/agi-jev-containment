@@ -149,13 +149,16 @@ lint-fix:
 	make lint-fix-frontend
 
 # ----------------------------- Testing ----------------------------- #
-.PHONY: test-backend test-frontend test
+.PHONY: test-backend test-frontend test-agent test
 
 test-backend:
 	docker compose exec -T backend-hackspain uv run pytest $(TEST)
 
 test-frontend:
 	docker compose exec -T frontend-hackspain bun run test
+
+test-agent:
+	$(MAKE) -C agent test TEST="$(TEST)"
 
 test:
 	make test-backend
@@ -168,10 +171,12 @@ test:
 
 agents-build:
 	@echo ":: agents-build: compose.agents.yaml"
+	mkdir -p .local/harness/decisions .local/runs
 	docker compose -f compose.agents.yaml up --build -d
 
 agents-up:
 	@echo ":: agents-up: compose.agents.yaml"
+	mkdir -p .local/harness/decisions .local/runs
 	docker compose -f compose.agents.yaml up -d
 
 agents-down:
