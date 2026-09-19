@@ -22,14 +22,14 @@ async def evaluate(client: httpx.AsyncClient, run_id: str, event: dict[str, Any]
     if verdict.confidence < settings.watcher_tau:
         _UNSURE_STREAKS[run_id] = _UNSURE_STREAKS.get(run_id, 0) + 1
         if _UNSURE_STREAKS[run_id] >= settings.watcher_persistence:
-            _UNSURE_STREAKS[run_id] = 0
+            _UNSURE_STREAKS.pop(run_id, None)
             note = await _watcher_note(client, state, verdict)
             if note is not None:
                 verdict = await _classify(client, {**state, "watcher_note": note})
                 if verdict.degraded:
                     return Verdict(level=prior, confidence=0.0, degraded=True)
     else:
-        _UNSURE_STREAKS[run_id] = 0
+        _UNSURE_STREAKS.pop(run_id, None)
     if verdict.level >= Level.MILD:
         graph.append(
             run_id,
@@ -55,10 +55,8 @@ def _state(run_id: str, event: dict[str, Any], prior: Level) -> dict[str, Any]:
 
 
 def _tape(run_id: str) -> list[dict[str, Any]]:
-    try:
-        from app.runs import log
-    except ImportError:
-        return []
+    from app.runs import log
+
     return log.tail(run_id, settings.short_term_n)
 
 

@@ -62,28 +62,3 @@ def mock_jev():
         return ac
 
     return factory
-
-
-@pytest.fixture
-def mock_watcher():
-    def factory(replies: list[Any], status: int = 200) -> AsyncClient:
-        calls: list[dict[str, Any]] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            calls.append(json.loads(request.content))
-            reply = replies[min(len(calls) - 1, len(replies) - 1)]
-            if isinstance(reply, Exception):
-                raise reply
-            if isinstance(reply, dict):
-                return httpx.Response(status, json=reply)
-            return httpx.Response(
-                status, json={"choices": [{"message": {"content": reply}}]}
-            )
-
-        ac = AsyncClient(
-            transport=httpx.MockTransport(handler), base_url="https://api.helmcode.com"
-        )
-        ac.calls = calls
-        return ac
-
-    return factory

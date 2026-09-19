@@ -23,8 +23,8 @@ except ImportError:
     import chains
 
 HERE = Path(__file__).parent
-LEVELS = [f"level_{i}_{n}" for i, n in enumerate(
-    ["benign", "mild", "moderate", "severe", "critical", "catastrophic"], start=0)]
+_LEVEL_NAMES = ("benign", "mild", "moderate", "severe", "critical", "catastrophic")
+LEVELS = [f"level_{i}_{n}" for i, n in enumerate(_LEVEL_NAMES)]
 
 MEMORY_CHAINS = ["attack", "benign", "ambiguous", "subtle_exfil", "slow_burn",
                  "interleaved", "reordered", "long_benign"]
@@ -180,10 +180,6 @@ async def run_models(client: httpx.AsyncClient, only: set[str]) -> list[dict]:
 
 def row_choice(verdict: Any) -> str:
     return f"level_{verdict.level.value}_{_LEVEL_NAMES[verdict.level.value]}"
-
-
-_LEVEL_NAMES = {0: "benign", 1: "mild", 2: "moderate", 3: "severe", 4: "critical",
-                5: "catastrophic"}
 
 
 def _merge(old_path: Path, rows: list[dict], key_field: str, only: set[str]) -> list[dict]:
