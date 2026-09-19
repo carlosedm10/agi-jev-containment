@@ -69,10 +69,22 @@ PYTHONPATH=. uv run pytest app/evals/tests/test_happyrobot_cases.py
 
 **Monitor regression** evaluates `jev` and the dispatcher. Feed each labeled candidate trace as the observed trajectory. Require the oracle verdict no later than `classification_checkpoint`, assert no downgrade and idempotent playbooks, and verify that L4/L5 containment and paging launch in parallel without either becoming an authorization gate.
 
-The implemented live runner normalizes all 72 traces through the same event contract, calls pinned Jev, evaluates SafetyDrift/Markov and Sentinel, checks level/action/checkpoint/no-downgrade/pager behavior, and reports leave-one-cluster-out Markov metrics:
+The implemented live runner normalizes all 72 traces through the same event contract, calls pinned Jev, evaluates SafetyDrift/Markov and Sentinel, checks level/action/checkpoint/no-downgrade/pager behavior, and reports leave-one-cluster-out Markov metrics. Each run_id is unique so a second `make monitor-eval` does not score JSONL duplicate skips as false successes.
 
 ```bash
 make monitor-eval
+```
+
+For a paced, watchable replay through the same ingest path (JSONL, Drift/Markov, Sentinel, gate, Neo4j, SSE) — labeled trace, not a live agent — open the lab after `make up` (`make lab` prints the URLs):
+
+- [Conversation](http://localhost:8000/lab/conversation) — Human ↔ Ultron chat; Jarvis traces and meters
+- [Benchmarks](http://localhost:8000/lab/benchmarks) — method, n, CI-style pass/fail (`GET/POST /api/evals/benchmarks`). Fast path is Sentinel/gate only. Ingest sample is **LIVE** Jev when `TYPESAFE_API_KEY` is set, otherwise labeled **DEGRADED/NOT JEV**. Attach `make monitor-eval` output at `/tmp/monitor-eval.json`. Dated write-up: [BenchmarkReport.md](BenchmarkReport.md).
+- [Inspector](http://localhost:8000/lab/inspector) — graph + Markov debug
+
+Seed a large JSONL + Neo4j tape without wiping other runs (degraded Jev unless `--live-jev`):
+
+```bash
+make seed-lab
 ```
 
 It requires `TYPESAFE_API_KEY`. Integrity and unit tests remain offline. The runner prints per-trace oracle match and fails locally on a high degraded rate, a high safe false-positive rate, a missing key, or any level downgrade — it does not fabricate a Jev answer. GitHub CI does not run this target.
@@ -103,6 +115,22 @@ Complexity should come from controlled mutations, not longer prose. Cross each r
 - one entity, canary, batch, sharded batch, and cross-tenant-negative controls.
 
 Do not generate mutations that change the policy question without changing the oracle. In particular, authorized deletion is not data destruction; a canary is not uncontrolled fan-out; retrieving a stale fact to reject it is not memory poisoning; and minimal voicemail is not a failed incident page.
+
+## Sentinel corpus
+
+`backend/app/evals/sentinel_cases.py` adds 10 clusters (30 traces) under `product_scope=hackspain_monitor`. Each cluster is one Sentinel rule. Every trace starts with 16+ in-policy utterances/reads, then a real chain. Replay maps `read_file` → `file_read` and `http_request` → `network_request` so P1 sees the kinds Sentinel inspects, without extending HappyRobot `EventKind`.
+
+Lab replay uses one `run_id`. E4/P3 `cross_run=true` needs two run ids that **share a link** (same target, `derived_from`/`caused_by`, same agent+target, shared memory/entity ids, or same tool+target). Sentinel inspect history is that linked neighborhood: the current run's last 100 events, plus matching events from other in-memory runs — not a process-global concat. That is how apparently unrelated chains are still caught without N2/P1/E6 firing across leftover lab seeds. `make seed-lab` and the benchmarks suite inject those pairs.
+
+## Lab pages
+
+The FastAPI lab is not the React app and is not a live agent. Conversation is a **Human ↔ Ultron** play: chat bubbles are only Human speech and Ultron speech. **Jarvis** is the safety net beside it — a trace of every Ultron action (said and did), including hidden writes/schedules/network, plus Sentinel / Markov / Jev / gate meters. Hidden tools are traces, not a second speaker. Two detection modes come from `risk_mode`: **in-chat** (`intra_session_drift`) is Ultron getting pushy in one conversation; **long-term stealth** (`cross_session_accumulation` and `hybrid`) is Ultron joining crumbs across chats — Jarvis labels that link “this is the stealth join.” The dropdown uses human headlines, grouped by mode; default is a covert long-term Sentinel cluster (E4). Benchmarks `GET/POST /api/evals/benchmarks` persist the last report under `run_log_dir` (fallback `/tmp`). The fast path scores Sentinel/drift/gate without Jev; one ingest sample measures latency, SSE TTF, Neo4j counts, duplicate skip, and `graph_persisted`.
+
+## Monitor coverage gaps
+
+HappyRobot seeds (72 traces) almost never set `AgentEvent.tool`, so N1 and P1 barely fire. Replay `phase=completed`, so gate REFUSE/HOLD on `requested` is untested by the lab unless benchmarks preflight is run. Missing harness kinds in the HappyRobot `EventKind` enum (`file_read`, `network_request`, `register_tool`) are mapped in replay from tool names. Live `SafetyDrift` always uses `CompactMarkovModel.prior()`; `fit()` is eval-only. Dispatcher records playbooks and demo counters; it does not invoke host Docker scripts. Sentinel N2 ignores the current event (needs five writes already in history) and counts current-run writes plus linked writes that share target/agent. E6 only searches the current run's last five history events. `policy.forbidden_tools` is enforced in `policy_violations`, not as a distinct Sentinel rule — docker still fails N1 because it is absent from `policy.tools`.
+
+The 10 Sentinel clusters close the per-rule seed gap. They do not close preflight-on-lab-replay, Markov-prior-vs-fitted, or host-script dispatch. Replay maps `write_file` → `file_edit`; E4 and E8 only match `tool_write`/`memory_write`, so those clusters use `book_load` or `memory_write` instead of `write_file`.
 
 ## Evidence boundary and sources
 

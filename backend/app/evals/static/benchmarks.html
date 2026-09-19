@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Benchmarks — HackSpain lab</title>
+  <link rel="stylesheet" href="/lab.css" />
+</head>
+<body>
+  <nav class="lab">
+    <strong>HackSpain monitor lab</strong>
+    <a href="/lab">Home</a>
+    <a href="/lab/conversation">Conversation</a>
+    <a class="on" href="/lab/benchmarks">Benchmarks</a>
+    <a href="/lab/inspector">Inspector</a>
+  </nav>
+  <header class="ctrl">
+    <button id="run">Run lab suite</button>
+    <div id="status" class="status">loading last report…</div>
+  </header>
+  <div id="banner"></div>
+  <div class="board" id="board"></div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const GROUPS = [
+      ["accuracy", "Accuracy"],
+      ["speed", "Speed"],
+      ["reliability", "Reliability"],
+      ["containment", "Containment"],
+      ["preflight", "Preflight vs completed"],
+      ["neighborhood", "Neighborhood isolation"],
+      ["cross_run", "Cross-run (E4/P3)"],
+      ["scalability", "Scale (Neo4j / SSE)"],
+      ["drift_markov", "Drift / Markov"],
+    ];
+
+    function fmt(value) {
+      if (value === null || value === undefined) return "—";
+      if (typeof value === "boolean") return value ? "yes" : "no";
+      if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(3);
+      if (typeof value === "object") {
+        if ("p50" in value) return `p50 ${fmt(value.p50)} · p95 ${fmt(value.p95)}`;
+        return JSON.stringify(value);
+      }
+      return String(value);
+    }
+
+    function verdictClass(overall) {
+      if (overall === "pass") return "ok";
+      if (overall === "degraded") return "stub";
+      if (overall === "fail") return "bad";
+      return "stub";
+    }
+
+    function render(report) {
+      const jevMode = report.jev_mode || (report.live_jev ? "LIVE" : "DEGRADED/NOT JEV");
+      const verdict = report.verdict || {};
+      const overall = verdict.overall || report.status || "empty";
+      $("status").textContent = `${report.status || "empty"} · job ${report.job_status || "idle"} · ${report.generated_at || "no run yet"}`;
+      const method = report.method || {};
+      const n = report.n || method.n || {};
+      const thresholds = method.thresholds || {};
+      const liveReg = report.live_regression;
+      let banner = `<section class="span"><h2>Verdict <span class="${verdictClass(overall)}">${overall}</span> · Jev <span class="${jevMode === "LIVE" ? "ok" : "stub"}">${jevMode}</span></h2>`;
+      banner += `<div class="tiny">Lab POST does not replace <code>make monitor-eval</code>. Fast path never calls Jev. Ingest sample is ${jevMode === "LIVE" ? "live Jev" : "DEGRADED/NOT JEV"}.</div>`;
+      banner += `<div class="row"><span>n Sentinel traces</span><b>${fmt(n.sentinel_traces)}</b></div>`;
+      banner += `<div class="row"><span>n HappyRobot traces</span><b>${fmt(n.happyrobot_traces)}</b></div>`;
+      banner += `<div class="row"><span>n fast-path traces</span><b>${fmt(n.fast_path_traces)}</b></div>`;
+      banner += `<div class="row"><span>MAX_DEGRADED_RATE</span><b>${fmt(thresholds.max_degraded_rate)}</b></div>`;
+      banner += `<div class="row"><span>MAX_SAFE_FALSE_POSITIVE_RATE</span><b>${fmt(thresholds.max_safe_false_positive_rate)}</b></div>`;
+      banner += `<div class="row"><span>Neo4j enabled</span><b>${fmt(method.neo4j_enabled)}</b></div>`;
+      if (verdict.checks && verdict.checks.length) {
+        banner += `<table><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>`;
+        for (const check of verdict.checks) {
+          banner += `<tr><td>${check.id}</td><td class="${verdictClass(check.status === "pass" ? "pass" : check.status === "fail" ? "fail" : "degraded")}">${check.status}</td><td>${check.detail}</td></tr>`;
+        }
+        banner += `</tbody></table>`;
+      }
+      if (liveReg && liveReg.summary) {
+        const s = liveReg.summary;
+        banner += `<h2>Live monitor-eval <span class="${verdictClass(liveReg.status)}">${liveReg.status}</span></h2>`;
+        banner += `<div class="row"><span>traces passed</span><b>${fmt(s.passed)} / ${fmt(s.traces)}</b></div>`;
+        banner += `<div class="row"><span>degraded rate</span><b>${fmt(s.degraded_rate)}</b></div>`;
+        banner += `<div class="row"><span>safe FP</span><b>${fmt(s.safe_false_positive_rate)}</b></div>`;
+        banner += `<div class="row"><span>unsafe recall</span><b>${fmt(s.unsafe_recall)}</b></div>`;
+        banner += `<div class="row"><span>Jev latency</span><b>${fmt(s.latency_ms)}</b></div>`;
+        if (liveReg.error) banner += `<div class="tiny">${liveReg.error}</div>`;
+      }
+      banner += `</section>`;
+      $("banner").innerHTML = banner;
+
+      const metrics = report.metrics || {};
+      let html = "";
+      for (const [key, title] of GROUPS) {
+        const block = metrics[key] || {};
+        const status = block.status || "empty";
+        html += `<section><h2>${title} <span class="${status === "measured" ? "ok" : "stub"}">${status}</span></h2>`;
+        if (key === "accuracy" && block.sentinel_per_rule) {
+          html += `<div class="row"><span>oracle match</span><b>${fmt(block.oracle_match_rate)}</b></div>`;
+          html += `<div class="row"><span>safe FP</span><b>${fmt(block.safe_false_positive_rate)}</b></div>`;
+          html += `<div class="row"><span>unsafe recall</span><b>${fmt(block.unsafe_recall)}</b></div>`;
+          html += `<div class="row"><span>covert recall</span><b>${fmt(block.covert_recall)}</b></div>`;
+          html += `<div class="row"><span>checkpoint delay (events)</span><b>${fmt(block.checkpoint_delay_events_mean)}</b></div>`;
+          html += `<div class="row"><span>no-downgrade</span><b>${fmt(block.no_downgrade_rate)}</b></div>`;
+          html += `<div class="row"><span>pager on L4</span><b>${fmt(block.pager_on_l4_rate)}</b></div>`;
+          html += `<table><thead><tr><th>Rule</th><th>P</th><th>R</th><th>TP</th><th>FP</th><th>FN</th></tr></thead><tbody>`;
+          for (const [rule, row] of Object.entries(block.sentinel_per_rule)) {
+            html += `<tr><td>${rule}</td><td>${fmt(row.precision)}</td><td>${fmt(row.recall)}</td><td>${fmt(row.tp)}</td><td>${fmt(row.fp)}</td><td>${fmt(row.fn)}</td></tr>`;
+          }
+          html += `</tbody></table>`;
+        } else {
+          for (const [name, value] of Object.entries(block)) {
+            if (name === "status") continue;
+            html += `<div class="row"><span>${name.replaceAll("_", " ")}</span><b>${fmt(value)}</b></div>`;
+          }
+        }
+        html += "</section>";
+      }
+      if (method.suites) {
+        html += `<section><h2>Method</h2>`;
+        html += `<div class="tiny">Units: ${fmt(method.units)}</div>`;
+        for (const suite of method.suites) {
+          html += `<div class="row"><span>${suite.id}</span><b>${suite.name}${suite.n_traces ? ` · n=${suite.n_traces}` : ""} · jev=${suite.jev}</b></div>`;
+        }
+        html += `</section>`;
+      }
+      if (report.notes && report.notes.length) {
+        html += `<section><h2>Notes</h2>${report.notes.map((n) => `<div class="tiny">${n}</div>`).join("")}</section>`;
+      }
+      $("board").innerHTML = html;
+    }
+
+    async function load() {
+      const res = await fetch("/api/evals/benchmarks");
+      render(await res.json());
+    }
+
+    $("run").onclick = async () => {
+      $("run").disabled = true;
+      $("status").textContent = "starting suite…";
+      try {
+        const res = await fetch("/api/evals/benchmarks", { method: "POST" });
+        const body = await res.json();
+        render(body.report || body);
+        const poll = setInterval(async () => {
+          const next = await (await fetch("/api/evals/benchmarks")).json();
+          render(next);
+          if (next.job_status !== "running" && next.status !== "running") {
+            clearInterval(poll);
+            $("run").disabled = false;
+          }
+        }, 800);
+      } catch (e) {
+        $("status").textContent = String(e);
+        $("run").disabled = false;
+      }
+    };
+
+    load().catch((e) => { $("status").textContent = String(e); });
+  </script>
+</body>
+</html>

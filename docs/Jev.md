@@ -120,9 +120,9 @@ The shipped values live as settings in `backend/app/config.py` (`watcher_tau`, `
 
 ## What the benchmarks showed
 
-`experiments/` — 564 jev calls + 212 watcher calls across 15 synthetic chains (runners `experiments/bench.py`; analysis `experiments/analysis.py`):
+`experiments/` — runners `experiments/bench.py`; analysis `experiments/analysis.py`. Each jev call now sends the shipped state (`short_term`/`long_term`/`event` plus `monitor.policy`, drift, Sentinel findings, policy violations) and the full atomic question set. Reproduce with `make bench` / `make bench-analyze` / `make bench-plots`. `make monitor-eval` is the HappyRobot live acceptance run ([HappyRobotEvals.md](HappyRobotEvals.md)); a dated snapshot of that path is [BenchmarkReport.md](BenchmarkReport.md).
 
-> **Stale-data caveat:** these numbers were measured against the old request shape (`state = {agent_id, events}`). The shipped client now adds normalized current event, policy, drift, Sentinel findings and atomic questions. The historical CSVs/PNGs predate this shape; `make monitor-eval` is the live acceptance runner.
+The qualitative findings below are from the last successful TypeSafe calibration (independent windows + sequential chains). A degraded jev run (HTTP 401) aborts and does not overwrite the CSVs.
 
 - **Escalation tracks the chain, not the event** — benign prefixes score `level_1` at ~1.0 confidence; level climbs only as hostile evidence accumulates.
 - **Confidence is bimodal and honest** — ~1.0 on easy windows, 0.3–0.6 on genuinely ambiguous ones. That gap is what makes a threshold trigger viable at all.

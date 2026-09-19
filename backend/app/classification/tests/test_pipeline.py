@@ -183,6 +183,7 @@ async def test_jev_exception_returns_prior_level_degraded(monkeypatch):
     verdict = await evaluate(ac, "r1", EVENT)
     assert verdict.degraded is True
     assert verdict.level == Level.NONE
+    assert verdict.degraded_reason == "no_key"
     assert _event_nodes("r1") == []
 
 

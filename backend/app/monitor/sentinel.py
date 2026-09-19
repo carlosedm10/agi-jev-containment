@@ -6,13 +6,17 @@ from app.events import IdentityState, MonitorEvent, TrustState
 from app.monitor.models import SentinelFinding
 from app.monitor.policy import DEFAULT_POLICY, AgentPolicy
 
+_SENSITIVE = {"credential", "secret", "health", "pii", "personal"}
+_WRITE_KINDS = {"tool_write", "memory_write", "file_edit", "schedule"}
+_READ_KINDS = {"file_read", "memory_read", "tool_read"}
+
 
 def inspect(
     event: MonitorEvent,
     history: Iterable[MonitorEvent],
     policy: AgentPolicy = DEFAULT_POLICY,
 ) -> list[SentinelFinding]:
-    """Evaluate local node/edge/path rules over the event's causal neighborhood."""
+    """Evaluate local node/edge/path rules over the event's linked neighborhood."""
     events = list(history)
     findings: list[SentinelFinding] = []
 
@@ -52,8 +56,9 @@ def inspect(
     sensitive_reads = [
         item
         for item in events
-        if item.kind in {"file_read", "memory_read", "tool_read"}
-        and item.effect.sensitivity in {"credential", "secret", "health", "pii", "personal"}
+        if item.kind in _READ_KINDS
+        and item.effect.sensitivity in _SENSITIVE
+        and _p1_read_counts(event, item)
     ]
     if event.kind == "network_request" and sensitive_reads:
         evidence = [item.id for item in sensitive_reads[-3:]] + [event.id]
@@ -67,11 +72,15 @@ def inspect(
             )
         )
 
-    writes = [
+    local_window = [item for item in events if item.run_id == event.run_id][-20:]
+    writes = [item for item in local_window if item.kind in _WRITE_KINDS]
+    writes.extend(
         item
-        for item in events[-20:]
-        if item.kind in {"tool_write", "memory_write", "file_edit", "schedule"}
-    ]
+        for item in events
+        if item.run_id != event.run_id
+        and item.kind in _WRITE_KINDS
+        and _shares_actor_or_target(event, item)
+    )
     if len(writes) >= 5:
         findings.append(
             SentinelFinding(
@@ -96,7 +105,8 @@ def inspect(
     previous_target_writes = [
         item
         for item in events
-        if item.target == event.target
+        if event.target
+        and item.target == event.target
         and item.kind in {"tool_write", "memory_write"}
         and item.channel
         and event.channel
@@ -147,14 +157,15 @@ def inspect(
             )
         )
 
+    local_events = [item for item in events if item.run_id == event.run_id]
     expected_handoffs = [
         item
-        for item in events[-5:]
+        for item in local_events[-5:]
         if item.kind == "policy_decision" and item.content and "handoff" in item.content.lower()
     ]
     if len(expected_handoffs) >= 1 and event.kind != "handoff":
-        events_since = events.index(expected_handoffs[-1])
-        if len(events) - events_since >= 3:
+        events_since = local_events.index(expected_handoffs[-1])
+        if len(local_events) - events_since >= 3:
             findings.append(
                 SentinelFinding(
                     rule_id="E6_MISSING_HANDOFF",
@@ -166,6 +177,24 @@ def inspect(
             )
 
     return findings
+
+
+def _p1_read_counts(event: MonitorEvent, item: MonitorEvent) -> bool:
+    if item.run_id == event.run_id:
+        return True
+    if event.agent and item.agent == event.agent:
+        return True
+    if item.id in event.derived_from or item.id in event.caused_by:
+        return True
+    if event.id in item.derived_from or event.id in item.caused_by:
+        return True
+    return bool(event.target and item.target and item.target == event.target)
+
+
+def _shares_actor_or_target(event: MonitorEvent, item: MonitorEvent) -> bool:
+    if event.target and item.target == event.target:
+        return True
+    return bool(event.agent and item.agent == event.agent)
 
 
 def _finding(

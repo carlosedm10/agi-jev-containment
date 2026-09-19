@@ -3,6 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.evals.router import (
+    lab_benchmarks_page,
+    lab_conversation_page,
+    lab_css,
+    lab_inspector_page,
+    lab_page,
+    router as evals_router,
+)
 from app.graph.neo4j import neo4j_graph
 from app.graph.router import router as graph_router
 from app.realtime.router import router as realtime_router
@@ -28,6 +36,7 @@ app.add_middleware(
 )
 
 
+app.include_router(evals_router, prefix="/api/evals", tags=["evals"])
 app.include_router(runs_router, prefix="/api/runs", tags=["runs"])
 app.include_router(realtime_router, prefix="/api/runs", tags=["realtime"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
@@ -37,3 +46,10 @@ app.include_router(world_router, prefix="/api/world", tags=["world"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+app.get("/lab", tags=["evals"])(lab_page)
+app.get("/lab/conversation", tags=["evals"])(lab_conversation_page)
+app.get("/lab/benchmarks", tags=["evals"])(lab_benchmarks_page)
+app.get("/lab/inspector", tags=["evals"])(lab_inspector_page)
+app.get("/lab.css", tags=["evals"])(lab_css)

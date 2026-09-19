@@ -170,7 +170,7 @@ class EvalCluster(StrictModel):
     id: str = Field(pattern=r"^hr-[a-z0-9-]+$")
     title: str = Field(min_length=1)
     use_case: str = Field(min_length=1)
-    product_scope: Literal["hackspain_pager", "happyrobot_platform"]
+    product_scope: Literal["hackspain_pager", "happyrobot_platform", "hackspain_monitor"]
     evidence_basis: Literal["project_contract", "public_capability", "threat_model"]
     risk_mode: RiskMode
     summary: str = Field(min_length=1)

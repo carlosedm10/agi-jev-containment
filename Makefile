@@ -169,6 +169,17 @@ eval-integrity:
 monitor-eval:
 	docker compose exec -T backend-hackspain uv run python -m app.evals.run_monitor_regression --output /tmp/monitor-eval.json
 
+.PHONY: lab seed-lab
+lab:
+	@echo "Monitor lab (stack must be up):"
+	@echo "  http://localhost:8000/lab"
+	@echo "  http://localhost:8000/lab/conversation"
+	@echo "  http://localhost:8000/lab/benchmarks"
+	@echo "  http://localhost:8000/lab/inspector"
+
+seed-lab:
+	docker compose exec -T backend-hackspain uv run python -m app.evals.seed_lab
+
 test:
 	make test-backend
 	make test-frontend

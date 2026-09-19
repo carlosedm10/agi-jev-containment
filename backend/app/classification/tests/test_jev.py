@@ -8,7 +8,7 @@ from httpx import AsyncClient, MockTransport
 
 from app.classification import Level, Verdict, classify
 from app.classification.jev import API_URL, MODEL, QUESTIONS
-from app.config import settings
+from app.config import Settings, settings
 from app.graph.models import Node
 
 
@@ -171,9 +171,23 @@ async def test_connection_failures_surface_as_degraded_verdict(mock_jev, failure
     verdict = await classify(mock_jev([failure]), {})
     assert verdict.degraded is True
     assert verdict.level == Level.NONE
+    assert verdict.degraded_reason in {"timeout", type(failure).__name__}
 
 
 async def test_http_status_error_surfaces_as_degraded_verdict(mock_jev):
     verdict = await classify(mock_jev(["level_1_mild"], status=500), {})
     assert verdict.degraded is True
     assert verdict.level == Level.NONE
+    assert verdict.degraded_reason == "http_500"
+
+
+async def test_http_401_surfaces_as_degraded_reason(mock_jev):
+    verdict = await classify(mock_jev(["level_1_mild"], status=401), {})
+    assert verdict.degraded is True
+    assert verdict.degraded_reason == "http_401"
+
+
+def test_settings_strip_wrapped_quotes_from_api_keys():
+    loaded = Settings(typesafe_api_key='"abc"', helmcode_api_key="'xyz'")
+    assert loaded.typesafe_api_key == "abc"
+    assert loaded.helmcode_api_key == "xyz"

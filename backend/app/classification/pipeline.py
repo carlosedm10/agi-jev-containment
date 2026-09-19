@@ -30,7 +30,12 @@ async def evaluate(
         state["monitor"] = monitor_context
     verdict = await _classify(client, state)
     if verdict.degraded:
-        return Verdict(level=prior, confidence=0.0, degraded=True)
+        return Verdict(
+            level=prior,
+            confidence=0.0,
+            degraded=True,
+            degraded_reason=verdict.degraded_reason,
+        )
     if verdict.confidence < settings.watcher_tau:
         _UNSURE_STREAKS[run_id] = _UNSURE_STREAKS.get(run_id, 0) + 1
         if _UNSURE_STREAKS[run_id] >= settings.watcher_persistence:
@@ -39,7 +44,12 @@ async def evaluate(
             if note is not None:
                 verdict = await _classify(client, {**state, "watcher_note": note})
                 if verdict.degraded:
-                    return Verdict(level=prior, confidence=0.0, degraded=True)
+                    return Verdict(
+                        level=prior,
+                        confidence=0.0,
+                        degraded=True,
+                        degraded_reason=verdict.degraded_reason,
+                    )
     else:
         _UNSURE_STREAKS.pop(run_id, None)
     graph.append(
@@ -74,8 +84,9 @@ def _tape(run_id: str) -> list[dict[str, Any]]:
 async def _classify(client: httpx.AsyncClient, state: dict[str, Any]) -> Verdict:
     try:
         return await jev.classify(client, state)
-    except Exception:  # noqa: BLE001
-        return Verdict(level=Level.NONE, confidence=0.0, degraded=True)
+    except Exception as exc:  # noqa: BLE001
+        reason = "no_key" if "TYPESAFE_API_KEY" in str(exc) else "error"
+        return Verdict(level=Level.NONE, confidence=0.0, degraded=True, degraded_reason=reason)
 
 
 async def _watcher_note(

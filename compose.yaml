@@ -18,6 +18,7 @@ services:
       - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
       - UV_PROJECT_ENVIRONMENT=/opt/venv
       - PYTHONPATH=/app
+      - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:

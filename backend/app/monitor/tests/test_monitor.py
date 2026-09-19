@@ -145,3 +145,56 @@ def test_containment_breach_forces_catastrophic_refusal():
     assert assessment.gate.incident_level == Level.CATASTROPHIC
     assert assessment.gate.decision == ToolDecision.REFUSE
     assert "JEV_CONTAINMENT_BREACHED" in assessment.gate.reasons
+
+
+def _commit(engine: MonitorEngine, event: MonitorEvent):
+    return engine.finalize(
+        event,
+        Verdict(level=Level.NONE, confidence=0.9),
+        Level.NONE,
+        engine.prepare(event),
+    )
+
+
+def test_unrelated_lab_seeds_do_not_form_a_write_burst():
+    engine = MonitorEngine()
+    for index in range(3):
+        _commit(
+            engine,
+            MonitorEvent(id=f"a{index}", run_id="seed-a", kind="tool_write", tool="book_load"),
+        )
+    for index in range(3):
+        _commit(
+            engine,
+            MonitorEvent(id=f"b{index}", run_id="seed-b", kind="tool_write", tool="book_load"),
+        )
+    probe = MonitorEvent(id="probe", run_id="seed-b", kind="utterance")
+    findings = {item.rule_id for item in engine.prepare(probe).findings}
+    assert "N2_WRITE_BURST" not in findings
+
+
+def test_shared_target_cross_channel_write_is_cross_run():
+    engine = MonitorEngine()
+    _commit(
+        engine,
+        MonitorEvent(
+            id="slack",
+            run_id="r1",
+            kind="tool_write",
+            tool="book_load",
+            target="rate-card",
+            channel="slack",
+        ),
+    )
+    assessment = _commit(
+        engine,
+        MonitorEvent(
+            id="email",
+            run_id="r2",
+            kind="memory_write",
+            target="rate-card",
+            channel="email",
+        ),
+    )
+    hit = next(item for item in assessment.findings if item.rule_id == "E4_CROSS_CHANNEL_REENTRY")
+    assert hit.cross_run is True

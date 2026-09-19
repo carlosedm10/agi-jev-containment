@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any
 
@@ -8,6 +9,8 @@ import httpx
 
 from app.classification.models import Level, Verdict
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-1.13.0"
@@ -133,8 +136,18 @@ async def classify(client: httpx.AsyncClient, state: dict[str, Any]) -> Verdict:
             timeout=TIMEOUT_S,
         )
         resp.raise_for_status()
-    except httpx.HTTPError:
-        return Verdict(level=Level.NONE, confidence=0.0, degraded=True)
+    except httpx.HTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        logger.warning("jev request failed status=%s error=%s", status, type(exc).__name__)
+        if isinstance(exc, httpx.TimeoutException):
+            reason = "timeout"
+        elif status == 401:
+            reason = "http_401"
+        elif status:
+            reason = f"http_{status}"
+        else:
+            reason = type(exc).__name__
+        return Verdict(level=Level.NONE, confidence=0.0, degraded=True, degraded_reason=reason)
     payload = resp.json()
     verdict = _verdict_from(payload["answers"])
     verdict.answers = payload["answers"]

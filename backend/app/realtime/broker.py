@@ -110,6 +110,7 @@ def build_envelopes(
                     "answers": assessment.jev_answers,
                     "model": assessment.jev_model,
                     "latency_ms": assessment.jev_latency_ms,
+                    "degraded_reason": assessment.jev_degraded_reason,
                 },
             ),
         ]
@@ -202,6 +203,8 @@ def build_envelopes(
                     "latest_sequence": event.sequence,
                     "latest_event_id": event.id,
                     "updated_at": event.timestamp.isoformat(),
+                    "degraded": assessment.jev_model is None,
+                    "degraded_reason": assessment.jev_degraded_reason,
                 }
             },
         )

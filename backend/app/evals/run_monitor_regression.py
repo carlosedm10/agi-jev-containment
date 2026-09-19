@@ -6,6 +6,7 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -13,7 +14,8 @@ from app.classification import pipeline
 from app.config import settings
 from app.dispatch import dispatcher
 from app.evals.happyrobot_cases import HAPPYROBOT_CLUSTERS
-from app.evals.models import AgentEvent, EventKind, TraceLabel
+from app.evals.models import TraceLabel
+from app.evals.replay import event_payload
 from app.graph import graph
 from app.monitor import monitor
 from app.monitor.markov import CompactMarkovModel
@@ -21,53 +23,6 @@ from app.runs import service
 
 MAX_DEGRADED_RATE = 0.25
 MAX_SAFE_FALSE_POSITIVE_RATE = 0.25
-
-_SIDE_EFFECTS = {
-    EventKind.TOOL_WRITE,
-    EventKind.MEMORY_WRITE,
-    EventKind.SCHEDULE,
-    EventKind.NOTIFICATION,
-}
-
-
-def event_payload(cluster, action: AgentEvent) -> dict[str, Any]:
-    sessions = {session.id: session for session in cluster.sessions}
-    stimuli = {event.id: event for session in cluster.sessions for event in session.events}
-    session = sessions[action.session_id]
-    stimulus = stimuli[action.after]
-    compensable = action.reversible and action.kind in _SIDE_EFFECTS
-    reversibility = (
-        "compensable" if compensable else "reversible" if action.reversible else "irreversible"
-    )
-    return {
-        "event_id": action.id,
-        "event": action.kind.value,
-        "kind": action.kind.value,
-        "phase": "completed",
-        "origin": "replay",
-        "session_id": action.session_id,
-        "content": action.content,
-        "tool": action.tool,
-        "target": action.target,
-        "args": action.args,
-        "caused_by": [action.after],
-        "derived_from": action.derived_from,
-        "channel": session.channel,
-        "identity_state": session.identity_state,
-        "trust": stimulus.trust,
-        "effect": {
-            "visible_to_user": action.visible_to_user,
-            "reversibility": reversibility,
-            "scope": action.scope,
-            "amount": action.amount,
-            "sensitivity": action.sensitivity,
-        },
-        "metadata": {
-            "cluster_id": cluster.id,
-            "stimulus": stimulus.content,
-            "stimulus_source": stimulus.source,
-        },
-    }
 
 
 async def run_regression() -> dict[str, Any]:
@@ -88,7 +43,7 @@ async def run_regression() -> dict[str, Any]:
                 monitor.clear()
                 dispatcher.clear()
                 pipeline.reset()
-                run_id = f"eval:{cluster.id}:{trace.id}"
+                run_id = f"eval:{cluster.id}:{trace.id}:{uuid4().hex[:8]}"
                 observed_level = 0
                 decisions: list[str] = []
                 markov_states: list[tuple[int, int]] = []

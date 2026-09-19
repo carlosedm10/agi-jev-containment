@@ -304,6 +304,25 @@ class Neo4jGraphStore:
                 edge["id"] = f"{edge['type']}:{edge['source']}:{edge['target']}{suffix}"
             return {"nodes": _dedupe(nodes, "id"), "edges": unique_edges}
 
+    async def stats(self) -> dict[str, int]:
+        if not self.enabled:
+            return {"nodes": 0, "edges": 0, "events": 0, "runs": 0}
+        async with self._get_driver().session(database=settings.neo4j_database) as session:
+            nodes = await session.run("MATCH (n) RETURN count(n) AS n")
+            node_row = await nodes.single()
+            rels = await session.run("MATCH ()-[r]->() RETURN count(r) AS n")
+            rel_row = await rels.single()
+            events = await session.run("MATCH (e:Event) RETURN count(e) AS n")
+            event_row = await events.single()
+            runs = await session.run("MATCH (r:Run) RETURN count(r) AS n")
+            run_row = await runs.single()
+        return {
+            "nodes": int(node_row["n"]) if node_row else 0,
+            "edges": int(rel_row["n"]) if rel_row else 0,
+            "events": int(event_row["n"]) if event_row else 0,
+            "runs": int(run_row["n"]) if run_row else 0,
+        }
+
     async def persist_stream(self, envelopes: list[dict[str, Any]]) -> None:
         if not self.enabled or not envelopes:
             return

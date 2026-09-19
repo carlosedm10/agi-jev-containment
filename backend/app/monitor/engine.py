@@ -8,6 +8,7 @@ from app.events import MonitorEvent
 from app.monitor.drift import safety_drift
 from app.monitor.gate import decide
 from app.monitor.models import DriftState, MonitorAssessment, SentinelFinding
+from app.monitor.neighborhood import linked_history
 from app.monitor.policy import DEFAULT_POLICY, policy_violations
 from app.monitor.sentinel import inspect
 
@@ -57,9 +58,7 @@ class MonitorEngine:
 
     def prepare(self, event: MonitorEvent) -> PreparedSignals:
         with self._lock:
-            history = [
-                item for run_history in self._history.values() for item in run_history[-100:]
-            ]
+            history = linked_history(event, self._history)
             drift = safety_drift.step(event, DEFAULT_POLICY)
             findings = inspect(event, history, DEFAULT_POLICY)
             violations = policy_violations(event, DEFAULT_POLICY)
@@ -108,6 +107,7 @@ class MonitorEngine:
             jev_answers=verdict.answers,
             jev_model=verdict.model,
             jev_latency_ms=verdict.latency_ms,
+            jev_degraded_reason=verdict.degraded_reason,
         )
 
 

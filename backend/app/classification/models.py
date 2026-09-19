@@ -29,6 +29,7 @@ class Verdict:
     intent: str | None = None
     containment_breached: bool = False
     degraded: bool = False
+    degraded_reason: str | None = None
     answers: dict[str, Any] = field(default_factory=dict)
     model: str | None = None
     latency_ms: float | None = None

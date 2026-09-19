@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +23,13 @@ class Settings(BaseSettings):
     tool_hold_ms: int = 1500
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("typesafe_api_key", "helmcode_api_key", mode="before")
+    @classmethod
+    def _strip_wrapped_quotes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().strip('"').strip("'")
+        return value
 
     @property
     def sqlalchemy_url(self) -> str:
