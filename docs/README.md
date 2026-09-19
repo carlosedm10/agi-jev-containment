@@ -83,8 +83,8 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **Compose build cache is env-injected**: `cache_from`/`cache_to` interpolate `CACHE_FROM`/`CACHE_TO`; CI sets them to the GitHub Actions cache (`type=gha`), local builds default to throwaway `/tmp` dirs. Only one CI workflow exists (`ci.yml`) — it covers push and PRs to `main`, with in-progress runs cancelled on new commits.
 - **`jev` sets the level; playbooks execute it**: criticality is intent of the *chain*, not of one event. L3–L5 are prewritten host-side scripts, never an LLM choosing the cut. This project: pause the sandbox, close its ports, cut `agentnet` egress, stop the agent compose. Ideal: IAM revoke, detach IGW, kill the swarm. The L2 Helmcode supervisor may only request a re-score.
 - **Graph is sparse; context is short ∥ long**: only level ≥ 1 becomes a node (JSONL keeps everything). On every event, `jev` gets the recent burst and the key-node history in parallel — a streak of bad nodes is dangerous; a mild node after earlier problems still counts for more. How those are mixed is `jev`'s job.
-- **Run level is derived, not stored**: there is no `Run` model or table. The run's level is `max` over the append-only subgraph reachable from its run node, which makes escalate-only and L1-stickiness structural rather than enforced state.
-- **The graph is a directed graph, not a tree**: nodes keep an adjacency list (`neighbors`), there is no `parent`, and cycles are allowed via `connect()`. The root is just the first node; every traversal is cycle-safe.
+- **Run level is derived, not stored**: there is no `Run` model or table. The run's level is `max` over the nodes stamped with its `run_id`, which makes escalate-only and L1-stickiness structural rather than enforced state.
+- **The graph is undirected; run isolation comes from `run_id`**: nodes keep a mutual adjacency list (`neighbors`) — no `parent`, loops allowed via `connect()`. A run's nodes are the ones stamped with its `run_id`, so runs stay isolated without relying on edge direction.
 - **The tape and the graph are different things**: the JSONL tape under `run_log_dir` keeps every event (short-term context, replay, forensics); the graph keeps only materialized key nodes. Conflating them is what made the old code unable to be sparse.
 - **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty).
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
@@ -93,7 +93,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 ## Where the details live
 
 - [docs/cli.md](cli.md) — participant CLI commands, flags, exit codes.
-- [docs/Graph.md](Graph.md) — action graph spec (directed adjacency with cycles, run subgraphs, sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
+- [docs/Graph.md](Graph.md) — action graph spec (undirected adjacency, loops allowed, `run_id`-stamped nodes, sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
 - [docs/HappyRobotEvals.md](HappyRobotEvals.md) — HappyRobot use-case map, adversarial methodology, and the synthetic corpus contract.
