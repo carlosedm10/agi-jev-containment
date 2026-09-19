@@ -13,8 +13,9 @@ import {
   type PendingAction,
   type SafeAction,
 } from "@/dashboard/demo";
-import { actionsFromGraph, logsFromGraph } from "@/dashboard/feeds";
+import { actionsFromIncident, logsFromGraph } from "@/dashboard/feeds";
 import { eventText } from "@/dashboard/graph-layout";
+import { useIncidentFeed } from "@/dashboard/useIncidentFeed";
 import type { Graph } from "@/graph/protocol";
 import {
   useGraphStream,
@@ -184,8 +185,12 @@ function DemoDashboard() {
 
 function StreamDashboard() {
   const { graph, status } = useGraphStream();
+  const incident = useIncidentFeed();
   const view = graph ?? EMPTY_GRAPH;
-  const actions = useMemo(() => actionsFromGraph(view), [view]);
+  const actions = useMemo(
+    () => (incident === null ? [] : actionsFromIncident(incident)),
+    [incident],
+  );
   const logs = useMemo(() => logsFromGraph(view), [view]);
   return (
     <Dashboard
