@@ -11,12 +11,13 @@ Out:  experiments/results.csv
 import csv
 import itertools
 import os
+import time
 from pathlib import Path
 
 import requests
 
 API = "https://api.typesafe.ai/v1/systemone"
-KEY = os.environ["TYPESAFE_API_KEY"]
+KEY = os.environ.get("TYPESAFE_API_KEY")  # ponytail: .get so helmcode_bench can import CHAINS without the key
 OUT = Path(__file__).with_name("results.csv")
 
 QUESTIONS = {
@@ -144,7 +145,10 @@ LEVELS = [f"level_{i}_{n}" for i, n in enumerate(
 # --- runner -----------------------------------------------------------------
 
 def ask(events):
+    if not KEY:
+        raise RuntimeError("set TYPESAFE_API_KEY")
     state = {"agent_id": "agent-7", "events": events}
+    t0 = time.perf_counter()
     r = requests.post(
         API,
         json={"state": state, "model": "jev-latest", "questions": QUESTIONS},
@@ -152,7 +156,10 @@ def ask(events):
         timeout=60,
     )
     r.raise_for_status()
-    return r.json()["answers"]["criticality"]
+    elapsed = time.perf_counter() - t0
+    data = r.json()
+    out_toks = (data.get("usage") or {}).get("output_tokens", 0)
+    return data["answers"]["criticality"], elapsed, out_toks
 
 
 def run(chain_name, mode, chain, writer):
@@ -160,12 +167,14 @@ def run(chain_name, mode, chain, writer):
     for k in range(1, n + 1):
         events = chain[:k] if mode == "lead" else chain[-k:]
         try:
-            ans = ask(events)
+            ans, elapsed, out_toks = ask(events)
         except requests.HTTPError as e:
             print(f"{chain_name} {mode} k={k}: HTTP {e.response.status_code}")
             continue
         row = {
             "chain": chain_name, "mode": mode, "k": k, "n_events": n,
+            "latency_s": round(elapsed, 3),
+            "tok_per_s": round(out_toks / elapsed, 1) if out_toks else "",
             "choice": ans["choice"], "confidence": round(ans["confidence"], 4),
             **{f"p_{lvl}": round(ans["probabilities"].get(lvl, 0), 4) for lvl in LEVELS},
         }
@@ -178,7 +187,7 @@ def run(chain_name, mode, chain, writer):
 if __name__ == "__main__":
     with OUT.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[
-            "chain", "mode", "k", "n_events", "choice", "confidence",
+            "chain", "mode", "k", "n_events", "latency_s", "tok_per_s", "choice", "confidence",
             *[f"p_{l}" for l in LEVELS]])
         writer.writeheader()
         for name, chain in CHAINS.items():
