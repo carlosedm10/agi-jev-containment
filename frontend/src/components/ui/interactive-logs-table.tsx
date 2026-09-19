@@ -69,7 +69,7 @@ function LogRow({
           {log.level}
         </Badge>
         <span className="min-w-0">
-          <span className="block truncate text-xs text-zinc-800">
+          <span className="block truncate font-mono text-xs text-zinc-800">
             {log.message}
           </span>
           <span className="mt-0.5 block truncate text-[10px] text-zinc-500">

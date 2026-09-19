@@ -35,13 +35,6 @@ PUBLIC_TOOLS = lab_pool.PUBLIC_TOOLS or ["read_file", "write_file", "shell", "gi
 # Actions extracted from the lab corpus, tagged by scenario.
 LAB_ACTIONS = lab_pool.LAB_ACTIONS
 COVER_ACTIONS = [a for a in LAB_ACTIONS if a.get("scenario") == "cover"]
-_TRIGGER_ACTIONS = [a for a in LAB_ACTIONS if a.get("scenario") != "cover"]
-TRIGGER_BY_SCENARIO: dict[str, list[dict[str, Any]]] = {
-    "exfil": [a for a in _TRIGGER_ACTIONS if a.get("scenario") == "exfil"],
-    "lateral": [a for a in _TRIGGER_ACTIONS if a.get("scenario") == "lateral"],
-    "forge": [a for a in _TRIGGER_ACTIONS if a.get("scenario") == "forge"],
-    "memory_poison": [a for a in _TRIGGER_ACTIONS if a.get("scenario") == "memory_poison"],
-}
 
 
 def _random_event_id(run_id: str, seq: int) -> str:
@@ -77,19 +70,24 @@ def _pick_cover_action(
     used_actions: list[dict[str, Any]],
     target_pool: list[str],
     tool_pool: list[str],
+    signature_pool: set[tuple[Any, ...]] | None = None,
 ) -> dict[str, Any]:
-    """Pick a cover action, biasing toward reuse of earlier actions or lab targets/tools."""
+    """Pick a cover action, biasing heavily toward signatures already in the graph."""
     candidates = COVER_ACTIONS
-    if target_pool:
+    if signature_pool and random.random() < 0.55:
+        by_signature = [a for a in candidates if _action_signature(a) in signature_pool]
+        if by_signature:
+            candidates = by_signature
+    if target_pool and random.random() < 0.45:
         by_target = [a for a in candidates if a.get("target") in target_pool]
-        if by_target and random.random() < 0.45:
+        if by_target:
             candidates = by_target
     elif tool_pool:
         by_tool = [a for a in candidates if a.get("tool") in tool_pool]
         if by_tool and random.random() < 0.45:
             candidates = by_tool
 
-    if used_actions and random.random() < 0.3:
+    if used_actions and random.random() < 0.35:
         return random.choice(used_actions)
 
     return random.choice(candidates)
@@ -137,8 +135,9 @@ def _cover_event(
     target_pool: list[str],
     tool_pool: list[str],
     derived_pool: list[str],
+    signature_pool: set[tuple[Any, ...]] | None = None,
 ) -> dict[str, Any]:
-    template = _pick_cover_action(used_signatures, used_actions, target_pool, tool_pool)
+    template = _pick_cover_action(used_signatures, used_actions, target_pool, tool_pool, signature_pool)
     event = _from_template(template, run_id, seq, agent, channel, session_id)
     used_actions.append(template)
     used_signatures.add(_action_signature(template))
@@ -428,6 +427,7 @@ def build_run(
     min_cover: int,
     max_cover: int,
     scenario: str | None = None,
+    signature_pool: set[tuple[Any, ...]] | None = None,
 ) -> tuple[list[dict[str, Any]], str, str, str]:
     """Return events for one run plus the agent/channel/session used."""
     agents = agent_pool or AGENTS
@@ -460,13 +460,16 @@ def build_run(
             used_event_ids,
             used_actions,
             used_signatures,
-            target_pool,
-            tool_pool,
+            [],
+            [],
             derived_pool,
+            signature_pool,
         )
         events.append(event)
         used_event_ids.append(event["event_id"])
         previous_id = event["event_id"]
+        if signature_pool is not None:
+            signature_pool.add(_action_signature(event))
 
     if scenario and scenario in _TRIGGERS:
         trigger = _TRIGGERS[scenario]

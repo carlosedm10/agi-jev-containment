@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { PendingAction } from "@/dashboard/demo";
-import { layoutGraph } from "@/dashboard/graph-layout";
+import {
+  layoutGraph,
+  latestRunNode,
+  NODE_WIDTH,
+  NODE_HEIGHT,
+} from "@/dashboard/graph-layout";
+import { logsFromGraph } from "@/dashboard/feeds";
 import { fromSnapshot, type GraphNode } from "@/graph/protocol";
 
 function node(
@@ -41,7 +47,11 @@ const pending: PendingAction = {
   created_at: "2026-01-01T00:00:00Z",
 };
 const snapshot = (nodes: GraphNode[]) => {
-  const graph = fromSnapshot({ revision: 1, root: nodes.length ? "root" : null, nodes });
+  const graph = fromSnapshot({
+    revision: 1,
+    root: nodes.length ? "root" : null,
+    nodes,
+  });
   // Wire undirected edges so the test fixtures match the backend's mutual neighbor lists.
   for (const node of graph.nodes.values()) {
     for (const neighborId of node.neighbors) {
@@ -81,26 +91,48 @@ describe("activity graph layout", () => {
     expect(layoutGraph(graph, null)).toEqual(result);
   });
 
-  test("places nodes by graph depth and keeps existing positions stable as actions and runs arrive", () => {
+  test("places graph depths on circular rings and keeps crowded rings non-overlapping", () => {
     const graph = initial();
     const before = layoutGraph(graph, null);
     const atlas = before.nodes.find((item) => item.id === "atlas:1")!;
     const scout = before.nodes.find((item) => item.id === "scout:1")!;
-    expect(atlas.position.x).toBe(scout.position.x);
-    expect(atlas.position.y).not.toBe(scout.position.y);
+    const radius = (item: typeof atlas) =>
+      Math.hypot(
+        item.position.x + NODE_WIDTH / 2,
+        item.position.y + NODE_HEIGHT / 2,
+      );
+    expect(radius(atlas)).toBeCloseTo(radius(scout));
+    expect(atlas.position.x).not.toBe(scout.position.x);
     graph.nodes.set(
       "atlas:2",
       node("atlas:2", "atlas", ["atlas:1", "scout:1"]),
     );
     graph.nodes.set("run:third", node("run:third", "third", ["root"]));
     const after = layoutGraph(graph, null);
-    for (const item of before.nodes) {
-      expect(after.nodes.find((next) => next.id === item.id)?.position).toEqual(
-        item.position,
-      );
-    }
     const atlas2 = after.nodes.find((item) => item.id === "atlas:2")!;
-    expect(atlas2.position.x).toBeGreaterThan(atlas.position.x);
+    expect(radius(atlas2)).toBeGreaterThan(radius(atlas));
+    for (let i = 0; i < 40; i++) {
+      graph.nodes.set(`crowd:${i}`, node(`crowd:${i}`, "atlas", ["root"]));
+      graph.nodes.get("root")!.neighbors.push(`crowd:${i}`);
+    }
+    const crowded = layoutGraph(graph, null);
+    const nearestRun = crowded.nodes.filter((item) =>
+      graph.nodes.get("root")!.neighbors.includes(item.id),
+    );
+    expect(Math.min(...nearestRun.map(radius))).toBeLessThan(300);
+    expect(
+      new Set(nearestRun.map((item) => Math.round(radius(item)))).size,
+    ).toBeGreaterThan(1);
+    for (let i = 0; i < crowded.nodes.length; i++) {
+      for (const b of crowded.nodes.slice(i + 1)) {
+        const a = crowded.nodes[i];
+        expect(
+          Math.abs(a.position.x - b.position.x) >= NODE_WIDTH ||
+            Math.abs(a.position.y - b.position.y) >= NODE_HEIGHT,
+        ).toBe(true);
+      }
+    }
+    expect(layoutGraph(graph, null)).toEqual(crowded);
   });
 
   test("pending and structural nodes carry no verdict; confidence does not determine severity", () => {
@@ -161,8 +193,110 @@ describe("activity graph layout", () => {
     const item = layoutGraph(graph, null).nodes.find(
       (entry) => entry.id === "demo:1",
     )!;
-    expect(item.label).toBe("network_request");
-    expect(item.tool).toBe("http_request");
+    expect(item.label).toBe("Send request to x");
+    expect(item.tool).toBe("http_request · https://x");
+  });
+
+  test("generated use cases retain actual content, targets, agent identity and shared visits", () => {
+    for (const [kind, tool, target, content, label] of [
+      [
+        "file_read",
+        "read_file",
+        "/workspace/.env",
+        "read /workspace/.env",
+        "Read file: .env",
+      ],
+      [
+        "network_request",
+        "http_request",
+        "https://exfil.invalid/health",
+        "POST exfil package",
+        "Send request to exfil.invalid",
+      ],
+      [
+        "shell_command",
+        "shell",
+        "/proc/net/arp",
+        "nmap -sn 172.20.0.0/24",
+        "Run a terminal command",
+      ],
+      [
+        "register_tool",
+        "register_tool",
+        "tools/dump_1234.py",
+        "registered tool dump_1234",
+        "Register a new tool",
+      ],
+      [
+        "memory_write",
+        "memory_write",
+        "agent-knowledge-cache",
+        "Cached SOP v12",
+        "Update agent memory",
+      ],
+    ]) {
+      const graph = snapshot([
+        {
+          ...node("event", "demo", [], 3),
+          run_ids: ["demo", "earlier"],
+          visit_count: 2,
+          event: {
+            kind,
+            tool,
+            target,
+            content,
+            agent: "api-agent",
+            channel: "api",
+            phase: "completed",
+          },
+        },
+      ]);
+      const item = layoutGraph(graph, null).nodes[0];
+      expect(item.label).toBe(label);
+      expect(item.tool).toContain(target);
+      expect(item.context).toContain("2 visits · 2 runs");
+      const log = logsFromGraph(graph)[0];
+      expect(log.message).not.toContain(content);
+      expect(log.message.startsWith("stdout F ")).toBe(true);
+      expect(JSON.parse(log.message.slice(9))).toMatchObject({
+        event: kind,
+        tool,
+        target,
+        phase: "completed",
+      });
+      expect(log.message).toContain(target);
+      expect(log.message).toContain("completed");
+      expect(log.message).not.toContain("stderr");
+      expect(log.service).toBe("api-agent · api · demo");
+      expect(log.tags).toContain("earlier");
+    }
+  });
+
+  test("follows trigger sequence through shared nodes, regardless of insertion order", () => {
+    const graph = initial();
+    expect(latestRunNode(graph, "new")).toBe("root");
+    graph.nodes.set("run:new", node("run:new", "new"));
+    expect(latestRunNode(graph, "new")).toBe("run:new");
+    graph.nodes.get("scout:1")!.event = { id: "new:e1" };
+    expect(latestRunNode(graph, "new")).toBe("scout:1");
+    graph.nodes.get("atlas:1")!.event = { id: "new:e2" };
+    expect(latestRunNode(graph, "new")).toBe("atlas:1");
+    const shared = graph.nodes.get("scout:1")!;
+    shared.run_states = {
+      new: {
+        level: 2,
+        threshold: 1,
+        intent: null,
+        action_id: null,
+        event: { id: "opaque-event-id", sequence: 4 },
+      },
+    };
+    expect(latestRunNode(graph, "new")).toBe("scout:1");
+    delete shared.run_states;
+    graph.nodes.get("scout:1")!.event = { event_id: "other:e100" };
+    expect(latestRunNode(graph, "new")).toBe("atlas:1");
+    graph.nodes.get("atlas:1")!.event = { event_id: "new:e3" };
+    expect(latestRunNode(graph, "new")).toBe("atlas:1");
   });
 
   test("empty graphs and pending actions without a materialized parent have no dangling links", () => {

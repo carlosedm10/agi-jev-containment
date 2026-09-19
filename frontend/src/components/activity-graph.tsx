@@ -34,6 +34,8 @@ export type ActivityNode = Node<
     item: ActivityItem;
     reducedMotion: boolean;
     onSelect: (id: string) => void;
+    horizontal?: boolean;
+    timestamp?: string;
   },
   "activity"
 >;
@@ -55,11 +57,13 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
   const color = awaiting ? "#1447e6" : (verdict?.color ?? "#736f6a");
   const status = awaiting
     ? "Awaiting Jev"
-    : structural
-      ? item.runId
-        ? "Agent run"
-        : "Graph root"
-      : `L${item.kind === "classified" ? item.level : ""} · ${verdict?.label ?? "Unrecognized level"}`;
+    : item.kind === "recorded"
+      ? "Recorded · unassessed"
+      : structural
+        ? item.runId
+          ? "Agent run"
+          : "Graph root"
+        : `L${item.kind === "classified" ? item.level : ""} · ${verdict?.label ?? "Unrecognized level"}`;
   const Icon = awaiting
     ? LoaderCircle
     : structural
@@ -87,7 +91,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
         style={{
           width: NODE_WIDTH,
           height: NODE_HEIGHT,
-          borderRadius: 12,
+          borderRadius: 28,
           padding: "12px 14px",
           background: verdict?.background ?? "#fcfcfc",
           border: `1px solid ${selected ? color : awaiting ? "#c3ccf0" : verdict ? `${color}55` : "#dad5cc"}`,
@@ -100,7 +104,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
       >
         <Handle
           type="target"
-          position={Position.Top}
+          position={data.horizontal ? Position.Left : Position.Top}
           isConnectable={false}
           style={{ opacity: 0 }}
         />
@@ -136,9 +140,11 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
             fontSize: 13,
             fontWeight: 650,
             lineHeight: "18px",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
             overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            height: 36,
           }}
         >
           {item.label}
@@ -155,6 +161,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
         >
           {!structural && <Terminal size={11} aria-hidden="true" />}
           <span
+            title={item.tool}
             style={{
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -163,15 +170,32 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
           >
             {item.tool || (structural ? "Unclassified structure" : item.runId)}
           </span>
-
+        </div>
+        <div
+          title={item.context}
+          className="mt-1 truncate text-[9px] text-zinc-500"
+        >
+          {item.context}
         </div>
         <Handle
           type="source"
-          position={Position.Bottom}
+          position={data.horizontal ? Position.Right : Position.Bottom}
           isConnectable={false}
           style={{ opacity: 0 }}
         />
       </BaseNode>
+      {data.timestamp && (
+        <time
+          dateTime={data.timestamp}
+          title={data.timestamp}
+          className="block pt-3 text-center font-mono text-[11px] text-zinc-500"
+        >
+          {new Date(data.timestamp).toLocaleTimeString("en-GB", {
+            timeZone: "UTC",
+          })}{" "}
+          UTC
+        </time>
+      )}
     </NodeStatusIndicator>
   );
 }
@@ -223,24 +247,50 @@ export function GraphControls() {
 export function FollowViewport({
   nodeKey,
   reducedMotion,
+  focusNodeId,
 }: {
   nodeKey: string;
   reducedMotion: boolean;
+  focusNodeId?: string | null;
 }) {
   const width = useStore((state) => state.width);
   const height = useStore((state) => state.height);
-  const { fitBounds, getNodesBounds, getNodes } = useReactFlow();
+  const focusX = useStore((state) =>
+    focusNodeId
+      ? state.nodeLookup.get(focusNodeId)?.internals.positionAbsolute.x
+      : undefined,
+  );
+  const focusY = useStore((state) =>
+    focusNodeId
+      ? state.nodeLookup.get(focusNodeId)?.internals.positionAbsolute.y
+      : undefined,
+  );
+  const { fitBounds, getNodesBounds, getNodes, setCenter } = useReactFlow();
   useEffect(() => {
     if (!width || !height) return;
     const frame = requestAnimationFrame(() => {
+      if (focusNodeId && focusX !== undefined && focusY !== undefined) {
+        void setCenter(focusX + NODE_WIDTH / 2, focusY + NODE_HEIGHT / 2, {
+          zoom: 0.75,
+          duration: reducedMotion ? 0 : 650,
+          ease: (t) => t * t * (3 - 2 * t),
+        });
+        return;
+      }
+      if (focusNodeId) return;
       void fitBounds(getNodesBounds(getNodes()), {
         padding: 0.18,
-        duration: reducedMotion ? 0 : 250,
+        duration: reducedMotion ? 0 : 650,
+        ease: (t) => t * t * (3 - 2 * t),
       });
     });
     return () => cancelAnimationFrame(frame);
   }, [
     nodeKey,
+    focusNodeId,
+    focusX,
+    focusY,
+    setCenter,
     reducedMotion,
     fitBounds,
     getNodesBounds,

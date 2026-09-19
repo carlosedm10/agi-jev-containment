@@ -148,7 +148,14 @@ type TaskRow = {
   key: string;
   label: string;
   amount: string;
-  status: "done" | "running" | "failed" | "sequence";
+  status:
+    | "done"
+    | "running"
+    | "failed"
+    | "sequence"
+    | "queued"
+    | "partial"
+    | "canceled";
   selected?: boolean;
   step?: number;
   details: TaskDetail[];
@@ -228,6 +235,12 @@ export default function TaskRows({
     if (row.status === "failed") return <Badge tone="red">{XIcon}</Badge>;
     if (row.status === "running")
       return <SpinnerRing active>{row.step}</SpinnerRing>;
+    if (
+      row.status === "queued" ||
+      row.status === "partial" ||
+      row.status === "canceled"
+    )
+      return <SpinnerRing />;
     return row2 === "pending" ? (
       <SpinnerRing>{row.step}</SpinnerRing>
     ) : row2 === "failed" ? (
@@ -238,6 +251,16 @@ export default function TaskRows({
   };
 
   const pillFor = (row: TaskRow) => {
+    if (
+      row.status === "queued" ||
+      row.status === "partial" ||
+      row.status === "canceled"
+    )
+      return (
+        <span className="rounded-full bg-zinc-100 px-2 py-1 text-[11px] capitalize text-zinc-600">
+          {row.status}
+        </span>
+      );
     if (row.status === "done")
       return (
         <span className="inline-flex h-5.5 items-center rounded-full bg-green-tint px-2 text-[11.5px] font-medium text-green">

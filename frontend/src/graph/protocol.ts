@@ -10,6 +10,10 @@ export type GraphNode = {
   event: Record<string, unknown> | null;
   action_id: string | null;
   created_at: string | null;
+  run_states?: Record<
+    string,
+    Pick<GraphNode, "level" | "threshold" | "intent" | "event" | "action_id">
+  >;
 };
 
 type GraphSnapshot = {
@@ -108,7 +112,9 @@ export function fromSnapshot(snapshot: GraphSnapshot): Graph {
   return {
     revision: snapshot.revision,
     root: snapshot.root,
-    nodes: new Map(snapshot.nodes.map((node) => [node.id, normalizeNode(node)])),
+    nodes: new Map(
+      snapshot.nodes.map((node) => [node.id, normalizeNode(node)]),
+    ),
   };
 }
 

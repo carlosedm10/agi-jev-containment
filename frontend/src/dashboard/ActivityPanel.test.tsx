@@ -108,6 +108,28 @@ test("action rows select graph nodes on opening and reflect controlled status an
   expect(row.textContent).toContain("Running");
 });
 
+test("unfinished protective actions never display Completed", () => {
+  for (const status of [
+    "queued",
+    "running",
+    "partial",
+    "canceled",
+    "failed",
+  ] as const) {
+    act(() =>
+      root.render(
+        <ActivityPanel
+          actions={[{ ...action, status }]}
+          selectedNodeId={null}
+          onSelectNode={() => {}}
+        />,
+      ),
+    );
+    expect(container.textContent).not.toContain("Completed");
+    expect(container.textContent?.toLowerCase()).toContain(status);
+  }
+});
+
 test("logs show all entries with UTC timestamps and expandable details without search or filters", () => {
   act(() => root.render(<InteractiveLogsTable logs={logs} />));
   expect(container.textContent).toContain("Container logs");
