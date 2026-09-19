@@ -33,6 +33,7 @@ These names repeat in compose, Makefile targets, and env vars.
 | **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) |
 | **Demo scenarios** | Malicious-agent harness + the L1–L5 demo arcs | [docs/scenarios.md](scenarios.md) |
 | **jev** | Classifier: chain intent → level 0–5 + confidence + intent choice | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
+| **Evals** | HappyRobot corpus (24×3 traces) and live monitor regression; headline is harm-detection F1 | `backend/app/evals/` · [docs/HappyRobotEvals.md](HappyRobotEvals.md) |
 
 ## How it's built
 
@@ -103,6 +104,6 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - [docs/RealtimeGraphAPI.md](RealtimeGraphAPI.md) — contrato implementable en español para snapshot + SSE, payloads, lifecycle, grafo Neo4j y world state.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
-- [docs/HappyRobotEvals.md](HappyRobotEvals.md) — HappyRobot use-case map, adversarial methodology, and the synthetic corpus contract.
+- [docs/HappyRobotEvals.md](HappyRobotEvals.md) — how the evals work: corpus, integrity tests, live `make monitor-eval`, and harm-detection F1.
 - [docs/scenarios.md](scenarios.md) — malicious-agent harness, toolset, and the demo scenarios (L1–L5).
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
