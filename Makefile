@@ -74,7 +74,7 @@ bun-lock-regenerate:
 	docker compose exec -T frontend-hackspain bun install --lockfile-only
 
 # ----------------------------- Terminals ----------------------------- #
-.PHONY: backend-shell frontend-shell postgres-shell
+.PHONY: backend-shell frontend-shell postgres-shell neo4j-shell
 
 backend-shell:
 	docker compose exec backend-hackspain sh
@@ -85,8 +85,11 @@ frontend-shell:
 postgres-shell:
 	docker compose exec postgres-hackspain psql -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-hackspain}
 
+neo4j-shell:
+	docker compose exec neo4j-hackspain cypher-shell -u $${NEO4J_USER:-neo4j} -p $${NEO4J_PASSWORD:-hackspain-local}
+
 # ----------------------------- Debugging ----------------------------- #
-.PHONY: logs-backend logs-frontend logs-db logs
+.PHONY: logs-backend logs-frontend logs-db logs-neo4j logs
 
 # App logs never include the database — that is logs-db.
 logs-backend:
@@ -97,6 +100,9 @@ logs-frontend:
 
 logs-db:
 	docker compose logs -f postgres-hackspain
+
+logs-neo4j:
+	docker compose logs -f neo4j-hackspain
 
 logs:
 	docker compose logs -f backend-hackspain frontend-hackspain
@@ -149,13 +155,19 @@ lint-fix:
 	make lint-fix-frontend
 
 # ----------------------------- Testing ----------------------------- #
-.PHONY: test-backend test-frontend test
+.PHONY: test-backend test-frontend eval-integrity monitor-eval test
 
 test-backend:
 	docker compose exec -T backend-hackspain uv run pytest $(TEST)
 
 test-frontend:
 	docker compose exec -T frontend-hackspain bun run test
+
+eval-integrity:
+	docker compose exec -T backend-hackspain uv run pytest app/evals/tests/test_happyrobot_cases.py
+
+monitor-eval:
+	docker compose exec -T backend-hackspain uv run python -m app.evals.run_monitor_regression --output /tmp/monitor-eval.json
 
 test:
 	make test-backend
