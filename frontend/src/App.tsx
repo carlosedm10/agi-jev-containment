@@ -1,7 +1,6 @@
+import { useGraphStream } from "@/graph/useGraphStream";
+
 export default function App() {
-  return (
-    <main>
-      <h1>hackspain</h1>
-    </main>
-  );
+  useGraphStream();
+  return null;
 }

@@ -1,16 +1,16 @@
-"""Tests for the graph streaming protocol: manager pub/sub, SSE hub, endpoint."""
-
 from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
 
 from app.graph import ActionGraph, stream
 from app.graph.manager import GraphUpdate
-from app.main import app  # noqa: F401 - mounts the graph router
+from app.main import app
 
 
 def _ids(update: GraphUpdate) -> set[str]:
@@ -27,11 +27,7 @@ class Collector:
 
 @pytest.fixture
 def g() -> ActionGraph:
-    """Fresh graph instance (not the singleton) for manager-level tests."""
     return ActionGraph()
-
-
-# --------------------------------------------------------------------------- #
 
 
 class TestManagerSubscription:
@@ -41,9 +37,7 @@ class TestManagerSubscription:
 
     async def test_snapshot_captures_existing_graph(self, g: ActionGraph):
         root = g.add_node("root", tool=object())
-        node = g.add_node(
-            "run:r1:1", connect=root, run_id="r1", event={"event": "file_read"}
-        )
+        g.add_node("run:r1:1", connect=root, run_id="r1", event={"event": "file_read"})
         collector = Collector()
         snapshot = g.subscribe(collector)
 
@@ -54,17 +48,16 @@ class TestManagerSubscription:
         assert by_id["run:r1:1"]["neighbors"] == ["root"]
         assert by_id["run:r1:1"]["run_id"] == "r1"
         assert by_id["run:r1:1"]["event"] == {"event": "file_read"}
-        # The live tool object is never serialized.
         assert "tool" not in by_id["root"]
 
     async def test_updates_are_ordered_and_gapless(self, g: ActionGraph):
         collector = Collector()
         g.subscribe(collector)
-        root = g.add_node("root")                          # 1
-        left = g.add_node("left", connect=root)            # 2
-        right = g.add_node("right", connect=root)          # 3
-        g.connect(left, right)                             # 4
-        g.update("left", intent="recon")                    # 5
+        root = g.add_node("root")
+        left = g.add_node("left", connect=root)
+        right = g.add_node("right", connect=root)
+        g.connect(left, right)
+        g.update("left", intent="recon")
 
         revisions = [u.revision for u in collector.updates]
         assert revisions == [1, 2, 3, 4, 5]
@@ -83,7 +76,9 @@ class TestManagerSubscription:
         first, second = collector.updates
         assert _ids(first) == {"root"}
         assert _ids(second) == {"child", "root"}
-        assert second.upsert_nodes[1]["neighbors"] == ["child"]
+        by_id = {n["id"]: n for n in second.upsert_nodes}
+        assert by_id["root"]["neighbors"] == ["child"]
+        assert by_id["child"]["neighbors"] == ["root"]
 
     async def test_connect_upserts_both_endpoints(self, g: ActionGraph):
         collector = Collector()
@@ -130,7 +125,6 @@ class TestManagerSubscription:
         g.subscribe(collector)
         collector.updates.clear()
 
-        # First append on a virgin graph creates root + run node + key node.
         g.append("r1", level=2, threshold=0.8, intent="recon")
         (update,) = collector.updates
         assert _ids(update) == {"root", "run:r1", "r1:1"}
@@ -138,7 +132,6 @@ class TestManagerSubscription:
         collector.updates.clear()
         g.append("r2", level=1, threshold=0.5)
         (update,) = collector.updates
-        # root is re-upserted too: it gained run:r2 as a neighbor.
         assert _ids(update) == {"root", "run:r2", "r2:1"}
 
     async def test_clear_reports_removed_ids(self, g: ActionGraph):
@@ -159,7 +152,6 @@ class TestManagerSubscription:
         stale = g.add_node("stale", connect=root)
         path = tmp_path / "snapshot.json"
         g.save(path)
-        # A node created after the snapshot must be reported as removed.
         g.add_node("ghost", connect=root)
         collector = Collector()
         g.subscribe(collector)
@@ -188,9 +180,6 @@ class TestManagerSubscription:
         assert g.revision == 1
 
 
-# --------------------------------------------------------------------------- #
-
-
 class TestSubscriptionHub:
     async def test_receive_delivers_updates_in_order(self):
         subscription = stream.Subscription(asyncio.get_running_loop())
@@ -211,78 +200,153 @@ class TestSubscriptionHub:
             subscription._on_update(
                 GraphUpdate(revision=i + 1, root=None, upsert_nodes=[], removed_node_ids=[])
             )
-        await asyncio.sleep(0)  # let the call_soon_threadsafe callbacks run
+        await asyncio.sleep(0)
         assert subscription.overflow.is_set()
         assert await subscription.receive() is None
 
 
-# --------------------------------------------------------------------------- #
+_SCOPE = {
+    "type": "http",
+    "asgi": {"version": "3.0", "spec_version": "2.3"},
+    "http_version": "1.1",
+    "method": "GET",
+    "scheme": "http",
+    "path": "/api/graph/stream",
+    "raw_path": b"/api/graph/stream",
+    "query_string": b"",
+    "root_path": "",
+    "headers": [(b"host", b"test"), (b"accept", b"text/event-stream")],
+    "client": ("test", 1234),
+    "server": ("test", 80),
+}
+
+TIMEOUT = 2
 
 
-async def _read_event(lines) -> tuple[str, dict[str, Any]]:
-    """Consume SSE lines until one full event is parsed; return (event, data)."""
+def _parse_sse(block: str) -> tuple[str, dict[str, Any]]:
     event = ""
     data = ""
-    async for line in lines:
-        line = line.rstrip("\n")
+    for line in block.split("\n"):
         if line.startswith("event: "):
             event = line.removeprefix("event: ")
         elif line.startswith("data: "):
             data = line.removeprefix("data: ")
-        elif line == "" and event:
-            return event, json.loads(data)
-    raise AssertionError("stream ended before a full event arrived")
+    assert event, f"no event in {block!r}"
+    return event, json.loads(data)
+
+
+class SSEClient:
+    def __init__(self) -> None:
+        self.status = 0
+        self.headers: dict[str, str] = {}
+        self._messages: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._disconnected = asyncio.Event()
+        self._task: asyncio.Task[None] = asyncio.create_task(
+            app(_SCOPE, self._receive, self._messages.put)
+        )
+
+    async def _receive(self) -> dict[str, str]:
+        await self._disconnected.wait()
+        return {"type": "http.disconnect"}
+
+    async def _next(self) -> dict[str, Any]:
+        return await asyncio.wait_for(self._messages.get(), timeout=TIMEOUT)
+
+    async def open(self) -> None:
+        message = await self._next()
+        assert message["type"] == "http.response.start"
+        self.status = message["status"]
+        self.headers = {k.decode(): v.decode() for k, v in message["headers"]}
+
+    async def event(self) -> tuple[str, dict[str, Any]]:
+        message = await self._next()
+        assert message["type"] == "http.response.body"
+        return _parse_sse(message["body"].decode())
+
+    async def wait_closed(self) -> None:
+        await asyncio.wait_for(asyncio.shield(self._task), timeout=TIMEOUT)
+
+    async def close(self) -> None:
+        self._disconnected.set()
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+
+
+@asynccontextmanager
+async def sse_client() -> AsyncIterator[SSEClient]:
+    client = SSEClient()
+    try:
+        await client.open()
+        yield client
+    finally:
+        await client.close()
 
 
 class TestStreamEndpoint:
-    """Endpoint tests run against the singleton the router streams from, so
-    revisions are asserted relative to the snapshot, never absolute."""
-
-    async def test_snapshot_then_live_updates(self, client, fresh_graph: ActionGraph):
+    async def test_snapshot_then_live_updates(self, fresh_graph: ActionGraph):
         fresh_graph.add_node("root", threshold=0.4)
-        async with client.stream("GET", "/api/graph/stream") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
+        async with sse_client() as client:
+            assert client.status == 200
+            assert client.headers["content-type"].startswith("text/event-stream")
 
-            lines = response.aiter_lines()
-            event, data = await _read_event(lines)
+            event, data = await client.event()
             assert event == "snapshot"
             assert data["revision"] == fresh_graph.revision
             assert data["root"] == "root"
             assert data["nodes"][0]["id"] == "root"
             base = data["revision"]
 
-            # A mutation after connecting arrives as an ordered update.
             fresh_graph.append("r1", level=2, threshold=0.8, intent="recon")
-            event, data = await _read_event(lines)
+            event, data = await client.event()
             assert event == "update"
             assert data["revision"] == base + 1
             assert {"root", "run:r1", "r1:1"} <= {n["id"] for n in data["upsert_nodes"]}
             assert data["root"] == "root"
 
-    async def test_empty_graph_snapshot(self, client, fresh_graph: ActionGraph):
-        async with client.stream("GET", "/api/graph/stream") as response:
-            event, data = await _read_event(response.aiter_lines())
+            fresh_graph.update("r1:1", action_id="contain")
+            event, data = await client.event()
+            assert data["revision"] == base + 2
+            assert [n["action_id"] for n in data["upsert_nodes"]] == ["contain"]
+
+            fresh_graph.clear()
+            event, data = await client.event()
+            assert data["root"] is None
+            assert set(data["removed_node_ids"]) == {"root", "run:r1", "r1:1"}
+
+    async def test_empty_graph_snapshot(self, fresh_graph: ActionGraph):
+        async with sse_client() as client:
+            event, data = await client.event()
             assert event == "snapshot"
             assert data == {"revision": fresh_graph.revision, "root": None, "nodes": []}
 
-    async def test_multiple_clients_each_get_updates(self, client, fresh_graph: ActionGraph):
-        async with client.stream("GET", "/api/graph/stream") as first, client.stream(
-            "GET", "/api/graph/stream"
-        ) as second:
-            await _read_event(first.aiter_lines())
-            await _read_event(second.aiter_lines())
+    async def test_multiple_clients_each_get_updates(self, fresh_graph: ActionGraph):
+        async with sse_client() as first, sse_client() as second:
+            await first.event()
+            await second.event()
             base = fresh_graph.revision
 
             fresh_graph.add_node("root")
-            for response in (first, second):
-                event, data = await _read_event(response.aiter_lines())
+            for client in (first, second):
+                event, data = await client.event()
                 assert event == "update"
                 assert data["revision"] == base + 1
                 assert [n["id"] for n in data["upsert_nodes"]] == ["root"]
 
-    async def test_disconnect_unsubscribes(self, client, fresh_graph: ActionGraph):
-        async with client.stream("GET", "/api/graph/stream") as response:
-            await _read_event(response.aiter_lines())
+    async def test_disconnect_unsubscribes(self, fresh_graph: ActionGraph):
+        async with sse_client() as client:
+            await client.event()
             assert len(fresh_graph._listeners) == 1
         assert fresh_graph._listeners == []
+
+    async def test_slow_client_stream_ends(self, fresh_graph: ActionGraph):
+        async with sse_client() as client:
+            await client.event()
+            root = fresh_graph.add_node("root")
+            for i in range(stream.MAX_QUEUE + 1):
+                fresh_graph.add_node(f"n{i}", connect=root)
+
+            await client.wait_closed()
+            assert fresh_graph._listeners == []

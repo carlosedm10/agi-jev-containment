@@ -32,6 +32,19 @@ There is no `Run` model. Everything the pipeline needs about a run is derived fr
 
 `append(run_id, …)` chains a new node under the run's last node with id `{run_id}:{seq}`; `connect(src, dst)` adds extra edges between existing nodes (this is how loops form); `update(node_id, **fields)` is how the dispatcher later stamps `action_id` on a node that fired a playbook; `clear()` resets the instance in place (a human clearing them from the viewer, [Actions.md](Actions.md)).
 
+### Live stream
+
+`GET /api/graph/stream` is a Server-Sent Events feed of the whole graph — every run, not one. Clients keep the graph in memory and never poll.
+
+- **First message — `snapshot`**: `{revision, root, nodes}` with every node and its `neighbors` by id. Every serializable field travels; the live `tool` object never does.
+- **Every later message — `update`**: `{revision, root, upsert_nodes, removed_node_ids}`. An upserted node carries its *complete* neighbor list, so applying it replaces the client's version of that node wholesale; edges are therefore never patched, only re-sent from both endpoints.
+- **`revision`** increments by one per published change and is the client's gap detector: an update whose revision is not `previous + 1` means the client missed something and must reconnect.
+- **One update per composite operation**: `append()` may create the root, the run node and the key node — subscribers see a single update, never a partial graph. Failed mutations publish nothing.
+- **Subscribe is atomic**: the listener is registered and the snapshot captured under one lock acquisition, so no change can slip between "read the snapshot" and "start listening".
+- **Slow clients are dropped**: each subscriber owns a bounded queue (64 updates); overflow ends that stream so the client reconnects and resynchronizes from a fresh snapshot. There is no replay buffer — reconnecting always starts from a new snapshot.
+
+The hub is `backend/app/graph/stream.py` (one queue per client, subscribe/unsubscribe), the endpoint `backend/app/graph/router.py`. The browser consumes it through `useGraphStream()` in `frontend/src/graph/`, which mirrors the graph in memory and renders nothing.
+
 ### Example
 
 ```python
