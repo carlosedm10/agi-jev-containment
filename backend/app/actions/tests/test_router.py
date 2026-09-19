@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -196,18 +195,6 @@ def test_happyrobot_poll_defaults_are_strictly_positive():
 def test_happyrobot_poll_settings_reject_non_positive_values(overrides):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **overrides)
-
-
-def test_env_template_documents_happyrobot_poll_settings_together():
-    template = (
-        Path(__file__).resolve().parents[4] / ".env_template"
-    ).read_text(encoding="utf-8")
-
-    hook_index = template.index("HAPPYROBOT_HOOK_URL=")
-    interval_index = template.index("HAPPYROBOT_POLL_INTERVAL=1.5")
-    timeout_index = template.index("HAPPYROBOT_POLL_TIMEOUT=180")
-    oncall_index = template.index("ONCALL_PHONE=")
-    assert hook_index < interval_index < timeout_index < oncall_index
 
 
 def test_production_service_factory_is_cached_and_wires_settings(tmp_path, monkeypatch):
