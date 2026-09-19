@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arquitectura real — dónde clasifica Jev</title>
+  <style>
+    :root {
+      --bg: #f3f1eb;
+      --tile: #e3e1db;
+      --ink: #1a1a1a;
+      --muted: #5a5a5a;
+      --box: #45423d;
+      --box-text: #f6f4ef;
+      --panel: #f4f1d4;
+      --out: #3d4f66;
+      --gate: #2f4a3a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #d8d6d0; }
+    .stage { width: 100vw; height: 100vh; overflow: hidden; position: relative; }
+    .slide {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 1920px;
+      height: 1080px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", Helvetica, sans-serif;
+    }
+    h1 {
+      position: absolute;
+      left: 64px;
+      top: 36px;
+      margin: 0;
+      font-size: 42px;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+    }
+    .sub {
+      position: absolute;
+      left: 64px;
+      top: 92px;
+      margin: 0;
+      font-size: 20px;
+      color: var(--muted);
+    }
+    svg { position: absolute; left: 0; top: 128px; width: 1920px; height: 952px; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="slide" id="slide" role="img" aria-label="Arquitectura real: FastAPI prepara señales, Jev clasifica en TypeSafe, el gate decide.">
+      <h1>Dónde clasifica Jev</h1>
+      <p class="sub">Nuestro proceso ensambla el state. Jev corre en TypeSafe. El gate es código local.</p>
+      <svg viewBox="0 0 1920 952" fill="none">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+          </marker>
+        </defs>
+        <g font-family="Avenir Next, Segoe UI, Helvetica, sans-serif">
+          <text x="80" y="36" fill="#5a5a5a" font-size="16">1 · Ingest en FastAPI</text>
+          <rect x="80" y="52" width="240" height="56" fill="#45423d"/>
+          <text x="200" y="87" text-anchor="middle" fill="#f6f4ef" font-size="20">Agent request</text>
+
+          <path d="M 320 80 H 352" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <rect x="356" y="52" width="280" height="56" fill="#45423d"/>
+          <text x="496" y="76" text-anchor="middle" fill="#f6f4ef" font-size="18">normalize + redact</text>
+          <text x="496" y="96" text-anchor="middle" fill="#f6f4ef" font-size="14">código local</text>
+
+          <path d="M 636 80 H 668" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <rect x="672" y="52" width="260" height="56" fill="#45423d"/>
+          <text x="802" y="76" text-anchor="middle" fill="#f6f4ef" font-size="18">JSONL tape</text>
+          <text x="802" y="96" text-anchor="middle" fill="#f6f4ef" font-size="14">short term</text>
+
+          <path d="M 802 108 V 140" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <rect x="672" y="144" width="260" height="56" fill="#45423d"/>
+          <text x="802" y="168" text-anchor="middle" fill="#f6f4ef" font-size="18">hydrate Neo4j</text>
+          <text x="802" y="188" text-anchor="middle" fill="#f6f4ef" font-size="14">historia + links</text>
+
+          <text x="80" y="248" fill="#5a5a5a" font-size="16">2 · Señales en nuestro proceso, en paralelo</text>
+          <path d="M 802 200 V 268 H 200" stroke="#1a1a1a" stroke-width="1.8"/>
+          <path d="M 200 268 V 292" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <path d="M 496 268 V 292" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <path d="M 802 268 V 292" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <path d="M 802 268 H 1108 V 292" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+
+          <rect x="80" y="296" width="240" height="78" fill="#45423d"/>
+          <text x="200" y="328" text-anchor="middle" fill="#f6f4ef" font-size="18">SafetyDrift</text>
+          <text x="200" y="352" text-anchor="middle" fill="#f6f4ef" font-size="14">Markov de esta sesión</text>
+
+          <rect x="376" y="296" width="240" height="78" fill="#45423d"/>
+          <text x="496" y="328" text-anchor="middle" fill="#f6f4ef" font-size="18">Sentinel</text>
+          <text x="496" y="352" text-anchor="middle" fill="#f6f4ef" font-size="14">reglas sobre el grafo</text>
+
+          <rect x="672" y="296" width="260" height="78" fill="#45423d"/>
+          <text x="802" y="328" text-anchor="middle" fill="#f6f4ef" font-size="18">Policy</text>
+          <text x="802" y="352" text-anchor="middle" fill="#f6f4ef" font-size="14">allowlist + límites</text>
+
+          <rect x="988" y="296" width="240" height="78" fill="#45423d"/>
+          <text x="1108" y="328" text-anchor="middle" fill="#f6f4ef" font-size="18">key nodes</text>
+          <text x="1108" y="352" text-anchor="middle" fill="#f6f4ef" font-size="14">ActionGraph nivel ≥ 1</text>
+
+          <text x="80" y="424" fill="#5a5a5a" font-size="16">3 · State que enviamos a Jev</text>
+          <path d="M 200 374 V 400 H 960" stroke="#1a1a1a" stroke-width="1.8"/>
+          <path d="M 496 374 V 400" stroke="#1a1a1a" stroke-width="1.8"/>
+          <path d="M 802 374 V 400" stroke="#1a1a1a" stroke-width="1.8"/>
+          <path d="M 1108 374 V 400 H 960" stroke="#1a1a1a" stroke-width="1.8"/>
+          <path d="M 960 400 V 436" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+
+          <rect x="80" y="440" width="1760" height="168" fill="#f4f1d4" stroke="#1a1a1a" stroke-width="1.4"/>
+          <text x="104" y="472" fill="#1a1a1a" font-size="18">pipeline.evaluate monta un JSON</text>
+
+          <rect x="104" y="492" width="200" height="88" fill="#45423d"/>
+          <text x="204" y="528" text-anchor="middle" fill="#f6f4ef" font-size="16">event</text>
+          <text x="204" y="552" text-anchor="middle" fill="#f6f4ef" font-size="13">paso actual</text>
+
+          <rect x="324" y="492" width="200" height="88" fill="#45423d"/>
+          <text x="424" y="528" text-anchor="middle" fill="#f6f4ef" font-size="16">short_term</text>
+          <text x="424" y="552" text-anchor="middle" fill="#f6f4ef" font-size="13">cola JSONL</text>
+
+          <rect x="544" y="492" width="200" height="88" fill="#45423d"/>
+          <text x="644" y="528" text-anchor="middle" fill="#f6f4ef" font-size="16">long_term</text>
+          <text x="644" y="552" text-anchor="middle" fill="#f6f4ef" font-size="13">key nodes</text>
+
+          <rect x="764" y="492" width="200" height="88" fill="#45423d"/>
+          <text x="864" y="528" text-anchor="middle" fill="#f6f4ef" font-size="16">prior_level</text>
+          <text x="864" y="552" text-anchor="middle" fill="#f6f4ef" font-size="13">L1 sticky</text>
+
+          <rect x="984" y="492" width="820" height="88" fill="#45423d"/>
+          <text x="1394" y="520" text-anchor="middle" fill="#f6f4ef" font-size="16">monitor</text>
+          <text x="1394" y="548" text-anchor="middle" fill="#f6f4ef" font-size="13">policy · drift · sentinel_findings · policy_violations</text>
+
+          <text x="80" y="656" fill="#5a5a5a" font-size="16">4 · Clasificación fuera. Decisión aquí.</text>
+          <path d="M 960 608 V 676" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+
+          <rect x="560" y="680" width="360" height="88" fill="#3d4f66"/>
+          <text x="740" y="712" text-anchor="middle" fill="#f6f4ef" font-size="20">Jev · TypeSafe HTTP</text>
+          <text x="740" y="740" text-anchor="middle" fill="#f6f4ef" font-size="14">nivel + intent + noul + confidence</text>
+
+          <path d="M 740 768 V 792 H 1080 V 816" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <path d="M 920 724 H 988" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <rect x="992" y="688" width="300" height="72" fill="#3d4f66"/>
+          <text x="1142" y="716" text-anchor="middle" fill="#f6f4ef" font-size="16">Watcher Helmcode</text>
+          <text x="1142" y="740" text-anchor="middle" fill="#f6f4ef" font-size="13">solo si conf &lt; 0.6 · nota, no decide</text>
+          <path d="M 1142 760 V 776 H 740" stroke="#1a1a1a" stroke-width="1.6"/>
+          <text x="1020" y="788" fill="#5a5a5a" font-size="13">re-score Jev</text>
+
+          <rect x="900" y="820" width="360" height="88" fill="#2f4a3a"/>
+          <text x="1080" y="852" text-anchor="middle" fill="#f6f4ef" font-size="20">Gate · código local</text>
+          <text x="1080" y="880" text-anchor="middle" fill="#f6f4ef" font-size="14">Allow · Hold · Refuse + incident_level</text>
+
+          <path d="M 1260 864 H 1360" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#arr)"/>
+          <rect x="1364" y="820" width="220" height="40" fill="#45423d"/>
+          <text x="1474" y="846" text-anchor="middle" fill="#f6f4ef" font-size="16">Allow → tool</text>
+          <rect x="1364" y="868" width="220" height="40" fill="#45423d"/>
+          <text x="1474" y="894" text-anchor="middle" fill="#f6f4ef" font-size="16">Refuse → playbook</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+  <script>
+    const slide = document.getElementById("slide");
+    function fit() {
+      const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      slide.style.transform = "translate(-50%, -50%) scale(" + s + ")";
+    }
+    fit();
+    window.addEventListener("resize", fit);
+  </script>
+</body>
+</html>
