@@ -132,6 +132,26 @@ describe("activity graph layout", () => {
     expect(classified.links.some((link) => link.pending)).toBe(false);
   });
 
+  test("labels real monitor events by kind and tool when mock label is absent", () => {
+    const graph = snapshot([
+      node("root", null, ["run:demo"]),
+      node("run:demo", "demo", ["root", "demo:1"]),
+      {
+        ...node("demo:1", "demo", ["run:demo"], 1),
+        event: {
+          kind: "network_request",
+          tool: "http_request",
+          target: "https://x",
+        },
+      },
+    ]);
+    const item = layoutGraph(graph, null).nodes.find(
+      (entry) => entry.id === "demo:1",
+    )!;
+    expect(item.label).toBe("network_request");
+    expect(item.tool).toBe("http_request");
+  });
+
   test("empty graphs and pending actions without a materialized parent have no dangling links", () => {
     const graph = snapshot([]);
     expect(layoutGraph(graph, null)).toEqual({ nodes: [], links: [] });
