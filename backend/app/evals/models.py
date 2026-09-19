@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -103,6 +103,12 @@ class AgentEvent(StrictModel):
     target: str | None = None
     visible_to_user: bool
     reversible: bool
+    tool: str | None = None
+    args: dict[str, Any] = Field(default_factory=dict)
+    amount: float | None = None
+    scope: int = Field(default=1, ge=0)
+    sensitivity: str = "unknown"
+    derived_from: list[str] = Field(default_factory=list)
 
 
 class Oracle(StrictModel):

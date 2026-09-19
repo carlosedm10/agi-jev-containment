@@ -191,7 +191,11 @@ class ActionGraph:
         action_id: str | None = None,
     ) -> Node:
         with self._lock, self._batch():
+            # Composite op: ensure_run may create the root and the run node
+            # before the new key node — all of it lands in one GraphUpdate.
             run_node = self.ensure_run(run_id)
+            # Run membership is the run_id stamp, not graph traversal: an undirected
+            # graph cannot keep runs isolated by direction alone.
             chained = [n for n in self._nodes.values() if n.run_id == run_id and n is not run_node]
             last = chained[-1] if chained else run_node
             seq = len(chained) + 1

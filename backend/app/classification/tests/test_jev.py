@@ -48,11 +48,21 @@ async def test_classify_returns_verdict(mock_jev):
     assert verdict.degraded is False
 
 
-async def test_request_carries_all_three_questions(mock_jev):
+async def test_request_carries_core_and_atomic_questions(mock_jev):
     ac = mock_jev(["level_1_mild"])
     await classify(ac, {"short_term": [Node(id="e1")]})
     questions = ac.calls[0]["questions"]
-    assert set(questions) == {"criticality", "containment_breached", "intent"}
+    assert set(questions) == {
+        "criticality",
+        "containment_breached",
+        "intent",
+        "scope_relation",
+        "authority_violation",
+        "sensitive_data_misuse",
+        "provenance_misuse",
+        "concealment",
+        "cross_run_impact",
+    }
     assert questions["criticality"]["type"] == "choice"
     assert questions["containment_breached"]["type"] == "noul"
     assert questions["intent"]["type"] == "choice"
@@ -83,10 +93,21 @@ async def test_request_state_shape(mock_jev):
     body_state = ac.calls[0]["state"]
     assert body_state["run_id"] == "run-1"
     assert body_state["prior_level"] == 1
-    assert body_state["short_term"] == [
-        {"id": "e1", "threshold": 0.0, "tool": {"event": "file_read"}}
-    ]
-    assert body_state["long_term"] == [{"id": "old", "threshold": 0.8}]
+    assert body_state["short_term"][0] == {
+        "id": "e1",
+        "threshold": 0.0,
+        "level": 0,
+        "intent": None,
+        "event": None,
+        "tool": {"event": "file_read"},
+    }
+    assert body_state["long_term"][0] == {
+        "id": "old",
+        "threshold": 0.8,
+        "level": 0,
+        "intent": None,
+        "event": None,
+    }
 
 
 async def test_raw_event_dicts_pass_through_untouched(mock_jev):

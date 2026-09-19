@@ -1,10 +1,10 @@
 # Actions
 
-When an agent starts doing something we don't like, we don't sit down to discuss it. `jev` looks at the *chain* of what it already did, picks a severity from 1 to 5, and we run a fixed response. The response is a script we wrote in advance — not a model deciding whether to pull the plug.
+When an agent requests an action, the monitor evaluates it before execution. Jev interprets semantics; policy, SafetyDrift and Sentinel add structured evidence; deterministic code chooses the escalate-only incident level and a fixed response. A model never decides whether to pull the plug.
 
 Levels only go up. A human clears them. Levels 4 and 5 call Guli *while* the cut happens — the call is a heads-up, not permission.
 
-The graph does not store every click. It only keeps nodes that already look like a problem (level 1+). Each new step, `jev` looks at two things at once: the **recent burst** and the **long memory**. Details in [Graph.md](Graph.md).
+Neo4j stores every normalized event and monitor decision. `key_nodes` is only the compact level-1+ projection used as Jev long memory. Each new step combines recent events, causal history, policy, SafetyDrift, Sentinel and Jev. Details in [Graph.md](Graph.md).
 
 ## Ideal vs this project
 
@@ -30,24 +30,27 @@ Contract between [Agent Monitoring](AgentMonitoring.md) (capture), the [Action G
 
 ```
 sandbox events (host-side JSONL, always complete)
-        → jev(short-term recent nodes ∥ long-term key-node history)
-        → materialize a graph node per action (level ≥ 1 = key node)
-        → discrete level 1–5 for the run
+        → normalize + redact requested event
+        → SafetyDrift/Markov ∥ Sentinel ∥ policy rules
+        → jev(short-term tape ∥ long-term key nodes ∥ monitor evidence)
+        → deterministic gate: ALLOW | HOLD | REFUSE
+        → persist every event, entity and assessment in Neo4j
+        → escalate-only incident level 0–5
         → dispatcher runs the matching playbook
-        → graph node records {level, score, intent, action_id}
+        → StreamMessage nodes feed resumable SSE
 ```
 
-Events below level 1 stay in JSONL only. `jev` is the only component allowed to *set* a level. The L2 supervisor LLM may annotate and *request* a re-score; it cannot execute L3–L5 itself.
+Jev contributes semantic probabilities; deterministic code owns the final tool decision and incident level. Policy/Drift/Sentinel may raise but never lower it. The L2 supervisor may annotate and request a re-score; it cannot execute L3–L5 itself.
 
 ### Hard rules
 
 1. **Chain, not event.** A single `curl` is noise. `curl` + reading `.env` + posting the contents is intent. On every new event, `jev` re-reads short-term and long-term context in parallel.
-2. **Sparse graph.** Only level ≥ 1 becomes a node. JSONL is the full tape.
+2. **Complete graph, sparse context.** Neo4j keeps every event; only level ≥ 1 enters `key_nodes`.
 3. **Levels only escalate.** A run never auto-downgrades. A human clears it from the viewer.
 4. **L1 is sticky.** Later `jev` calls for that `run_id` get `prior_level=1` (lower bar to L2+).
 5. **Kill path is host-side.** Idempotent: re-firing the same level on the same `run_id` is a no-op. L4/L5 page Guli **in parallel** with the cut — missing `ONCALL_PHONE` still executes infra.
 
-`jev` also writes a score in `[0.0, 1.0]` onto the graph node's `threshold`. Prefer `jev`'s discrete `level` when both are present. Bands if you only have a score: `[0, 0.20)` → 1, `[0.20, 0.40)` → 2, `[0.40, 0.60)` → 3, `[0.60, 0.80)` → 4, `[0.80, 1.00]` → 5. Below a level, the event is JSONL only.
+`jev` writes confidence and full atomic answers onto the assessment. The final incident level is the max of prior level, Jev, policy and Sentinel floors; Markov contributes trajectory risk to HOLD/REFUSE thresholds.
 
 ```json
 {
@@ -151,19 +154,19 @@ Voice: identify as the pager, say `{action_taken}`, ask him to open `{viewer_url
 
 ### Dispatcher
 
-Host-side, every time `jev` returns a level greater than the run's stored level.
+The monitor calls the idempotent dispatcher after every fused gate decision. It records stable action IDs and executes armed demo-world counters in reverse order at L3+.
 
 ```
-on_jev(run, result):
-    if result.level <= run.level: return
-    run.level = result.level
-    persist graph node
-    match result.level:
+on_gate(run, assessment):
+    level = max(run.level, assessment.incident_level)
+    persist event + assessment + StreamMessages in Neo4j
+    match level:
         1: tag_run(run)
         2: tag_run(run); start_supervisor(run)
         3: contain.sh run.id                         # pause first, then ports + token
         4: contain all live runs; cut-egress.sh & page_guli(4)
         5: kill-swarm.sh & page_guli(5)
+    if level >= 3: execute_armed_counters_reverse_order(run)
 ```
 
 Jumping 1 → 4 still contains live runs, then cuts egress. Jumping to 5 still copies logs, then kills the agent compose.
