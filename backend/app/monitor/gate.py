@@ -43,12 +43,17 @@ def decide(
         reason in {"forbidden_tool", "identity_requirement_failed"} for reason in violations
     )
 
-    if is_preflight and hard_refusal or is_preflight and (
-        sentinel_level >= 4
-        or incident_level >= Level.SEVERE
-        or (
-            event.effect.reversibility == Reversibility.IRREVERSIBLE
-            and max(event_risk, trajectory_risk) >= 0.5
+    if (
+        is_preflight
+        and hard_refusal
+        or is_preflight
+        and (
+            sentinel_level >= 4
+            or incident_level >= Level.SEVERE
+            or (
+                event.effect.reversibility == Reversibility.IRREVERSIBLE
+                and max(event_risk, trajectory_risk) >= 0.5
+            )
         )
     ):
         decision = ToolDecision.REFUSE

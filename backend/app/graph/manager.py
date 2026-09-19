@@ -223,9 +223,7 @@ class ActionGraph:
             run_node = self.ensure_run(run_id)
             # Run membership is the run_id stamp, not graph traversal: an undirected
             # graph cannot keep runs isolated by direction alone.
-            chained = [
-                n for n in self._nodes.values() if n.run_id == run_id and n is not run_node
-            ]
+            chained = [n for n in self._nodes.values() if n.run_id == run_id and n is not run_node]
             last = chained[-1] if chained else run_node
             seq = len(chained) + 1
             return self.add_node(

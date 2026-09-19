@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 from app.classification.models import Level
 from app.events import MonitorEvent
 from app.monitor.models import DriftState, GateDecision, MonitorAssessment, ToolDecision
@@ -50,9 +52,7 @@ def test_envelopes_are_ordered_idempotent_upserts():
         "run.updated",
     } <= event_types
     edge_types = {
-        item["data"]["edge"]["type"]
-        for item in envelopes
-        if item["type"] == "graph.edge.upserted"
+        item["data"]["edge"]["type"] for item in envelopes if item["type"] == "graph.edge.upserted"
     }
     assert {"NEXT", "CAUSED_BY", "HAS_ASSESSMENT", "TOUCHES"} <= edge_types
 
@@ -63,7 +63,8 @@ async def test_broker_fans_out_to_current_run_only(monkeypatch):
     async def no_persist(_):
         return None
 
-    monkeypatch.setattr("app.realtime.broker.neo4j_graph.persist_stream", no_persist)
+    broker_module = importlib.import_module("app.realtime.broker")
+    monkeypatch.setattr(broker_module.neo4j_graph, "persist_stream", no_persist)
     r1 = broker.subscribe("r1")
     r2 = broker.subscribe("r2")
     envelope = {

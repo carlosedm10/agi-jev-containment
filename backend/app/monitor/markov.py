@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from itertools import pairwise
 
 State = tuple[int, int]
 
@@ -45,7 +46,7 @@ class CompactMarkovModel:
             lambda: defaultdict(float)
         )
         for trajectory in trajectories:
-            for source, target in zip(trajectory, trajectory[1:], strict=False):
+            for source, target in pairwise(trajectory):
                 if _monotonic(source, target):
                     counts[source][target] += 1.0
 

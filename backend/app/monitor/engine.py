@@ -58,9 +58,7 @@ class MonitorEngine:
     def prepare(self, event: MonitorEvent) -> PreparedSignals:
         with self._lock:
             history = [
-                item
-                for run_history in self._history.values()
-                for item in run_history[-100:]
+                item for run_history in self._history.values() for item in run_history[-100:]
             ]
             drift = safety_drift.step(event, DEFAULT_POLICY)
             findings = inspect(event, history, DEFAULT_POLICY)

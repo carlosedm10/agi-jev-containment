@@ -114,8 +114,10 @@ def inspect(
             )
         )
 
-    if event.kind in {"tool_write", "memory_write"} and event.content and any(
-        token in event.content.lower() for token in ("stale", "cached old", "obsolete")
+    if (
+        event.kind in {"tool_write", "memory_write"}
+        and event.content
+        and any(token in event.content.lower() for token in ("stale", "cached old", "obsolete"))
     ):
         findings.append(
             _finding(
@@ -148,9 +150,7 @@ def inspect(
     expected_handoffs = [
         item
         for item in events[-5:]
-        if item.kind == "policy_decision"
-        and item.content
-        and "handoff" in item.content.lower()
+        if item.kind == "policy_decision" and item.content and "handoff" in item.content.lower()
     ]
     if len(expected_handoffs) >= 1 and event.kind != "handoff":
         events_since = events.index(expected_handoffs[-1])

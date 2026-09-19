@@ -137,4 +137,6 @@ class SafetyDrift:
             }
             self._states[event.run_id] = current
             return current.model_copy(deep=True)
+
+
 safety_drift = SafetyDrift()
