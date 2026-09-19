@@ -14,7 +14,15 @@ CallStatus = Literal[
 ]
 
 TERMINAL_RUN = {"completed", "succeeded", "failed", "canceled", "cancelled", "skipped"}
-_NO_PICKUP_MARKERS = ("never_connected", "no_answer", "no answer", "busy", "not answered")
+_NO_PICKUP_MARKERS = (
+    "never_connected",
+    "never connected",
+    "no_answer",
+    "no answer",
+    "no-answer",
+    "busy",
+    "not answered",
+)
 _INVALID_NUMBER_MARKERS = (
     "invalid_phone",
     "invalid phone",
@@ -72,16 +80,16 @@ def map_call(
         or end_event in {"agent_hung_up", "user_hung_up", "hangup"}
     ):
         return CallResult("hung_up")
-    if run_status in TERMINAL_RUN and duration > 0:
+    if any(marker in failure for marker in _NO_PICKUP_MARKERS) or sip_code in {480, 486, 487}:
+        return CallResult("no_pickup")
+    if run_status in {"failed", "canceled", "cancelled", "skipped"}:
+        return CallResult("failed", error_code="happyrobot_call_failed")
+    if run_status in {"completed", "succeeded"} and duration > 0:
         return CallResult("hung_up")
     if end_event in {"agent_hung_up", "user_hung_up", "hangup"} and duration > 0:
         return CallResult("hung_up")
     if connected or (duration > 0 and sip_code in {0, 200}):
         return CallResult("answered")
-    if any(marker in failure for marker in _NO_PICKUP_MARKERS) or sip_code in {480, 486, 487}:
-        return CallResult("no_pickup")
-    if run_status in {"failed", "canceled", "cancelled", "skipped"}:
-        return CallResult("failed", error_code="happyrobot_call_failed")
     if run_status in {"completed", "succeeded"}:
         return CallResult("no_pickup")
     if run_status in {"queued", "pending", "created", "starting"}:

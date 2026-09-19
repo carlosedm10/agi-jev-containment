@@ -74,6 +74,35 @@ def test_terminal_run_with_duration_without_connection_timestamp_is_hung_up():
     ) == CallResult("hung_up")
 
 
+@pytest.mark.parametrize(
+    ("run", "session", "expected"),
+    [
+        (
+            {"status": "completed"},
+            {"status": "completed", "duration": 12, "failure_reason": "never_connected"},
+            CallResult("no_pickup"),
+        ),
+        (
+            {"status": "completed"},
+            {"status": "completed", "duration": 12, "failure_reason": "no_answer"},
+            CallResult("no_pickup"),
+        ),
+        (
+            {"status": "completed"},
+            {"status": "completed", "duration": 12, "sip_code": 486},
+            CallResult("no_pickup"),
+        ),
+        (
+            {"status": "canceled"},
+            {"status": "canceled", "duration": 12},
+            CallResult("failed", error_code="happyrobot_call_failed"),
+        ),
+    ],
+)
+def test_duration_does_not_override_terminal_failure_evidence(run, session, expected):
+    assert map_call(run, session, None) == expected
+
+
 def test_connected_evidence_wins_over_no_pickup_markers():
     assert map_call(
         {"status": "completed"},
@@ -217,7 +246,7 @@ async def test_posts_documented_payload_with_telefono_and_numeric_level():
         {
             "tipo_emergencia": "sandbox_escape (level 4, run incident-1)",
             "pautas": "Contained all live runs.",
-            "nivel_gravedad": 4,
+            "nivel_gravedad": "4",
             "nombre_contacto": "Guli",
             "telefono": "+34600000000",
         }
@@ -327,7 +356,7 @@ async def test_l5_payload_keeps_level_and_uses_defensive_fallbacks():
 
     await run_pager(stub, level=5, intent="", action_taken="")
 
-    assert stub.payloads[0]["nivel_gravedad"] == 5
+    assert stub.payloads[0]["nivel_gravedad"] == "5"
     assert stub.payloads[0]["tipo_emergencia"] == (
         "critical agent activity (level 5, run incident-1)"
     )
@@ -337,8 +366,13 @@ async def test_l5_payload_keeps_level_and_uses_defensive_fallbacks():
 def test_pager_watch_imports_under_system_python_without_backend_package():
     system_python = Path("/usr/bin/python3")
     if not system_python.exists():
-        pytest.skip("system Python is unavailable")
-    script = Path(__file__).parents[4] / "scripts" / "pager_watch.py"
+        pytest.skip("host-only smoke: /usr/bin/python3 is unavailable")
+    host_repo_root = Path(__file__).resolve().parents[4]
+    script = host_repo_root / "scripts" / "pager_watch.py"
+    if not script.is_file():
+        pytest.skip(
+            f"host-only smoke: repo script is unavailable at {script}"
+        )
 
     result = subprocess.run(
         [str(system_python), str(script), "--help"],
