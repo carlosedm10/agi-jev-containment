@@ -4,13 +4,12 @@ Tracked flaws that are knowingly left in place. Resolve an entry by fixing it, t
 
 ## Stale benchmark artifacts
 
-- `experiments/*.csv` and `experiments/*.png` were measured against the old jev request shape (`state = {agent_id, events}`). The shipped client sends `{run_id, prior_level, short_term, long_term}` plus three questions per call, so the τ/M/gate numbers quoted in [docs/Jev.md](docs/Jev.md) predate the shipped shape. Kept as historical record; not re-run because no API keys are available locally. Re-calibrate with `make bench` / `make bench-analyze` before trusting the band edges.
+- `experiments/*.csv` and `experiments/*.png` were measured against the old jev request shape (`state = {agent_id, events}`). The shipped client also sends policy, drift, Sentinel evidence and atomic questions. Kept as historical record; use `make monitor-eval` with `TYPESAFE_API_KEY` for the current live acceptance run.
 
 ## Referenced but never written
 
-- [docs/Actions.md](docs/Actions.md) references containment scripts that do not exist in this repo: `scripts/contain.sh`, `scripts/cut-egress.sh`, `scripts/kill-swarm.sh`.
-- [docs/scenarios.md](docs/scenarios.md) references pieces that do not exist: `victim-agent`, `customers-db`, and `docker-lure` services; the dispatcher that maps `actionable_level` to a playbook.
+- [docs/scenarios.md](docs/scenarios.md) references optional richer-demo services that do not exist: `victim-agent`, `customers-db`, and `docker-lure`. Detection coverage for those mechanisms lives in the eval corpus instead.
 
 ## Not built
 
-- The dispatcher that maps a materialized node to its prewritten playbook ([docs/Actions.md](docs/Actions.md)) is not implemented — the pipeline materializes nodes and computes `actionable_level`, but nothing fires scripts yet.
+- The dispatcher records idempotent L1–L5 actions and executes demo-world counters. Host-side automatic invocation of Docker containment scripts remains intentionally separate because the backend container does not mount the Docker socket; scripts are verified through `--dry-run`.

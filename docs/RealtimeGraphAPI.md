@@ -240,7 +240,7 @@ Este detalle procede del grafo Python en memoria, no de Neo4j. Tras reiniciar el
       "findings_json": "[...]",
       "gate_json": "{...}",
       "jev_answers_json": "{...}",
-      "jev_model": "jev-latest",
+      "jev_model": "jev-1.13.0",
       "jev_latency_ms": 84.317,
       "dispatch_actions_json": "[...]"
     }
@@ -431,7 +431,7 @@ Respuesta `200`:
       "intent": "exfiltrate_secrets",
       "containment_breached": false,
       "degraded": false,
-      "model": "jev-latest",
+      "model": "jev-1.13.0",
       "latency_ms": 84.317
     },
     "findings": [
@@ -639,7 +639,7 @@ El ID objetivo de arista es determinista: `{type}:{source}:{target}` y, si hace 
   "intent": "exfiltrate_secrets",
   "containment_breached": false,
   "degraded": false,
-  "model": "jev-latest",
+  "model": "jev-1.13.0",
   "latency_ms": 84.317
 }
 ```

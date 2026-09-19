@@ -26,7 +26,7 @@ These names repeat in compose, Makefile targets, and env vars.
 | **Runs** | HTTP ingest + JSONL tape: `POST /api/runs/{run_id}/events`, run lookup, run list | `backend/app/runs/` |
 | **Realtime monitor API** | Contrato frontend: snapshot, SSE, lifecycle y grafo Neo4j | [docs/RealtimeGraphAPI.md](RealtimeGraphAPI.md) |
 | **Classification** | `jev` client, watcher client, two-tier pipeline (τ trigger, gate, degraded path) | `backend/app/classification/` |
-| **Action Graph** | Sparse L1+ event chain; `jev` scores short-term burst ∥ long-term history | `backend/app/graph/` · [docs/Graph.md](Graph.md) |
+| **Monitoring Graph** | Complete Neo4j event/entity/assessment graph; sparse `key_nodes` only for Jev context | `backend/app/graph/` · [docs/Graph.md](Graph.md) |
 | **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
 | **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
 | **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
@@ -43,7 +43,7 @@ make build/up → compose → uvicorn (reload) + bun dev + postgres
               → Alembic uses DATABASE_URL on the compose hostname
 ```
 
-GitHub Actions copies `.env_template` to `.env`, then only `make build`, `make up`, `make lint`, `make test`, `make down`.
+GitHub Actions copies `.env_template` to `.env`, then calls Make targets for build, lint, tests and the live `monitor-eval`; `TYPESAFE_API_KEY` comes from GitHub Secrets.
 
 ### The principles that matter
 
@@ -70,7 +70,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 ### One example, end to end
 
 1. Copy `.env_template` → `.env` and `direnv allow` (or export the same keys).
-2. `make build` starts Postgres, then uvicorn on `:8000`, then the frontend container on `:3000`.
+2. `make build` starts Postgres and Neo4j, then uvicorn on `:8000` and the frontend container on `:3000`.
 3. Browser or `curl` `GET http://localhost:8000/health` → `{"status":"ok"}`.
 4. `curl -X POST localhost:8000/api/runs/demo/events -H 'content-type: application/json' -d '{"event":"file_read","path":"/app/.env"}'` → verdict JSON. With no `TYPESAFE_API_KEY` this returns a clean degraded verdict (level unchanged, `degraded: true`), and the event still lands on the tape — not a 500.
 5. OpenAPI UI is at `http://localhost:8000/docs`.

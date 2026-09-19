@@ -1,6 +1,16 @@
-# Action Graph
+# Graphs: persistent Neo4j and transitional ActionGraph
 
-A dynamic graph for tracing events. Every classified action materializes a node — the graph is the run's complete action sequence, benign included. The **key nodes** are the flagged subset (`jev` scores level ≥ 1); the JSONL log also keeps every raw event for forensics and replay.
+Neo4j is the persistent source for visualization and replay. It stores every normalized event, entities, causal relationships, assessments, realtime messages and L0–L5 decisions. JSONL is the append-only recovery tape. The Python `ActionGraph` remains a transitional in-process projection used for level and `key_nodes`; it is not the persistent graph database.
+
+Neo4j labels and relationships:
+
+- `Run`, `Event`, `Assessment`, `Entity`, `StreamMessage`
+- `HAS_EVENT`, `NEXT`, `HAS_ASSESSMENT`, `TOUCHES`, `CAUSED_BY`, `DERIVED_FROM`
+- entity projections such as `CALLS`, `READS`, `WRITES`, `SCHEDULES`, `SPEAKS_TO`
+
+The stable frontend and SSE contract is [RealtimeGraphAPI.md](RealtimeGraphAPI.md).
+
+Every classified action also materializes an `ActionGraph` node, benign included. The **key nodes** are the flagged subset (level ≥ 1), while Neo4j and JSONL keep the complete record.
 
 On every new event, `jev` re-reads **short-term and long-term context in parallel** (it owns how to mix them):
 
