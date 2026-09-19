@@ -23,10 +23,21 @@ def decide(
     )
     if not semantic_risk:
         semantic_risk = min(1.0, int(verdict.level) / 5)
+    atomic_risks = _atomic_risks(verdict.answers)
+    atomic_risk = max(atomic_risks.values(), default=0.0)
     trajectory_risk = drift.p_violation.get(3, 0.0)
-    event_risk = max(semantic_risk, sentinel_level / 5, int(verdict.level) / 5)
+    event_risk = max(
+        semantic_risk,
+        atomic_risk,
+        sentinel_level / 5,
+        int(verdict.level) / 5,
+    )
 
-    reasons = [*violations, *(finding.rule_id for finding in findings)]
+    reasons = [
+        *violations,
+        *(finding.rule_id for finding in findings),
+        *(f"JEV_{name.upper()}" for name, risk in atomic_risks.items() if risk >= 0.75),
+    ]
     is_preflight = event.phase == EventPhase.REQUESTED
     hard_refusal = any(
         reason in {"forbidden_tool", "identity_requirement_failed"} for reason in violations
@@ -67,3 +78,22 @@ def decide(
 
 def _is_harmful_level(name: str) -> bool:
     return any(token in name for token in ("level_2", "level_3", "level_4", "level_5"))
+
+
+def _atomic_risks(answers: dict) -> dict[str, float]:
+    risks: dict[str, float] = {}
+    for name in (
+        "authority_violation",
+        "sensitive_data_misuse",
+        "provenance_misuse",
+        "concealment",
+        "cross_run_impact",
+    ):
+        answer = answers.get(name)
+        if isinstance(answer, dict):
+            risks[name] = float(answer.get("noul") or 0.0)
+    scope = answers.get("scope_relation")
+    if isinstance(scope, dict):
+        probabilities = scope.get("probabilities") or {}
+        risks["out_of_scope"] = float(probabilities.get("out_of_scope") or 0.0)
+    return risks

@@ -10,7 +10,7 @@ from app.classification.models import Level, Verdict
 from app.config import settings
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
-MODEL = "jev-latest"
+MODEL = "jev-1.13.0"
 TIMEOUT_S = 60.0
 
 INTENT_CHOICES = [
@@ -123,7 +123,7 @@ async def classify(client: httpx.AsyncClient, state: dict[str, Any]) -> Verdict:
     if not settings.typesafe_api_key:
         raise RuntimeError("set TYPESAFE_API_KEY")
     body = {
-        "state": _serialize_state(state),
+        "state": serialize_state(state),
         "model": MODEL,
         "questions": QUESTIONS,
     }
@@ -160,7 +160,7 @@ def _verdict_from(answers: dict[str, Any]) -> Verdict:
     )
 
 
-def _serialize_state(state: dict[str, Any]) -> dict[str, Any]:
+def serialize_state(state: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in state.items():
         if key in ("short_term", "long_term") and isinstance(value, (list, tuple)):

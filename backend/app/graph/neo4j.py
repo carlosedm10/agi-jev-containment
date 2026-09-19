@@ -127,6 +127,44 @@ class Neo4jGraphStore:
                 kind=kind,
                 event_id=event.id,
             )
+        if event.agent and event.tool:
+            await session.run(
+                """
+                MERGE (agent:Entity {id: $agent})
+                SET agent.kind = 'agent'
+                MERGE (tool:Entity {id: $tool})
+                SET tool.kind = 'tool'
+                MERGE (agent)-[calls:CALLS {event_id: $event_id}]->(tool)
+                SET calls.run_id = $run_id, calls.phase = $phase
+                """,
+                agent=event.agent,
+                tool=f"tool:{event.tool}",
+                event_id=event.id,
+                run_id=event.run_id,
+                phase=event.phase.value,
+            )
+        if event.agent and event.target:
+            relation = _target_relation(event.kind)
+            await session.run(
+                f"""
+                MERGE (agent:Entity {{id: $agent}})
+                SET agent.kind = 'agent'
+                MERGE (target:Entity {{id: $target}})
+                ON CREATE SET target.kind = 'target'
+                MERGE (agent)-[edge:{relation} {{event_id: $event_id}}]->(target)
+                SET edge.run_id = $run_id,
+                    edge.phase = $phase,
+                    edge.scope = $scope,
+                    edge.amount = $amount
+                """,
+                agent=event.agent,
+                target=event.target,
+                event_id=event.id,
+                run_id=event.run_id,
+                phase=event.phase.value,
+                scope=event.effect.scope,
+                amount=event.effect.amount,
+            )
 
     async def _persist_causal_edges(self, session, event: MonitorEvent) -> None:
         for relation, ids in (
@@ -185,7 +223,128 @@ class Neo4jGraphStore:
                 for item in record["edges"]
                 if item.get("source") and item.get("target") and item.get("type")
             ]
-            return {"nodes": _dedupe(nodes, "id"), "edges": edges}
+            entity_result = await session.run(
+                """
+                MATCH (source:Entity)-[relationship]->(target:Entity)
+                WHERE relationship.run_id = $run_id
+                RETURN source.id AS source_id, labels(source) AS source_labels,
+                       properties(source) AS source_properties,
+                       target.id AS target_id, labels(target) AS target_labels,
+                       properties(target) AS target_properties,
+                       type(relationship) AS relationship_type,
+                       properties(relationship) AS relationship_properties
+                """,
+                run_id=run_id,
+            )
+            async for entity_record in entity_result:
+                nodes.extend(
+                    [
+                        {
+                            "id": entity_record["source_id"],
+                            "labels": entity_record["source_labels"],
+                            "properties": entity_record["source_properties"],
+                        },
+                        {
+                            "id": entity_record["target_id"],
+                            "labels": entity_record["target_labels"],
+                            "properties": entity_record["target_properties"],
+                        },
+                    ]
+                )
+                edges.append(
+                    {
+                        "source": entity_record["source_id"],
+                        "target": entity_record["target_id"],
+                        "type": entity_record["relationship_type"],
+                        "properties": entity_record["relationship_properties"],
+                    }
+                )
+            unique_edges = _dedupe_edges(edges)
+            for edge in unique_edges:
+                role = (edge.get("properties") or {}).get("role")
+                suffix = f":{role}" if role else ""
+                edge["id"] = (
+                    f"{edge['type']}:{edge['source']}:{edge['target']}{suffix}"
+                )
+            return {"nodes": _dedupe(nodes, "id"), "edges": unique_edges}
+
+    async def persist_stream(self, envelopes: list[dict[str, Any]]) -> None:
+        if not self.enabled or not envelopes:
+            return
+        query = """
+        UNWIND $messages AS message
+        MERGE (stream:StreamMessage {id: message.stream_id})
+        SET stream.run_id = message.run_id,
+            stream.sequence = message.sequence,
+            stream.position = message.position,
+            stream.type = message.type,
+            stream.emitted_at = message.emitted_at,
+            stream.source_event_id = message.source_event_id,
+            stream.payload_json = message.payload_json
+        WITH stream, message
+        MATCH (run:Run {id: message.run_id})
+        MERGE (run)-[:HAS_STREAM_MESSAGE]->(stream)
+        """
+        messages = [
+            {
+                "stream_id": envelope["stream_id"],
+                "run_id": envelope["run_id"],
+                "sequence": envelope["sequence"],
+                "position": envelope["position"],
+                "type": envelope["type"],
+                "emitted_at": envelope["emitted_at"],
+                "source_event_id": envelope.get("source_event_id"),
+                "payload_json": json.dumps(envelope, default=str, sort_keys=True),
+            }
+            for envelope in envelopes
+        ]
+        async with self._get_driver().session(database=settings.neo4j_database) as session:
+            await session.run(query, messages=messages)
+
+    async def stream_after(
+        self, run_id: str, cursor: str | None = None
+    ) -> list[dict[str, Any]]:
+        if not self.enabled:
+            return []
+        boundary = """
+        OPTIONAL MATCH (cursor:StreamMessage {id: $cursor, run_id: $run_id})
+        WITH cursor
+        MATCH (:Run {id: $run_id})-[:HAS_STREAM_MESSAGE]->(message:StreamMessage)
+        WHERE cursor IS NULL
+           OR message.sequence > cursor.sequence
+           OR (message.sequence = cursor.sequence AND message.position > cursor.position)
+        RETURN message.payload_json AS payload
+        ORDER BY message.sequence, message.position
+        """
+        async with self._get_driver().session(database=settings.neo4j_database) as session:
+            result = await session.run(boundary, run_id=run_id, cursor=cursor)
+            return [json.loads(record["payload"]) async for record in result]
+
+    async def latest_cursor(self, run_id: str) -> str:
+        if not self.enabled:
+            return "0"
+        query = """
+        MATCH (:Run {id: $run_id})-[:HAS_STREAM_MESSAGE]->(message:StreamMessage)
+        RETURN message.id AS cursor
+        ORDER BY message.sequence DESC, message.position DESC
+        LIMIT 1
+        """
+        async with self._get_driver().session(database=settings.neo4j_database) as session:
+            result = await session.run(query, run_id=run_id)
+            record = await result.single()
+            return str(record["cursor"]) if record else "0"
+
+    async def cursor_exists(self, run_id: str, cursor: str) -> bool:
+        if not self.enabled:
+            return cursor == "0"
+        query = """
+        MATCH (message:StreamMessage {id: $cursor, run_id: $run_id})
+        RETURN count(message) > 0 AS exists
+        """
+        async with self._get_driver().session(database=settings.neo4j_database) as session:
+            result = await session.run(query, run_id=run_id, cursor=cursor)
+            record = await result.single()
+            return bool(record and record["exists"])
 
 
 def _without_none(value: dict[str, Any]) -> dict[str, Any]:
@@ -202,6 +361,36 @@ def _dedupe(items: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
         seen.add(value)
         unique.append(item)
     return unique
+
+
+def _dedupe_edges(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, Any, Any, Any]] = set()
+    unique: list[dict[str, Any]] = []
+    for item in items:
+        properties = item.get("properties") or {}
+        key = (
+            item.get("source"),
+            item.get("target"),
+            item.get("type"),
+            properties.get("event_id"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def _target_relation(kind: str) -> str:
+    if kind in {"file_read", "memory_read", "tool_read"}:
+        return "READS"
+    if kind in {"file_edit", "memory_write", "tool_write"}:
+        return "WRITES"
+    if kind == "schedule":
+        return "SCHEDULES"
+    if kind in {"utterance", "notification"}:
+        return "SPEAKS_TO"
+    return "TOUCHES_TARGET"
 
 
 neo4j_graph = Neo4jGraphStore()

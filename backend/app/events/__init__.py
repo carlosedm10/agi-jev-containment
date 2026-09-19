@@ -8,6 +8,7 @@ from app.events.models import (
     TrustState,
 )
 from app.events.normalize import normalize_event
+from app.events.redact import redact_event
 
 __all__ = [
     "EventEffect",
@@ -18,4 +19,5 @@ __all__ = [
     "Reversibility",
     "TrustState",
     "normalize_event",
+    "redact_event",
 ]

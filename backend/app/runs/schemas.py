@@ -34,6 +34,7 @@ class IngestOut(BaseModel):
     graph_persisted: bool = False
     dispatch_actions: list[dict[str, Any]] = Field(default_factory=list)
     jev_latency_ms: float | None = None
+    duplicate: bool = False
 
 
 class GraphOut(BaseModel):

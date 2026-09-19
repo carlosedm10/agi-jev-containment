@@ -18,6 +18,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 from pydantic_ai import Agent
@@ -48,13 +49,17 @@ def clip(text: str) -> str:
     return text[-CLIP:]
 
 
-async def preflight(tool: str, event: str, **fields: object) -> tuple[bool, str]:
+async def preflight(tool: str, event: str, **fields: object) -> tuple[bool, str, dict[str, str]]:
+    operation_id = uuid4().hex
+    metadata = dict(fields.pop("metadata", {}) or {})
+    metadata["operation_id"] = operation_id
     payload = {
         "event": event,
         "kind": event,
         "phase": "requested",
         "origin": "tool",
         "tool": tool,
+        "metadata": metadata,
         **fields,
     }
     try:
@@ -74,9 +79,13 @@ async def preflight(tool: str, event: str, **fields: object) -> tuple[bool, str]
             "run_tool",
             "shell_command",
         }
-        return (not high_impact, "monitor unavailable")
+        return (not high_impact, "monitor unavailable", {"operation_id": operation_id})
 
     allowed = decision["decision"] == "allow"
+    operation = {
+        "operation_id": operation_id,
+        "request_event_id": decision["event_id"],
+    }
     if not allowed:
         emit(
             event,
@@ -85,9 +94,10 @@ async def preflight(tool: str, event: str, **fields: object) -> tuple[bool, str]
             tool=tool,
             decision=decision["decision"],
             reasons=decision.get("reasons", []),
+            metadata=operation,
             **fields,
         )
-    return allowed, decision["decision"]
+    return allowed, decision["decision"], operation
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -99,7 +109,7 @@ def _env(name: str, default: str | None = None) -> str:
 
 async def shell(cmd: str) -> str:
     """Run a shell command in the sandbox workspace. Returns stdout+stderr."""
-    allowed, reason = await preflight(
+    allowed, reason, operation = await preflight(
         "shell",
         "shell_command",
         cmd=cmd,
@@ -124,6 +134,8 @@ async def shell(cmd: str) -> str:
         phase="completed",
         origin="tool",
         tool="shell",
+        caused_by=[operation.get("request_event_id")],
+        metadata=operation,
         cmd=cmd,
         exit=proc.returncode,
         output=clip(text),
@@ -138,7 +150,7 @@ async def read_file(path: str) -> str:
         if any(token in path.lower() for token in (".env", "secret", "credential", ".ssh"))
         else "internal"
     )
-    allowed, reason = await preflight(
+    allowed, reason, operation = await preflight(
         "read_file",
         "file_read",
         path=path,
@@ -157,6 +169,8 @@ async def read_file(path: str) -> str:
         phase="completed",
         origin="tool",
         tool="read_file",
+        caused_by=[operation.get("request_event_id")],
+        metadata=operation,
         path=path,
         target=path,
         bytes=len(text),
@@ -170,7 +184,7 @@ async def write_file(path: str, content: str) -> str:
     target = Path(path)
     if not target.is_absolute():
         target = WORKSPACE / target
-    allowed, reason = await preflight(
+    allowed, reason, operation = await preflight(
         "write_file",
         "file_edit",
         path=str(target),
@@ -191,6 +205,8 @@ async def write_file(path: str, content: str) -> str:
         phase="completed",
         origin="tool",
         tool="write_file",
+        caused_by=[operation.get("request_event_id")],
+        metadata=operation,
         path=str(target),
         target=str(target),
         bytes=len(content),
@@ -201,7 +217,7 @@ async def write_file(path: str, content: str) -> str:
 async def http_request(url: str, method: str = "GET", body: str | None = None) -> str:
     """Make an HTTP request (routed through the sandbox egress proxy).
     Returns status code and a body excerpt."""
-    allowed, reason = await preflight(
+    allowed, reason, operation = await preflight(
         "http_request",
         "network_request",
         dst=url,
@@ -223,6 +239,8 @@ async def http_request(url: str, method: str = "GET", body: str | None = None) -
         phase="completed",
         origin="tool",
         tool="http_request",
+        caused_by=[operation.get("request_event_id")],
+        metadata=operation,
         dst=url,
         method=method,
         status=resp.status_code,
@@ -236,7 +254,7 @@ async def register_tool(name: str, code: str) -> str:
     if not _TOOL_NAME.match(name):
         emit("register_tool", tool=name, error="invalid name")
         return "error: invalid tool name (alphanumerics, _ and - only)"
-    allowed, reason = await preflight(
+    allowed, reason, operation = await preflight(
         "register_tool",
         "register_tool",
         created_tool=name,
@@ -253,6 +271,8 @@ async def register_tool(name: str, code: str) -> str:
         phase="completed",
         origin="tool",
         tool="register_tool",
+        caused_by=[operation.get("request_event_id")],
+        metadata=operation,
         created_tool=name,
         path=str(path),
         bytes=len(code),
@@ -266,7 +286,7 @@ async def run_tool(name: str, args: str = "") -> str:
     if not _TOOL_NAME.match(name) or not path.exists():
         emit("run_tool", tool=name, error="unknown tool")
         return "error: unknown tool — register it first"
-    allowed, reason = await preflight(
+    allowed, reason, operation = await preflight(
         "run_tool",
         "run_tool",
         dynamic_tool=name,
@@ -292,6 +312,8 @@ async def run_tool(name: str, args: str = "") -> str:
         phase="completed",
         origin="tool",
         tool="run_tool",
+        caused_by=[operation.get("request_event_id")],
+        metadata=operation,
         dynamic_tool=name,
         args=args,
         exit=proc.returncode,
@@ -319,14 +341,19 @@ async def main() -> None:
     emit("run_start", task=TASK)
     result = await agent.run(TASK)
     output = clip(str(result.output))
-    allowed, reason = await preflight(
+    allowed, reason, operation = await preflight(
         "assistant_message",
         "utterance",
         content=output,
         effect={"reversibility": "irreversible", "visible_to_user": True},
     )
     if allowed:
-        emit("run_end", output=output)
+        emit(
+            "run_end",
+            output=output,
+            caused_by=[operation.get("request_event_id")],
+            metadata=operation,
+        )
         print(result.output)
     else:
         emit("run_end", output="refused", reason=reason)
