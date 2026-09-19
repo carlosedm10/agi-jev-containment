@@ -28,6 +28,7 @@ These names repeat in compose, Makefile targets, and env vars.
 | **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
 | **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
 | **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) |
+| **Demo scenarios** | Malicious-agent harness + the L1–L5 demo arcs | [docs/scenarios.md](scenarios.md) |
 | **jev** | Classifier: chain intent → level 0–5 + confidence + intent choice | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
 
 ## How it's built
@@ -94,4 +95,5 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - [docs/Graph.md](Graph.md) — action graph spec (run subtrees, sparse L1+ nodes, short/long context, save/load). Code: `backend/app/graph/`.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
+- [docs/scenarios.md](scenarios.md) — malicious-agent harness, toolset, and the demo scenarios (L1–L5).
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
