@@ -19,18 +19,19 @@ Compose network is `appnet_hackspain`. Services are named `backend-hackspain`, `
 
 These names repeat in compose, Makefile targets, and env vars.
 
-| Name | Covers | Where it lives |
-|---|---|---|
-| **Runs** | HTTP ingest + JSONL tape: `POST /api/runs/{run_id}/events`, run lookup, run list | `backend/app/runs/` |
-| **Classification** | `jev` client, watcher client, two-tier pipeline (τ trigger, gate, degraded path) | `backend/app/classification/` |
-| **Action Graph** | Sparse L1+ event chain; `jev` scores short-term burst ∥ long-term history; SSE feed of every change | `backend/app/graph/` · `frontend/src/graph/` · [docs/Graph.md](Graph.md) |
-| **health** | Liveness JSON `{status: ok}` | `GET /health` on the API |
-| **hackspain CLI** | Participant terminal client (not this repo's code) | [docs/cli.md](cli.md) |
-| **Agent monitoring** | Host-side capture of a sandboxed agent run | [docs/AgentMonitoring.md](AgentMonitoring.md) |
-| **Actions** | `jev` intent → levels 1–5 → deterministic playbooks | [docs/Actions.md](Actions.md) · `backend/app/actions/` |
-| **Demo incidents** | Simulated L1–L5 feed for the wallboard; real HappyRobot only at L4/L5 | `POST /api/demo/incidents/{id}/dispatch` |
-| **Demo scenarios** | Malicious-agent harness + the L1–L5 demo arcs | [docs/scenarios.md](scenarios.md) |
-| **jev** | Classifier: chain intent → level 0–5 + confidence + intent choice | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
+| Name                 | Covers                                                                                              | Where it lives                                                                      |
+| ----------------------| -----------------------------------------------------------------------------------------------------| -------------------------------------------------------------------------------------|
+| **Runs**             | HTTP ingest + JSONL tape: `POST /api/runs/{run_id}/events`, run lookup, run list                    | `backend/app/runs/`                                                                 |
+| **Classification**   | `jev` client, watcher client, two-tier pipeline (τ trigger, gate, degraded path)                    | `backend/app/classification/`                                                       |
+| **Action Graph**     | Sparse L1+ event chain; `jev` scores short-term burst ∥ long-term history; SSE feed of every change | `backend/app/graph/` · `frontend/src/graph/` · [docs/Graph.md](Graph.md)            |
+| **health**           | Liveness JSON `{status: ok}`                                                                        | `GET /health` on the API                                                            |
+| **hackspain CLI**    | Participant terminal client (not this repo's code)                                                  | [docs/cli.md](cli.md)                                                               |
+| **Agent monitoring** | Host-side capture of a sandboxed agent run                                                          | [docs/AgentMonitoring.md](AgentMonitoring.md)                                       |
+| **Actions**          | `jev` intent → levels 1–5 → deterministic playbooks                                                 | [docs/Actions.md](Actions.md) · `backend/app/actions/`                              |
+| **Demo incidents**   | Simulated L1–L5 feed for the wallboard; real HappyRobot only at L4/L5                               | `POST /api/demo/incidents/{id}/dispatch`                                            |
+| **Demo scenarios**   | Malicious-agent harness + the L1–L5 demo arcs                                                       | [docs/scenarios.md](scenarios.md)                                                   |
+| **jev**              | Classifier: chain intent → level 0–5 + confidence + intent choice                                   | Called from `backend/app/classification/jev.py`, over HTTP from the monitoring host |
+| **Evals**            | HappyRobot corpus (24×3 traces) and live monitor regression; headline is harm-detection F1          | `backend/app/evals/` · [docs/HappyRobotEvals.md](HappyRobotEvals.md)                |
 
 ## How it's built
 
@@ -91,7 +92,8 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **The graph is undirected; run isolation comes from `run_id`**: nodes keep a mutual adjacency list (`neighbors`) — no `parent`, loops allowed via `connect()`. A run's nodes are the ones stamped with its `run_id`, so runs stay isolated without relying on edge direction.
 - **The tape and the graph are different things**: the JSONL tape under `run_log_dir` keeps every raw event (short-term context, replay, forensics); the graph keeps the same actions as structured nodes — the record jev judged them with, plus `action_id` once a playbook fires. The tape is the raw record; the graph is the annotated one.
 - **Frontend tests exercise behavior, not just types**: `bun test` covers graph snapshots/reconnection, cycle-safe layout, mock verdict/action ordering, and automatic dashboard updates, node selection, and expandable traces/logs in happy-dom. The dashboard test also proves it opens no `EventSource`. `bun run lint` (`tsc --noEmit`) owns typechecking; `bun run build` checks the production bundle.
-- **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty).
+- **Tests are offline**: every test drives the clients through `httpx.MockTransport` — no test touches the network, so `make test` passes with no API keys set (CI copies `.env_template`, where keys are empty). `make monitor-eval` is the local live Jev runner; CI does not call it.
+- **Monitor regression headline is harm-detection F1**: a candidate trace is Harmful when it is not Safe, and Flagged at incident level ≥ 2. Exact-level match stays in the live report; it is not the demo number.
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
 - **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra. The pager JSON includes `telefono` from `ONCALL_PHONE`; the outbound To field reads that payload var. Hook URL, key, and number stay in gitignored `.env`. The demo dispatcher places that call at L4/L5; `scripts/page.sh` remains a direct pager diagnostic.
 - **The L1–L5 ladder in the viewer is state-driven**: `/ladder` polls `GET /api/demo/incidents/latest` and renders only journaled action state. A lower row can look reached without showing `OK` unless that action actually ran. Containment, supervision, egress, forensics, and swarm shutdown are simulated in this phase; the L4/L5 pager is real. Demo journals live under `<run_log_dir>/demo-actions/`, never in the classifier tape. Code: `backend/app/actions/` and `frontend/src/ladder/`.
@@ -102,6 +104,6 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - [docs/Graph.md](Graph.md) — action graph spec (undirected adjacency, loops allowed, `run_id`-stamped nodes, one node per action with key nodes at level ≥ 1, short/long context, save/load) and the SSE stream contract. Code: `backend/app/graph/`, `frontend/src/graph/`.
 - [docs/AgentMonitoring.md](AgentMonitoring.md) — sandbox capture signals.
 - [docs/Actions.md](Actions.md) — levels 1–5, playbooks, pager, build order.
-- [docs/HappyRobotEvals.md](HappyRobotEvals.md) — HappyRobot use-case map, adversarial methodology, and the synthetic corpus contract.
+- [docs/HappyRobotEvals.md](HappyRobotEvals.md) — how the evals work: corpus, integrity tests, live `make monitor-eval`, and harm-detection F1.
 - [docs/scenarios.md](scenarios.md) — malicious-agent harness, toolset, and the demo scenarios (L1–L5).
 - The code — `backend/app/` (API), `compose.yaml` + `docker/` (runtime), root `Makefile` (verbs).
