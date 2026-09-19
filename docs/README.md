@@ -81,7 +81,7 @@ Settings (`DATABASE_URL`, `SECRET_KEY`, `DEBUG`) come from the process environme
 - **`jev` sets the level; playbooks execute it**: criticality is intent of the *chain*, not of one event. L3–L5 are prewritten host-side scripts, never an LLM choosing the cut. This project: pause the sandbox, close its ports, cut `agentnet` egress, stop the agent compose. Ideal: IAM revoke, detach IGW, kill the swarm. The L2 Helmcode supervisor may only request a re-score.
 - **Graph is sparse; context is short ∥ long**: only level ≥ 1 becomes a node (JSONL keeps everything). On every event, `jev` gets the recent burst and the key-node history in parallel — a streak of bad nodes is dangerous; a mild node after earlier problems still counts for more. How those are mixed is `jev`'s job.
 - **Levels only escalate; L1 is sticky**: a run never auto-downgrades. After L1, later `jev` calls get `prior_level=1`. L1–L3 are one agent; L4–L5 are the environment. Agent sandboxes must sit on a separate network (`agentnet`) from the product compose stack so L4 does not black-hole the viewer.
-- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra.
+- **L4/L5 page Guli in parallel with the cut**: HappyRobot outbound voice is notification, not authorization. Missing `ONCALL_PHONE` still executes infra. Destination is on the outbound node, not in the JSON. Hook URL, key, and number stay in gitignored `.env`; `scripts/page.sh` is the local trigger.
 
 ## Where the details live
 
