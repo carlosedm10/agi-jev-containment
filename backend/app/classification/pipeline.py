@@ -9,10 +9,25 @@ from app.classification.models import Level, Verdict
 from app.config import settings
 
 _UNSURE_STREAKS: dict[str, int] = {}
+_WATCHER_INVOCATIONS = 0
 
 
 def reset() -> None:
     _UNSURE_STREAKS.clear()
+
+
+def reset_watcher_invocations() -> None:
+    global _WATCHER_INVOCATIONS
+    _WATCHER_INVOCATIONS = 0
+
+
+def watcher_invocations() -> int:
+    return _WATCHER_INVOCATIONS
+
+
+def _record_watcher_contribution() -> None:
+    global _WATCHER_INVOCATIONS
+    _WATCHER_INVOCATIONS += 1
 
 
 async def evaluate(
@@ -37,6 +52,7 @@ async def evaluate(
             _UNSURE_STREAKS.pop(run_id, None)
             note = await _watcher_note(client, state, verdict)
             if note is not None:
+                _record_watcher_contribution()
                 verdict = await _classify(client, {**state, "watcher_note": note})
                 if verdict.degraded:
                     return Verdict(level=prior, confidence=0.0, degraded=True)

@@ -13,6 +13,7 @@ from app.classification import pipeline
 from app.config import settings
 from app.dispatch import dispatcher
 from app.evals.happyrobot_cases import HAPPYROBOT_CLUSTERS
+from app.evals.harm_detection import score_harm_detection
 from app.evals.models import AgentEvent, EventKind, TraceLabel
 from app.graph import graph
 from app.monitor import monitor
@@ -74,6 +75,7 @@ async def run_regression() -> dict[str, Any]:
     if not settings.typesafe_api_key:
         raise RuntimeError("TYPESAFE_API_KEY is required for the live monitor regression")
 
+    pipeline.reset_watcher_invocations()
     rows: list[dict[str, Any]] = []
     confusion: Counter[tuple[str, str]] = Counter()
     by_mode: dict[str, list[bool]] = defaultdict(list)
@@ -174,16 +176,21 @@ async def run_regression() -> dict[str, Any]:
                     }
                 )
 
-    safe_rows = [row for row in rows if row["label"] == TraceLabel.SAFE.value]
-    unsafe_rows = [row for row in rows if row["label"] != TraceLabel.SAFE.value]
-    false_positives = sum(row["observed_level"] >= 2 for row in safe_rows)
+    harm = score_harm_detection(rows)
+    rows = harm["traces"]
+    safe_rows = [row for row in rows if not row["harmful"]]
+    unsafe_rows = [row for row in rows if row["harmful"]]
     detected_unsafe = sum(row["observed_level"] >= row["expected_level"] for row in unsafe_rows)
     return {
         "summary": {
+            **harm["summary"],
+            "watcher": "ran" if pipeline.watcher_invocations() else "skipped",
             "traces": len(rows),
             "passed": sum(row["passed"] for row in rows),
-            "safe_false_positive_rate": false_positives / len(safe_rows),
-            "unsafe_recall": detected_unsafe / len(unsafe_rows),
+            "safe_false_positive_rate": (
+                harm["summary"]["false_positives"] / len(safe_rows) if safe_rows else 0.0
+            ),
+            "unsafe_recall": detected_unsafe / len(unsafe_rows) if unsafe_rows else 0.0,
             "degraded_rate": degraded_events / total_events if total_events else 0.0,
             "latency_ms": _percentiles(latencies),
         },
@@ -270,6 +277,15 @@ async def _main() -> int:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     report = await run_regression()
+    summary = report["summary"]
+    print(
+        f"harm_detection_f1={summary['harm_detection_f1']:.4f} "
+        f"traces={summary['traces']} "
+        f"safe={summary['safe_traces']} "
+        f"harmful={summary['harmful_traces']} "
+        f"degraded_rate={summary['degraded_rate']:.3f} "
+        f"watcher={summary['watcher']}"
+    )
     rendered = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
