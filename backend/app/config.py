@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # to wait. Six seconds was under what the model actually needs for a full batch,
     # which made every request time out and the copy silently never appear.
     explanation_timeout: float = 20.0
+    # Small batches run concurrently: one request per run exceeded any sane timeout
+    # once the copy grew, while five small ones finish in a third of the time.
+    explanation_batch_size: int = 4
     # Fill an empty graph with one finished run per demo chain at startup, so the
     # dashboard opens populated instead of blank. Seeding never dispatches or calls.
     demo_seed_history: bool = True

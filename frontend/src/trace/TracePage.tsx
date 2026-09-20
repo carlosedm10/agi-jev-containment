@@ -57,6 +57,8 @@ export function TracePage({
   > | null>(null);
   const [explanationSource, setExplanationSource] =
     useState<ExplanationSource | null>(null);
+  // Named by the API so the page reports the model that actually wrote the copy.
+  const [explanationModel, setExplanationModel] = useState<string | null>(null);
   const reducedMotion = useReducedMotion();
   const incident = useIncidentFeed(runId || null);
   useEffect(() => {
@@ -67,6 +69,7 @@ export function TracePage({
     setSelectedId(null);
     setExplanations(null);
     setExplanationSource(null);
+    setExplanationModel(null);
     fetch(`/api/runs/${encodeURIComponent(runId)}/trace`, {
       signal: controller.signal,
     })
@@ -122,6 +125,11 @@ export function TracePage({
                 if (!controller.signal.aborted) {
                   setExplanations(copy);
                   setExplanationSource(source);
+                  setExplanationModel(
+                    typeof result.model === "string" && result.model
+                      ? result.model
+                      : null,
+                  );
                 }
               })
               .catch(() => {
@@ -265,6 +273,7 @@ export function TracePage({
                 events={trace.events}
                 explanations={explanations}
                 incident={incident}
+                model={explanationModel}
                 state={
                   explanations === null
                     ? "loading"

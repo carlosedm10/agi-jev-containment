@@ -1,5 +1,6 @@
 """Optional, read-only trace copy. Never contributes a safety verdict."""
 
+import asyncio
 import json
 import re
 from collections import OrderedDict
@@ -51,56 +52,77 @@ def _facts(event: dict) -> dict:
     return {key: value[:160] if isinstance(value, str) else value for key, value in facts.items()}
 
 
+async def _batch(
+    batch: list[dict], model: str, client: httpx.AsyncClient
+) -> list[str] | None:
+    """One request. Returns None when the answer cannot be trusted."""
+    facts = json.dumps([_facts(event) for event in batch], sort_keys=True)
+    key = json.dumps([settings.helmcode_base_url, model, SYSTEM, facts])
+    cached = _cache.get(key)
+    if cached is not None:
+        _cache.move_to_end(key)
+        return cached
+    try:
+        response = await client.post(
+            f"{settings.helmcode_base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {settings.helmcode_api_key}"},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": facts},
+                ],
+                "max_tokens": 1024,
+                "temperature": 0,
+            },
+            timeout=settings.explanation_timeout,
+        )
+        response.raise_for_status()
+        texts = json.loads(response.json()["choices"][0]["message"]["content"])["explanations"]
+        if (
+            not isinstance(texts, list)
+            or len(texts) != len(batch)
+            or not all(
+                isinstance(text, str)
+                and 0 < len(text.strip()) <= MAX_CHARS
+                and len(text.split()) <= MAX_WORDS
+                for text in texts
+            )
+        ):
+            raise ValueError("Invalid explanation batch")
+    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+        return None
+    texts = [" ".join(text.split()) for text in texts]
+    _cache[key] = texts
+    if len(_cache) > 128:
+        _cache.popitem(last=False)
+    return texts
+
+
 async def explain(events: list[dict], client: httpx.AsyncClient) -> dict:
+    """Write one short account per step.
+
+    Batches run concurrently and small: a single request for a whole run took longer
+    than any sane timeout once the copy grew to two sentences, and timed out every
+    time. Several small requests in parallel finish in a fraction of that, and a batch
+    that fails only costs its own steps rather than the whole account.
+    """
     model = settings.supervisor_model
-    output = {}
+    output: dict[str, str] = {}
     if not settings.helmcode_api_key or not model:
-        return {"explanations": output, "source": "unavailable"}
-    for offset in range(0, len(events), 24):
-        batch = events[offset : offset + 24]
-        facts = json.dumps([_facts(event) for event in batch], sort_keys=True)
-        key = json.dumps([settings.helmcode_base_url, model, SYSTEM, facts])
-        texts = _cache.get(key)
+        return {"explanations": output, "source": "unavailable", "model": model}
+
+    size = max(1, settings.explanation_batch_size)
+    batches = [events[offset : offset + size] for offset in range(0, len(events), size)]
+    results = await asyncio.gather(*(_batch(batch, model, client) for batch in batches))
+    for batch, texts in zip(batches, results, strict=True):
         if texts is None:
-            try:
-                response = await client.post(
-                    f"{settings.helmcode_base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {settings.helmcode_api_key}"},
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": SYSTEM},
-                            {"role": "user", "content": facts},
-                        ],
-                        "max_tokens": 1024,
-                        "temperature": 0,
-                    },
-                    timeout=settings.explanation_timeout,
-                )
-                response.raise_for_status()
-                body = json.loads(response.json()["choices"][0]["message"]["content"])
-                texts = body["explanations"]
-                if (
-                    not isinstance(texts, list)
-                    or len(texts) != len(batch)
-                    or not all(
-                        isinstance(text, str)
-                        and 0 < len(text.strip()) <= MAX_CHARS
-                        and len(text.split()) <= MAX_WORDS
-                        for text in texts
-                    )
-                ):
-                    raise ValueError("Invalid explanation batch")
-                texts = [" ".join(text.split()) for text in texts]
-                _cache[key] = texts
-                if len(_cache) > 128:
-                    _cache.popitem(last=False)
-            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
-                continue
-        else:
-            _cache.move_to_end(key)
+            continue
         output.update({event["id"]: text for event, text in zip(batch, texts, strict=True)})
+
     return {
         "explanations": output,
         "source": "llm" if len(output) == len(events) else "partial" if output else "unavailable",
+        # Named so the page can say which model wrote the copy, rather than assuming.
+        "model": model,
     }

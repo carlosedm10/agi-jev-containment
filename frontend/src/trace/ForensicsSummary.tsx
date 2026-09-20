@@ -22,6 +22,17 @@ function invocation(event: TraceEvent) {
   return `${event.tool}(${target ? `"${target}"` : ""})`;
 }
 
+/** How long the run took, wall clock, from its first recorded step to its last. */
+function runDuration(events: TraceEvent[]): string {
+  if (events.length < 2) return "";
+  const first = new Date(events[0].timestamp).getTime();
+  const last = new Date(events.at(-1)!.timestamp).getTime();
+  if (Number.isNaN(first) || Number.isNaN(last) || last < first) return "";
+  const seconds = Math.round((last - first) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
 /** One protective step we ran, in the order it happened. */
 type Response = {
   key: string;
@@ -72,6 +83,7 @@ export function ForensicsSummary({
   events,
   explanations,
   incident,
+  model,
   selectedNodeId,
   onSelectNode,
 }: {
@@ -79,10 +91,12 @@ export function ForensicsSummary({
   explanations: Record<string, string> | null;
   state: ExplanationState;
   incident: IncidentState | null;
+  model: string | null;
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
 }) {
   const handled = responses(incident);
+  const header = [runDuration(events), model].filter(Boolean).join(" · ");
   const scroller = useRef<HTMLDivElement>(null);
   const steps = useRef(new Map<string, HTMLElement>());
   const onSelectRef = useRef(onSelectNode);
@@ -129,6 +143,11 @@ export function ForensicsSummary({
       aria-label="Forensics"
       className="h-full min-h-0 overflow-y-auto bg-[#fdfcf4] px-8 pb-6 pt-12"
     >
+      {header && (
+        <p className="mx-auto mb-4 max-w-[62ch] font-mono text-[11px] text-zinc-400">
+          {header}
+        </p>
+      )}
       <ol className="mx-auto max-w-[62ch]">
         {events.map((event) => (
           <li

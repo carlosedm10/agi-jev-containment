@@ -89,6 +89,8 @@ async def test_invalid_llm_copy_falls_back_without_losing_the_trace(content):
         assert await explanations.explain([{"id": "e1", "kind": "file_read"}], client) == {
             "explanations": {},
             "source": "unavailable",
+            # Named even when nothing came back, so the page can still say what it asked.
+            "model": "test-flash",
         }
 
 
