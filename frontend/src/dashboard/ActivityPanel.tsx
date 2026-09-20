@@ -8,7 +8,7 @@ export function ActivityPanel({
   selectedNodeId,
   onSelectNode,
   title = "Protective actions",
-  empty = "Waiting for Jev",
+  empty = "Monitoring Jev",
 }: {
   actions: SafeAction[];
   selectedNodeId: string | null;
@@ -44,9 +44,13 @@ export function ActivityPanel({
             }}
           />
         ) : (
-          <div className="grid place-content-center px-4 py-14">
-            {/* The label carries the meaning; the pixels carry the waiting. */}
-            <Diamond aria-label={empty} className="size-8 text-[#b06a38]" />
+          <div
+            role="status"
+            className="grid h-full place-content-center justify-items-center gap-4 px-4 text-center"
+          >
+            {/* The caption below carries the meaning, so the pixels are decorative. */}
+            <Diamond aria-hidden="true" className="size-16 text-[#b06a38]" />
+            <p className="text-xs font-medium text-zinc-600">{empty}</p>
           </div>
         )}
       </div>
