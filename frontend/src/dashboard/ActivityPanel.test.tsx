@@ -167,6 +167,9 @@ test("empty activity waits for Jev rather than showing sample tasks", () => {
       />,
     ),
   );
-  expect(container.textContent).toContain("Waiting for Jev");
+  // A loader stands in for the text, so the wait is carried by the accessible name.
+  const waiting = container.querySelector('[role="status"]');
+  expect(waiting?.getAttribute("aria-label")).toBe("Waiting for Jev");
+  expect(waiting?.tagName.toLowerCase()).toBe("svg");
   expect(container.querySelectorAll("button").length).toBe(0);
 });

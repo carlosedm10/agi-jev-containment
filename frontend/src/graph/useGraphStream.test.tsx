@@ -509,9 +509,13 @@ describe("App", () => {
     act(() => restart!.click());
     expect(container.querySelectorAll(".react-flow__node")).toHaveLength(3);
     expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
+    // The empty state is a loader now; the wait is announced, not printed.
     expect(
-      container.querySelector('[aria-label="Protective actions"]')?.textContent,
-    ).toContain("Waiting for Jev");
+      container
+        .querySelector('[aria-label="Protective actions"]')
+        ?.querySelector('[role="status"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("Waiting for Jev");
     expect(
       container.querySelector('[aria-label="Container logs"]')?.textContent,
     ).not.toContain("Boundary probing detected");

@@ -1,3 +1,4 @@
+import { Diamond } from "@/components/loading-ui/diamond";
 import TaskRows from "@/components/ui/task-rows";
 import type { SafeAction } from "@/dashboard/demo";
 import { localTime } from "@/lib/time";
@@ -43,8 +44,9 @@ export function ActivityPanel({
             }}
           />
         ) : (
-          <div role="status" className="px-4 py-10 text-center">
-            <p className="text-xs font-medium text-zinc-600">{empty}</p>
+          <div className="grid place-content-center px-4 py-14">
+            {/* The label carries the meaning; the pixels carry the waiting. */}
+            <Diamond aria-label={empty} className="size-8 text-[#b06a38]" />
           </div>
         )}
       </div>
