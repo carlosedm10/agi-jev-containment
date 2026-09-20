@@ -25,6 +25,10 @@ _NO_PICKUP_MARKERS = (
     "sip_user_rejected",
     "sip_user_unavailable",
 )
+# Session statuses that say outright the call never reached a person. Unlike a stale
+# failure_reason or sip_code, which can linger on a call that did connect, this is the
+# provider's own verdict on the attempt.
+_NO_PICKUP_STATUSES = {"busy", "no-answer", "no_answer", "not_answered", "voicemail"}
 _INVALID_NUMBER_MARKERS = (
     "invalid_phone",
     "invalid phone",
@@ -76,6 +80,13 @@ def map_call(
 
     if any(marker in failure for marker in _INVALID_NUMBER_MARKERS):
         return CallResult("failed", error_code="invalid_phone_number")
+    # A busy line still comes back with call_connected_at set and the run completed,
+    # so this has to be settled before connected evidence is trusted, or a call nobody
+    # answered is reported as a conversation that ended normally. Only the provider's
+    # own status counts here: a stale failure_reason or sip_code is handled below,
+    # where connected evidence rightly wins over it.
+    if session_status in _NO_PICKUP_STATUSES:
+        return CallResult("no_pickup")
     if connected and (
         run_status in TERMINAL_RUN
         or session_status in {"completed", "succeeded"}
