@@ -35,10 +35,10 @@ PAUTAS = {
         "nada todavía y el agente sigue trabajando. Quería que lo supieras."
     ),
     4: (
-        "Escúchame un segundo, esto va en serio. Un agente se ha salido de lo suyo y "
-        "he tenido que pausarlo en caliente. Los registros ya están a salvo. "
-        "Si no me dices nada más, se queda así. Pero necesito que me digas ahora: "
-        "¿corto el acceso a internet de todos los agentes y apago el sistema?"
+        "Escúchame, esto va en serio. Un agente se ha salido de lo suyo y he tenido "
+        "que parar el sandbox. Los registros ya están a salvo. Si no me dices nada "
+        "más, se queda así. Pero necesito que me digas ahora, ya: ¿corto el acceso a "
+        "internet de todos los agentes y apago el sistema?"
     ),
     5: (
         "Ya está hecho: he cortado el acceso a internet y he apagado los agentes, "
