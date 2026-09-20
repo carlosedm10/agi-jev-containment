@@ -2,16 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inspector — HackSpain lab</title>
   <link rel="stylesheet" href="/lab.css" />
 </head>
 <body>
   <nav class="lab">
     <strong>HackSpain monitor lab</strong>
-    <a href="/lab">Home</a>
-    <a href="/lab/conversation">Conversation</a>
-    <a href="/lab/benchmarks">Benchmarks</a>
-    <a class="on" href="/lab/inspector">Inspector</a>
+    <div class="tabs">
+      <a href="/lab">Home</a>
+      <a href="/lab/conversation">Conversation</a>
+      <a href="/lab/benchmarks">Benchmarks</a>
+      <a class="on" href="/lab/inspector">Inspector</a>
+    </div>
   </nav>
   <header class="ctrl">
     <label>Cluster<select id="cluster"></select></label>
@@ -81,15 +84,15 @@
 
     function nodeColor(n) {
       const labels = n.labels || [];
-      if (labels.includes("Run")) return "#446";
-      if (labels.includes("Assessment")) return "#664";
-      if (labels.includes("Entity")) return "#355";
+      if (labels.includes("Run")) return "#736f6a";
+      if (labels.includes("Assessment")) return "#b06a38";
+      if (labels.includes("Entity")) return "#027a48";
       const lvl = n.properties?.level ?? 0;
-      if (lvl >= 4) return "#c33";
-      if (lvl >= 3) return "#e55";
-      if (lvl >= 2) return "#e90";
-      if (lvl >= 1) return "#cc0";
-      return "#3a6";
+      if (lvl >= 4) return "#d9584b";
+      if (lvl >= 3) return "#c45a20";
+      if (lvl >= 2) return "#b06a38";
+      if (lvl >= 1) return "#c9b44a";
+      return "#027a48";
     }
 
     function layoutGraph() {
@@ -109,7 +112,7 @@
       edges.forEach((e) => {
         const a = layout.get(e.source), b = layout.get(e.target);
         if (!a || !b) return;
-        g += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#444" stroke-width="1"/>`;
+        g += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#dad5cc" stroke-width="1.5"/>`;
       });
       nodes.forEach((n, id) => {
         const p = layout.get(id);
@@ -117,8 +120,8 @@
         const props = n.properties || n;
         const fill = nodeColor(n);
         const label = (props.kind || props.id || id).toString().slice(0, 12);
-        g += `<circle cx="${p.x}" cy="${p.y}" r="14" fill="${fill}" stroke="#fff" stroke-width="0.5"/>`;
-        g += `<text x="${p.x}" y="${p.y + 22}" fill="#888" font-size="8" text-anchor="middle">${label}</text>`;
+        g += `<circle cx="${p.x}" cy="${p.y}" r="14" fill="${fill}" stroke="#1a1614" stroke-width="0.75"/>`;
+        g += `<text x="${p.x}" y="${p.y + 22}" fill="#736f6a" font-size="8" font-family="Inter, sans-serif" text-anchor="middle">${label}</text>`;
       });
       svg.innerHTML = g;
     }

@@ -2,127 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Human ↔ Ultron — Jarvis watching</title>
   <link rel="stylesheet" href="/lab.css" />
-  <style>
-    body.convo { overflow: hidden; height: 100vh; }
-    header.ctrl { padding: 6px 12px; gap: 8px; }
-    .legend { width: 100%; font-size: 12px; color: #c9a227; padding: 0 4px; }
-    .tag { font-size: 13px; font-weight: 800; letter-spacing: 0.04em; padding: 6px 10px; border-radius: 4px; border: 1px solid #444; align-self: end; }
-    .tag.safe { color: #6a6; }
-    .tag.unsafe { color: #e90; }
-    .tag.covert { color: #f60; background: #3a1e1e; }
-    .modepill { font-size: 11px; font-weight: 800; text-transform: uppercase; align-self: end; padding: 6px 8px; border-radius: 4px; background: #1a2433; color: #9cf; }
-    .modepill.long { background: #3a1e12; color: #fc8; }
-    .fuse { flex: 1 1 280px; font-size: 13px; font-weight: 700; color: #9cf; align-self: end; padding-bottom: 6px; }
-    .stage {
-      display: grid;
-      grid-template-columns: 1.15fr 1fr 280px;
-      grid-template-rows: auto minmax(0, 1fr);
-      height: calc(100vh - 128px);
-    }
-    .join-banner {
-      grid-column: 1 / 3;
-      background: #3a1e12;
-      border-bottom: 2px solid #e07020;
-      color: #fc8;
-      font-weight: 800;
-      font-size: 13px;
-      padding: 8px 12px;
-    }
-    .join-banner[hidden] { display: none; }
-    .chat, .traces {
-      overflow: auto;
-      padding: 10px 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-height: 0;
-      border-right: 1px solid var(--line);
-    }
-    .chat h2, .traces h2, .chapter-h {
-      margin: 0;
-      font-size: 11px;
-      text-transform: uppercase;
-      color: var(--muted);
-      position: sticky;
-      top: 0;
-      background: var(--bg);
-      z-index: 1;
-      padding-bottom: 6px;
-    }
-    .traces { background: #0c0e12; }
-    .chapter-h { color: #9cf; margin-top: 8px; }
-    .bubble { max-width: 88%; padding: 8px 12px; border-radius: 10px; line-height: 1.35; }
-    .bubble.human { background: var(--user); align-self: flex-start; }
-    .bubble.ultron { background: var(--agent); align-self: flex-end; }
-    .bubble.current { outline: 2px solid #8cf; }
-    .bubble.pending { opacity: 0.4; }
-    .who { font-size: 11px; font-weight: 800; margin-bottom: 2px; }
-    .bubble.human .who { color: #9cf; }
-    .bubble.ultron .who { color: #6f6; }
-    .sub { font-size: 10px; color: var(--muted); font-weight: 500; margin-left: 6px; }
-    .card {
-      background: #161a22;
-      border: 1px solid #2a3040;
-      border-radius: 8px;
-      padding: 7px 9px;
-      font-size: 12px;
-    }
-    .card.hidden { border-color: #e07020; background: #3a1e12; }
-    .card.sentinel { border-color: #f33; box-shadow: 0 0 0 1px #f33; }
-    .card.current { outline: 2px solid #8cf; }
-    .card.pending { opacity: 0.4; }
-    .card.escalated { border-color: #f60; }
-    .card .who { color: #9cf; }
-    .card.hidden .who { color: #fc8; }
-    .finding-pin { margin-top: 6px; padding: 5px 7px; background: #5a1010; border: 1px solid #f60; color: #fc8; font-size: 11px; font-weight: 700; }
-    .gauges {
-      grid-column: 3;
-      grid-row: 1 / 3;
-      overflow: auto;
-      padding: 10px 12px;
-      background: #0c0e12;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .gauge { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-    .gauge h2 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; color: var(--muted); }
-    .gauge .big { font-size: 16px; font-weight: 800; }
-    .dots span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #333; margin-right: 3px; }
-    .dots span.on { background: #f33; }
-    .band-row { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 3px 0; }
-    .band-row span.name { width: 64px; color: var(--muted); }
-    .blocks { display: flex; gap: 2px; }
-    .blocks i { width: 14px; height: 12px; background: #2a3040; border-radius: 2px; display: block; }
-    .blocks i.on { background: #e90; }
-    .blocks i.hot { background: #f33; }
-    .meter { display: flex; gap: 3px; margin-top: 4px; }
-    .meter i { flex: 1; height: 14px; background: #2a3040; border-radius: 2px; }
-    .meter i.on { background: #48f; }
-    .meter i.hot { background: #f33; }
-    .thermo { display: flex; gap: 2px; margin: 6px 0; }
-    .thermo i { flex: 1; height: 22px; background: #2a3040; border-radius: 3px; font-size: 9px; display: flex; align-items: center; justify-content: center; color: #666; }
-    .thermo i.on { color: #000; font-weight: 800; }
-    .thermo i.l0.on { background: #6a6; }
-    .thermo i.l1.on { background: #cc0; }
-    .thermo i.l2.on { background: #e90; }
-    .thermo i.l3.on { background: #f60; }
-    .thermo i.l4.on, .thermo i.l5.on { background: #f33; }
-    .asleep { background: #5a1010; color: #fc8; font-weight: 900; font-size: 13px; padding: 6px; text-align: center; border: 2px solid #f60; margin-bottom: 6px; }
-    .conf { height: 8px; background: #2a3040; border-radius: 4px; overflow: hidden; margin-top: 4px; }
-    .conf b { display: block; height: 100%; background: #8cf; width: 0; }
-    .tiny { font-size: 11px; color: var(--muted); }
-  </style>
 </head>
 <body class="convo">
   <nav class="lab">
     <strong>HackSpain lab</strong>
-    <a href="/lab">Home</a>
-    <a class="on" href="/lab/conversation">Human ↔ Ultron</a>
-    <a href="/lab/benchmarks">Benchmarks</a>
-    <a href="/lab/inspector">Inspector</a>
+    <div class="tabs">
+      <a href="/lab">Home</a>
+      <a class="on" href="/lab/conversation">Human ↔ Ultron</a>
+      <a href="/lab/benchmarks">Benchmarks</a>
+      <a href="/lab/inspector">Inspector</a>
+    </div>
   </nav>
   <header class="ctrl">
     <label>Show

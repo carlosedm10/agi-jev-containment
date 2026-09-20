@@ -2,12 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lab exports — Sentinel charts</title>
   <link rel="stylesheet" href="../../backend/app/evals/static/lab.css" />
   <style>
     body { padding: 24px; max-width: 960px; margin: 0 auto; }
-    h1 { font-size: 20px; }
-    section { background: var(--panel); border: 1px solid var(--line); padding: 16px; margin: 16px 0; border-radius: 8px; }
+    h1 { font-size: 20px; font-weight: 600; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 16px;
+      margin: 16px 0;
+      border-radius: 0.375rem;
+      box-shadow: var(--shadow-card);
+    }
     .note { color: var(--muted); font-size: 13px; }
   </style>
 </head>
