@@ -143,13 +143,17 @@ export function ForensicsSummary({
       aria-label="Forensics"
       className="h-full min-h-0 overflow-y-auto bg-[#fdfcf4] px-8 pb-6 pt-12"
     >
+      {/* One measure for everything: `ch` resolves against each element's own font,
+          so a mono header and a sans list with the same max-w land on different
+          left edges once the panel is wide. */}
+      <div className="mx-auto max-w-[62ch]">
       {(duration || model) && (
-        <div className="mx-auto mb-4 max-w-[62ch] font-mono text-[11px] leading-relaxed text-zinc-400">
+        <div className="mb-4 font-mono text-[11px] leading-relaxed text-zinc-400">
           {duration && <p>{duration}</p>}
           {model && <p>{model}</p>}
         </div>
       )}
-      <ol className="mx-auto max-w-[62ch]">
+      <ol>
         {events.map((event) => (
           <li
             key={event.id}
@@ -182,7 +186,7 @@ export function ForensicsSummary({
         ))}
       </ol>
       {handled.length > 0 && (
-        <section aria-label="How we solved it" className="mx-auto max-w-[62ch]">
+        <section aria-label="How we solved it">
           <h2 className="mb-1 mt-8 border-t pt-6 text-[13px] font-semibold text-zinc-700">
             How we solved it
           </h2>
@@ -210,6 +214,7 @@ export function ForensicsSummary({
           </ol>
         </section>
       )}
+      </div>
       <div aria-hidden="true" className="h-[55vh]" />
     </div>
   );
