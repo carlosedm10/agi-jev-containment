@@ -132,6 +132,8 @@ async def test_lab_pages_and_css_served():
     assert inspector.status_code == 200
     assert css.status_code == 200
     assert "text/css" in css.headers.get("content-type", "")
+    assert "#fdfcf4" in css.text
+    assert "#d59566" in css.text
 
 
 @pytest.mark.asyncio
