@@ -63,6 +63,13 @@ class ActionJournal:
         records = self.read(incident_id)
         accepted = [record for record in records if isinstance(record, DispatchAccepted)]
         accepted_level = max((record.level for record in accepted), default=0)
+        requested_by = next(
+            (record.source for record in reversed(accepted) if record.source != "monitor"),
+            "monitor",
+        )
+        # What the monitor wanted but held back from doing, still open for a human.
+        wanted = max((record.requested_level for record in accepted), default=0)
+        awaiting = wanted if wanted > accepted_level else 0
         actions = [record for record in records if isinstance(record, ActionTransition)]
 
         recovered = (
@@ -107,6 +114,8 @@ class ActionJournal:
             actions=actions,
             pager_status=pager_status,
             call_status=call_status,
+            requested_by=requested_by,
+            awaiting_authorization=awaiting,
             updated_at=updated_at,
         )
 
@@ -158,6 +167,7 @@ class ActionJournal:
                     ladder_level=planned.ladder_level,
                     mode=planned.mode,
                     status="failed",
+                    source=dispatch.source,
                     detail="Backend restarted before the action completed.",
                     error_code="interrupted",
                     call_status="failed" if planned.is_pager else None,

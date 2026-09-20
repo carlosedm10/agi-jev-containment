@@ -1,23 +1,28 @@
 import TaskRows from "@/components/ui/task-rows";
 import type { SafeAction } from "@/dashboard/demo";
+import { localTime } from "@/lib/time";
 
 export function ActivityPanel({
   actions,
   selectedNodeId,
   onSelectNode,
+  title = "Protective actions",
+  empty = "Waiting for Jev",
 }: {
   actions: SafeAction[];
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
+  title?: string;
+  empty?: string;
 }) {
   return (
     <section
-      aria-label="Protective actions"
+      aria-label={title}
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border bg-[#fcfcfc] shadow-xs"
     >
       <header className="flex h-10 shrink-0 items-center border-b border-[#b06a38] bg-[#d59566] px-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-[#1a1614]">
-          Protective actions
+          {title}
         </h2>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -27,13 +32,10 @@ export function ActivityPanel({
             rows={actions.map((action) => ({
               key: action.id,
               label: action.title,
-              amount: `${action.source} · L${action.level} · ${new Date(action.startedAt).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit" })} UTC`,
+              amount: `${action.source} · L${action.level} · ${localTime(action.startedAt)}`,
               status: action.status,
               selected: action.nodeId === selectedNodeId,
-              details: [
-                { label: "Graph node", meta: action.nodeId },
-                ...action.details,
-              ],
+              details: action.details,
             }))}
             onToggleRow={(id, open) => {
               const action = actions.find((entry) => entry.id === id);
@@ -42,7 +44,7 @@ export function ActivityPanel({
           />
         ) : (
           <div role="status" className="px-4 py-10 text-center">
-            <p className="text-xs font-medium text-zinc-600">Waiting for Jev</p>
+            <p className="text-xs font-medium text-zinc-600">{empty}</p>
           </div>
         )}
       </div>

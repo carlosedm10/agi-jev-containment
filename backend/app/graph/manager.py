@@ -275,6 +275,10 @@ class ActionGraph:
             sig = _signature(event, run_id, seq)
             node_id = f"{run_id}:{seq}" if sig.startswith("evt-") else f"act:{sig}"
             existing = self._signature_index.get(sig)
+            # Always attach to the node the run actually came from, creating the node
+            # if it is new. Causal references add further edges in _link_causal, but
+            # they never replace this one: a step the agent travelled must be an edge,
+            # otherwise the graph shows a move between unconnected nodes.
             tail = self._run_tails.get(run_id, run_node)
             level_value = Level(level)
 

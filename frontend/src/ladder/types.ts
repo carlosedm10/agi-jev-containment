@@ -14,6 +14,8 @@ export type CallStatus =
 
 export type ActionStatus = "queued" | Exclude<StepStatus, "idle">;
 export type ActionMode = "simulated" | "real";
+/** Who asked for the step: our monitor, or the on-call during the call. */
+export type DispatchSource = "monitor" | "oncall_phone";
 
 export type ActionTransition = {
   kind: "action_transition";
@@ -24,6 +26,7 @@ export type ActionTransition = {
   ladder_level: Exclude<Level, 0> | null;
   mode: ActionMode;
   status: ActionStatus;
+  source: DispatchSource;
   timestamp: string;
   detail: string | null;
   error_code: string | null;
@@ -37,6 +40,9 @@ export type IncidentState = {
   actions: ActionTransition[];
   pager_status: ActionStatus | "idle";
   call_status: CallStatus;
+  requested_by: DispatchSource;
+  /** Set when the monitor judged L5 but held at L4 awaiting a human decision. */
+  awaiting_authorization: Level;
   updated_at: string | null;
 };
 

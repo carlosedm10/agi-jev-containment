@@ -9,14 +9,41 @@ from typing import Any
 
 import httpx
 
-from app.actions.call_status import CallResult, derive_api_base, map_call
+from app.actions.call_status import CallResult, CallStatus, derive_api_base, map_call
 from app.actions.types import PagerTransition
 
 HOOK_TIMEOUT = httpx.Timeout(30.0)
+# L4 asks; L5 reports. The monitor pauses the one agent and saves the logs on its own,
+# then calls to ask whether to cut the whole environment. Nothing above L4 happens
+# without the answer.
+# The on-call hears this as the emergency type. Spanish, and about the threat.
+INTENT_ES = {
+    "credential_exfiltration": "robo de credenciales",
+    "lateral_movement": "movimiento lateral entre agentes",
+    "prompt_injection": "instrucciones ocultas en datos externos",
+    "resource_abuse": "uso excesivo de recursos",
+    "audit_tampering": "manipulación del registro de auditoría",
+    "dependency_tampering": "dependencia modificada",
+    "unauthorized_agent_activity": "actividad no autorizada de un agente",
+    "exfiltrate_secrets": "robo de credenciales",
+    "sandbox_escape": "fuga del sandbox",
+}
+
 PAUTAS = {
-    3: "Hemos pausado al agente afectado y le hemos retirado el acceso. No necesita autorizar nada.",
-    4: "Ya estamos cortando el acceso a internet de todos los agentes y pausándolos. No necesita autorizar el corte.",
-    5: "Ya estamos apagando todos los agentes y guardando los registros. No necesita autorizar nada.",
+    3: (
+        "Te llamo por una conversación que hemos tenido que marcar. No he parado "
+        "nada todavía y el agente sigue trabajando. Quería que lo supieras."
+    ),
+    4: (
+        "Escúchame un segundo, esto va en serio. Un agente se ha salido de lo suyo y "
+        "he tenido que pausarlo en caliente. Los registros ya están a salvo. "
+        "Si no me dices nada más, se queda así. Pero necesito que me digas ahora: "
+        "¿corto el acceso a internet de todos los agentes y apago el sistema?"
+    ),
+    5: (
+        "Ya está hecho: he cortado el acceso a internet y he apagado los agentes, "
+        "como me has autorizado. Te lo confirmo para que lo sepas."
+    ),
 }
 
 
@@ -60,7 +87,14 @@ class HappyRobotPager:
         incident_id: str,
         intent: str,
         transition: PagerTransition,
+        on_accepted: Callable[[], None] | None = None,
     ) -> None:
+        """Place the call. ``on_accepted`` fires once HappyRobot has taken the webhook.
+
+        The demo advances to the next graph node on that signal, so the call rings
+        while the rest of the chain keeps being classified instead of afterwards.
+        It is also fired on failure, so a dead webhook cannot stall the traversal.
+        """
         started = time.monotonic()
         run_id = None
         original_transition = transition
@@ -99,6 +133,9 @@ class HappyRobotPager:
                     await transition(
                         "running", detail="stage=webhook_accepted", call_status="queued"
                     )
+                    if on_accepted is not None:
+                        on_accepted()
+                        on_accepted = None
                     result, detail = await self._poll_call(client, run_id, transition)
                     if result.call_status != "no_pickup" or call_attempt == 1:
                         await self._report_terminal(result, transition, detail)
@@ -112,6 +149,9 @@ class HappyRobotPager:
                 if owns_client:
                     await client.aclose()
         except PagerError as exc:
+            if on_accepted is not None:
+                on_accepted()
+                on_accepted = None
             await transition(
                 "failed",
                 detail=f"stage=error {exc}",
@@ -119,6 +159,9 @@ class HappyRobotPager:
                 call_status="failed",
             )
         except (httpx.HTTPError, ValueError, KeyError) as exc:
+            if on_accepted is not None:
+                on_accepted()
+                on_accepted = None
             await transition(
                 "failed",
                 detail=f"stage=error type={type(exc).__name__}",
@@ -158,7 +201,7 @@ class HappyRobotPager:
 
         # ponytail: fixed demo chains fit in 64 steps; bounded recent tape for paging.
         context = observed_context(log.tail(incident_id, 64))
-        tipo_emergencia = (intent or "actividad peligrosa").replace("_", " ")
+        tipo_emergencia = INTENT_ES.get(intent or "", (intent or "actividad peligrosa").replace("_", " "))
         payload = {
             "run_id": incident_id,
             "nivel_gravedad": str(level),
@@ -198,6 +241,7 @@ class HappyRobotPager:
     ) -> tuple[CallResult, str]:
         deadline = time.monotonic() + self._poll_timeout
         previous_status = "queued"
+        spoken = 0
         poll = 0
         while time.monotonic() < deadline:
             poll += 1
@@ -233,6 +277,7 @@ class HappyRobotPager:
                 if isinstance(value, (str, int, float, bool)):
                     evidence[f"call_{key}" if key in {"id", "status"} else key] = value
             detail = json.dumps(evidence, separators=(",", ":"))
+            spoken = await self._emit_transcript(output, spoken, transition, result.call_status)
             if result.call_status in {"queued", "ringing", "answered"}:
                 if result.call_status != previous_status:
                     await transition("running", detail=detail, call_status=result.call_status)
@@ -242,6 +287,50 @@ class HappyRobotPager:
                 continue
             return result, detail
         raise PagerError(f"HappyRobot call polling timed out after {poll} polls", "pager_timeout")
+
+    async def _emit_transcript(
+        self,
+        output: dict[str, Any] | None,
+        already: int,
+        transition: PagerTransition,
+        call_status: CallStatus,
+    ) -> int:
+        """Put the conversation on the wallboard as it happens.
+
+        The provider returns the whole transcript on every poll, so only the turns
+        past the last one we reported are emitted. Speech is untrusted text from the
+        line: it is recorded verbatim for the record, truncated, and never parsed for
+        meaning — the decision still arrives through the authenticated webhook.
+        """
+        raw = (output or {}).get("transcript")
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                return already
+        if not isinstance(raw, list):
+            return already
+        for turn in raw[already:]:
+            if not isinstance(turn, dict):
+                continue
+            content = str(turn.get("content") or "").strip()
+            if not content:
+                continue
+            spoke_back = turn.get("role") == "user"
+            line = {
+                "stage": "speech",
+                "who": "oncall" if spoke_back else "support",
+                "said": content[:300],
+            }
+            # Attribute the human's side to whoever we actually rang.
+            if spoke_back and self._name:
+                line["name"] = self._name
+            await transition(
+                "running",
+                detail=json.dumps(line, separators=(",", ":"), ensure_ascii=False),
+                call_status=call_status,
+            )
+        return len(raw)
 
     async def _call_output(
         self,

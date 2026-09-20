@@ -28,7 +28,6 @@ export type DemoLog = {
   level: "info" | "warning" | "error";
   service: string;
   message: string;
-  duration: string;
   status: string;
   tags: string[];
 };
@@ -400,7 +399,6 @@ export function getDemoFrame(tick: number) {
       level: log.level,
       service: log.service,
       message: log.message,
-      duration: "—",
       status: log.level === "info" ? "Recorded" : "Flagged",
       tags: ["mock", "host-captured", ...(log.nodeId ? [log.nodeId] : [])],
     }));
@@ -411,7 +409,6 @@ export function getDemoFrame(tick: number) {
       level: "info",
       service: `sandbox-${event.run}`,
       message: `${event.tool}: ${event.label}. Captured for Jev review.`,
-      duration: "—",
       status: "Captured",
       tags: ["mock", `${event.run}:${event.seq}`],
     });

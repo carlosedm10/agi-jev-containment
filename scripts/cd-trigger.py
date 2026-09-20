@@ -13,7 +13,7 @@ import urllib.request
 def main() -> int:
     api = os.environ.get("CD_API_URL", "http://127.0.0.1:8000").rstrip("/")
     public = os.environ.get("CD_URL", "https://jervis.palistapp.com").rstrip("/")
-    body: dict[str, object] = {"delay_ms": int(os.environ.get("DELAY_MS") or "900")}
+    body: dict[str, object] = {"delay_ms": int(os.environ.get("DELAY_MS") or "1800")}
     scenario = os.environ.get("SCENARIO") or ""
     if scenario:
         body["scenario"] = scenario

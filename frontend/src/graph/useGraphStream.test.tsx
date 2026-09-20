@@ -251,8 +251,7 @@ describe("App", () => {
         container.querySelectorAll(".react-flow__node.selected"),
       ).toHaveLength(1);
       expect(
-        container.querySelector('[aria-label="Selected action analysis"]')
-          ?.textContent,
+        container.querySelector(".react-flow__node.selected")?.textContent,
       ).toContain("Send a network request");
       emit("update", {
         revision: 3,
@@ -292,10 +291,14 @@ describe("App", () => {
           },
         ],
       });
+      const escalated = container.querySelector(
+        `.react-flow__node[data-id="${first.id}"]`,
+      )!;
+      // Severity left the card face but stays in the accessible name.
+      expect(escalated.textContent).not.toContain("L3");
       expect(
-        container.querySelector(`.react-flow__node[data-id="${first.id}"]`)
-          ?.textContent,
-      ).toContain("L3");
+        escalated.querySelector("[aria-label]")?.getAttribute("aria-label"),
+      ).toContain("L3 · Severe");
       await act(async () => {
         stop.click();
       });
@@ -370,7 +373,13 @@ describe("App", () => {
     expect(
       container.querySelectorAll('.react-flow__node[data-id="r1:1"]'),
     ).toHaveLength(1);
-    expect(container.textContent).toContain("L3");
+    // The node card shows severity by colour and icon only — no level text, no
+    // confidence percentage, no incident or agent line.
+    const card = container.querySelector('.react-flow__node[data-id="r1:1"]')!;
+    expect(card.textContent).not.toContain("L3");
+    expect(card.textContent).not.toContain("%");
+    expect(card.textContent).not.toContain("Incident");
+    expect(card.textContent).not.toContain("sandbox-agent");
   });
 
   test("renders protective actions from the incident feed", async () => {
@@ -475,19 +484,15 @@ describe("App", () => {
       '.react-flow__node[data-id="atlas:3"]',
     )!;
     expect(node.style.pointerEvents).toBe("all");
+    const panel = container.querySelector('[aria-label="Agent activity graph"]')!;
+    const before = panel.getBoundingClientRect().height;
     act(() => node.click());
-    expect(
-      container.querySelector('[aria-label="Selected action analysis"]')
-        ?.textContent,
-    ).toContain("Repeated boundary probing");
-    act(() =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Close analysis"]')!
-        .click(),
-    );
+    expect(node.classList.contains("selected")).toBe(true);
+    // Selecting must not open a panel, and the graph keeps its display window.
     expect(
       container.querySelector('[aria-label="Selected action analysis"]'),
     ).toBeNull();
+    expect(panel.getBoundingClientRect().height).toBe(before);
   });
 
   test("restarts the test run and clears old activity and selection", () => {
@@ -497,18 +502,13 @@ describe("App", () => {
         .querySelector<HTMLDivElement>('.react-flow__node[data-id="atlas:3"]')!
         .click(),
     );
-    expect(
-      container.querySelector('[aria-label="Selected action analysis"]'),
-    ).not.toBeNull();
     const restart = container.querySelector<HTMLButtonElement>(
       '[aria-label="Restart test run"]',
     );
     expect(restart).not.toBeNull();
     act(() => restart!.click());
     expect(container.querySelectorAll(".react-flow__node")).toHaveLength(3);
-    expect(
-      container.querySelector('[aria-label="Selected action analysis"]'),
-    ).toBeNull();
+    expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
     expect(
       container.querySelector('[aria-label="Protective actions"]')?.textContent,
     ).toContain("Waiting for Jev");

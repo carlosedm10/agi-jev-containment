@@ -19,6 +19,8 @@ function incident(overrides: Partial<IncidentState> = {}): IncidentState {
     actions: [],
     pager_status: "idle",
     call_status: "idle",
+    requested_by: "monitor",
+    awaiting_authorization: 0,
     updated_at: null,
     ...overrides,
   };

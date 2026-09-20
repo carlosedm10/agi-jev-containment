@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.actions.router import router as actions_router
+from app.config import settings
+from app.evals.demo_chains import seed_history
 from app.evals.router import (
     lab_benchmarks_page,
     lab_conversation_page,
@@ -29,6 +31,9 @@ async def lifespan(_: FastAPI):
         for run_id in await neo4j_graph.all_run_ids():
             steps = await neo4j_graph.restore_classification(run_id)
             action_graph.hydrate_run(run_id, steps)
+    # Real history wins; seed only when there is none, so the dashboard is never blank.
+    if settings.demo_seed_history and not action_graph.nodes:
+        seed_history(action_graph)
     yield
     await neo4j_graph.close()
 

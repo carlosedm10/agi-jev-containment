@@ -1,5 +1,6 @@
 import type { PendingAction } from "@/dashboard/demo";
 import type { Graph, GraphNode } from "@/graph/protocol";
+import { actionToolName, PROTECTIVE_TOOLS } from "@/ladder/tools";
 
 export const NODE_WIDTH = 240;
 export const NODE_HEIGHT = 132;
@@ -11,6 +12,8 @@ export type ActivityItem = {
   context?: string;
   runId: string | null;
   position: { x: number; y: number };
+  /** The protective tool this node triggered, when its classification ran a playbook. */
+  actionTool?: { name: string; short: string; title: string };
 } & (
   | { kind: "structure" | "pending" | "recorded" }
   | { kind: "classified"; level: number; confidence: number; actionLevel?: number }
@@ -128,6 +131,14 @@ function computeDepth(graph: Graph) {
   return depth;
 }
 
+/** Name the playbook a node set off, so an acting node never shows a bare action id. */
+export function protectiveTool(actionId: string | null) {
+  const name = actionToolName(actionId);
+  if (name === null) return undefined;
+  const { short, title } = PROTECTIVE_TOOLS[name];
+  return { name, short, title };
+}
+
 export function layoutGraph(graph: Graph, pending: PendingAction | null) {
   // BFS depth from the root so shared action nodes and cycles get one stable rank.
   const depth = computeDepth(graph);
@@ -218,6 +229,7 @@ export function layoutGraph(graph: Graph, pending: PendingAction | null) {
           : "Run entry point",
       runId: node.run_id,
       position: positions.get(node.id)!,
+      actionTool: protectiveTool(node.action_id),
     };
     return node.event === null
       ? { ...base, kind: "structure" }

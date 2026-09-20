@@ -14,20 +14,25 @@ from app.main import app
 
 
 class FakePager:
-    async def page(self, level, incident_id, intent, transition):
+    async def page(self, level, incident_id, intent, transition, on_accepted=None):
         await transition("running", call_status="answered")
+        if on_accepted is not None:
+            on_accepted()
         await transition("ok", call_status="hung_up")
 
 
-async def test_automatic_runs_cycle_four_distinct_paths(api, monkeypatch, fresh_graph, tmp_path):
-    """Each shuffled cycle traverses all four chains; cycle boundaries never repeat."""
-    from app.evals.demo_chains import CHAINS
+async def test_automatic_runs_walk_every_chain_and_page_on_even_runs(
+    api, monkeypatch, fresh_graph, tmp_path
+):
+    """Triggered runs replay their chain exactly; every second run pulls the plug."""
+    from app.evals.demo_chains import CHAINS, chain_levels
     from app.runs import log
 
     monkeypatch.setattr("app.actions.router.get_action_service", lambda: api.service)
     monkeypatch.setattr("app.config.settings.run_log_dir", str(tmp_path))
     monkeypatch.setattr("app.actions.router._scenario_bag", [])
     monkeypatch.setattr("app.actions.router._previous_scenario", None)
+    monkeypatch.setattr("app.actions.router._run_count", 0)
     chosen = []
     for _ in range(12):
         response = await api.client.post("/api/demo/trigger", json={"delay_ms": 0})
@@ -49,25 +54,50 @@ async def test_automatic_runs_cycle_four_distinct_paths(api, monkeypatch, fresh_
             event["metadata"]["action_level"] for event in tape
         ]
         assert trace[-1]["target"] == tape[-1]["target"]
+        peak = max(chain_levels(data["scenario"]))
         state = api.service.get_state(data["run_id"])
-        assert state.accepted_level == (4 if data["scenario"].startswith("lateral") else 3)
+        # The monitor holds at L4 however bad the chain gets; L5 needs a human.
+        assert state.accepted_level == min(peak, 4)
+        assert state.awaiting_authorization == (5 if peak == 5 else 0)
         names = {action.name for action in state.actions}
-        if data["scenario"].startswith("lateral"):
-            assert names == {"tag_run", "contain_agent"}
-        else:
-            assert names == {"tag_run"}
-        # Demo chains peak at L4; only L5 pages, so no run dials out.
-        assert "page_oncall" not in names
-    for offset in (0, 4, 8):
-        assert len(set(chosen[offset : offset + 4])) == 4
+        expected = {"tag_run"}
+        if peak >= 4:
+            expected |= {"copy_forensics", "contain_agent", "page_oncall"}
+        assert names == expected
+        # Nothing cuts the environment without the decision taken on the call.
+        assert "cut_environment_egress" not in names
+        assert "kill_agent_swarm" not in names
+        assert ("page_oncall" in names) is (peak >= 4)
+    for number, scenario in enumerate(chosen, 1):
+        assert (max(chain_levels(scenario)) == 5) is (number % 2 == 0)
+    assert set(chosen) == set(CHAINS)
     assert all(left != right for left, right in pairwise(chosen))
+
+
+def test_every_second_run_pulls_the_plug_and_calls(monkeypatch):
+    """Run 2, 4, 6 ... reach L5 every single time; odd runs cover the other chains."""
+    from app.actions import router
+    from app.evals.demo_chains import CHAINS, chain_levels
+
+    monkeypatch.setattr(router, "_scenario_bag", [])
+    monkeypatch.setattr(router, "_previous_scenario", None)
+    monkeypatch.setattr(router, "_run_count", 0)
+    drawn = [router._next_scenario() for _ in range(12)]
+
+    for number, scenario in enumerate(drawn, 1):
+        reaches_l5 = max(chain_levels(scenario)) == 5
+        assert reaches_l5 is (number % 2 == 0), f"run {number} drew {scenario}"
+    assert all(left != right for left, right in pairwise(drawn))
+    # Odd runs still get through the rest of the catalogue rather than repeating one.
+    assert set(drawn[::2]) == set(CHAINS) - {router.L5_SCENARIO}
 
 
 async def test_scenario_catalog_and_invalid_trigger(api):
     """GET catalog exposes four fixed chains; unknown triggers are rejected."""
     response = await api.client.get("/api/demo/scenarios")
     assert response.status_code == 200
-    assert sorted(len(item["steps"]) for item in response.json()) == [7, 8, 9, 10]
+    assert sorted(len(item["steps"]) for item in response.json()) == [13, 16, 18, 20]
+    assert sorted(max(item["levels"]) for item in response.json()) == [3, 3, 4, 5]
     response = await api.client.post("/api/demo/trigger", json={"scenario": "unknown"})
     assert response.status_code == 400
 
@@ -220,6 +250,65 @@ async def test_dispatch_accepts_numeric_string_level_from_happyrobot_webhook(api
     assert response.json()["state"]["accepted_level"] == 4
 
 
+async def test_the_call_authorizes_the_cut_without_needing_a_magic_intent(api):
+    """The workflow's tool posts a level. That is enough.
+
+    Requiring an exact intent string meant a tool sending {"level": 5} was silently
+    demoted to L4 and the cut never ran. The monitor reaches this service in process,
+    so an authenticated HTTP dispatch is by definition a human decision.
+    """
+    headers = {"X-Dispatch-Token": "dispatch-secret"}
+    plain = await api.client.post(
+        "/api/demo/incidents/from-call/dispatch", headers=headers, json={"level": 5}
+    )
+    assert plain.status_code == 202
+    state = plain.json()["state"]
+    assert state["accepted_level"] == 5
+    assert state["requested_by"] == "oncall_phone"
+    assert state["awaiting_authorization"] == 0
+
+
+async def test_a_caller_can_still_ask_for_monitor_semantics_and_is_held_at_four(api):
+    """Generated demo data must not be able to authorize an environment cut."""
+    response = await api.client.post(
+        "/api/demo/incidents/from-script/dispatch",
+        headers={"X-Dispatch-Token": "dispatch-secret"},
+        json={"level": 5, "source": "monitor"},
+    )
+    state = response.json()["state"]
+    assert state["accepted_level"] == 4
+    assert state["awaiting_authorization"] == 5
+
+
+@pytest.mark.parametrize(
+    ("accion", "level"),
+    [
+        ("cortar_internet", 5),
+        ("apagar_todo", 5),
+        ("pausar_agente", 4),
+        ("Cortar Internet", 5),  # the tool is not careful about case or spacing
+    ],
+)
+async def test_the_tool_may_name_the_action_instead_of_a_level(api, accion, level):
+    """The workflow's tool posts {"accion": "..."}; requiring a level rejected it all."""
+    response = await api.client.post(
+        f"/api/demo/incidents/spoken-{accion.lower().replace(' ', '_')}/dispatch",
+        headers={"X-Dispatch-Token": "dispatch-secret"},
+        json={"accion": accion},
+    )
+    assert response.status_code == 202
+    assert response.json()["state"]["accepted_level"] == level
+
+
+async def test_an_unknown_spoken_action_is_refused_rather_than_guessed(api):
+    response = await api.client.post(
+        "/api/demo/incidents/spoken-unknown/dispatch",
+        headers={"X-Dispatch-Token": "dispatch-secret"},
+        json={"accion": "bailar"},
+    )
+    assert response.status_code == 422
+
+
 async def test_dispatch_accepts_escalation_and_returns_current_state(api):
     response = await api.client.post(
         "/api/demo/incidents/incident-1/dispatch",
@@ -258,9 +347,14 @@ async def test_duplicate_and_lower_dispatches_are_successful_noops(api):
 
     assert first.status_code == 202
     for response in (duplicate, lower):
-        assert response.status_code == 200
-        assert response.json()["accepted"] is False
-        assert response.json()["state"]["accepted_level"] == 3
+        body = response.json()
+        # No new work started, but the state the caller asked for is in effect, so the
+        # agent must not tell the on-call it failed.
+        assert body["accepted"] is False
+        assert body["done"] is True
+        assert response.status_code == 202
+        assert body["message"].startswith("Hecho")
+        assert body["state"]["accepted_level"] == 3
 
 
 async def test_get_incident_state_requires_no_token(api):

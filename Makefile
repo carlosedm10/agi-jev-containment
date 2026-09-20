@@ -35,7 +35,7 @@ restart:
 CD_URL ?= https://jervis.palistapp.com
 CD_API_URL ?= http://127.0.0.1:8000
 SCENARIO ?=
-DELAY_MS ?= 900
+DELAY_MS ?= 1800
 
 build-cd:
 	@echo ":: build-cd: $(CD_URL)"

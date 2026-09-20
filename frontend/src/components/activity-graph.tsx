@@ -16,6 +16,7 @@ import {
   Maximize2,
   Minus,
   Plus,
+  ShieldAlert,
   Terminal,
   Workflow,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import {
 import { AnimatedSvgEdge } from "@/components/ui/animated-svg-edge";
 import { BaseNode } from "@/components/ui/base-node";
 import { NodeStatusIndicator } from "@/components/ui/node-status-indicator";
+import { localTime } from "@/lib/time";
 import {
   NODE_HEIGHT,
   NODE_WIDTH,
@@ -59,7 +61,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
   const status = awaiting
     ? "Awaiting Jev"
     : item.kind === "recorded"
-      ? "Recorded · unassessed"
+      ? ""
       : structural
         ? item.runId
           ? "Agent run"
@@ -79,7 +81,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
     <NodeStatusIndicator status="initial">
       <BaseNode
         role="button"
-        aria-label={`${item.label}, ${status}${item.tool ? `, ${item.tool}` : ""}`}
+        aria-label={`${item.label}, ${status}${item.tool ? `, ${item.tool}` : ""}${item.actionTool ? `, triggered ${item.actionTool.title}` : ""}`}
         aria-pressed={selected}
         className="activity-node nodrag nopan focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600"
         onKeyDown={(event) => {
@@ -94,6 +96,8 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
           height: NODE_HEIGHT,
           borderRadius: 8,
           padding: "12px 14px",
+          display: "flex",
+          flexDirection: "column",
           background: verdict?.background ?? "#fcfcfc",
           border: `1px solid ${selected ? color : awaiting ? "#c3ccf0" : verdict ? `${color}55` : "#dad5cc"}`,
           boxShadow: selected
@@ -125,15 +129,6 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
             aria-hidden="true"
             className={awaiting && !reducedMotion ? "animate-spin" : undefined}
           />
-          <span>{status}</span>
-          {item.kind === "classified" && Number.isFinite(item.confidence) && (
-            <span
-              title="Jev confidence, independent of severity level"
-              style={{ marginLeft: "auto", color: "#736f6a", fontWeight: 500 }}
-            >
-              {Math.round(item.confidence * 100)}%
-            </span>
-          )}
         </div>
         <div
           title={item.label}
@@ -155,7 +150,9 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
             display: "flex",
             alignItems: "center",
             gap: 5,
-            marginTop: 8,
+            // The call sits on the card's bottom edge, now that the status and
+            // context lines no longer fill the space below it.
+            marginTop: "auto",
             color: "#736f6a",
             fontSize: 10,
           }}
@@ -172,12 +169,15 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
             {item.tool || (structural ? "Unclassified structure" : item.runId)}
           </span>
         </div>
-        <div
-          title={item.context}
-          className="mt-1 truncate text-[9px] text-zinc-500"
-        >
-          {item.kind === "classified" && item.actionLevel !== undefined ? `Incident L${item.level} · ` : ""}{item.context}
-        </div>
+        {item.actionTool && (
+          <div
+            title={`Triggered: ${item.actionTool.title}`}
+            className="mt-1 flex items-center gap-1 truncate text-[9px] font-semibold text-[#b42318]"
+          >
+            <ShieldAlert size={10} aria-hidden="true" />
+            <span className="truncate">Triggered {item.actionTool.short}</span>
+          </div>
+        )}
         <Handle
           type="source"
           position={data.horizontal ? Position.Right : Position.Bottom}
@@ -191,9 +191,7 @@ function ActivityCard({ data, selected }: NodeProps<ActivityNode>) {
           title={data.timestamp}
           className="block pt-3 text-center font-mono text-[11px] text-zinc-500"
         >
-          {new Date(data.timestamp).toLocaleTimeString("en-GB", {
-            timeZone: "UTC",
-          })}{" "}
+          {localTime(data.timestamp)}{" "}
           UTC
         </time>
       )}

@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     neo4j_database: str = "neo4j"
     neo4j_enabled: bool = True
     action_step_delay: float = 0.35
+    # Trace copy is optional and loads separately from the timeline, so it can afford
+    # to wait. Six seconds was under what the model actually needs for a full batch,
+    # which made every request time out and the copy silently never appear.
+    explanation_timeout: float = 20.0
+    # Fill an empty graph with one finished run per demo chain at startup, so the
+    # dashboard opens populated instead of blank. Seeding never dispatches or calls.
+    demo_seed_history: bool = True
     action_dispatch_token: str = ""
     happyrobot_api_key: str = ""
     happyrobot_hook_url: str = ""
@@ -26,6 +33,9 @@ class Settings(BaseSettings):
     oncall_name: str = ""
     happyrobot_poll_interval: PositiveFloat = 1.5
     happyrobot_poll_timeout: PositiveFloat = 330
+    # How long the demo waits for HappyRobot to take the webhook before moving to the
+    # next graph node. The call keeps ringing in the background either way.
+    pager_accept_timeout: PositiveFloat = 12
 
     model_config = SettingsConfigDict(
         env_file=".env", extra="ignore", env_ignore_empty=True

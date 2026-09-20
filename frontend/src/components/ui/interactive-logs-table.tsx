@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { DISPLAY_TIMEZONE, localDateTime } from "@/lib/time";
 
 type LogLevel = "info" | "warning" | "error";
 
@@ -12,7 +13,6 @@ export interface Log {
   level: LogLevel;
   service: string;
   message: string;
-  duration: string;
   status: string;
   tags: string[];
 }
@@ -43,7 +43,7 @@ function LogRow({
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    timeZone: "UTC",
+    timeZone: DISPLAY_TIMEZONE,
   });
 
   return (
@@ -98,18 +98,14 @@ function LogRow({
               </p>
               <dl className="grid grid-cols-2 gap-3 text-zinc-600">
                 <div className="min-w-0">
-                  <dt className="text-zinc-400">Source</dt>
-                  <dd className="break-words">{log.service}</dd>
+                  <dt className="text-zinc-400">Severity</dt>
+                  <dd className="break-words">{log.status}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-zinc-400">Status / duration</dt>
-                  <dd className="break-words">
-                    {log.status} / {log.duration}
+                  <dt className="text-zinc-400">Recorded</dt>
+                  <dd className="break-words font-mono">
+                    {localDateTime(log.timestamp)}
                   </dd>
-                </div>
-                <div className="col-span-2 min-w-0">
-                  <dt className="text-zinc-400">Timestamp (UTC)</dt>
-                  <dd className="break-words font-mono">{log.timestamp}</dd>
                 </div>
               </dl>
               <div className="flex flex-wrap gap-1.5" aria-label="Log tags">

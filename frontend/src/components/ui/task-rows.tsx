@@ -336,7 +336,7 @@ export default function TaskRows({
                 setManualOpen((current) => ({ ...current, [row.key]: !open }));
                 onToggleRow?.(row.key, !open);
               }}
-              className={`flex min-h-14 w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-[#d59566]/20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#b06a38] ${row.selected ? "bg-[#d59566]/20" : ""}`}
+              className={`flex min-h-14 w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-[#d59566]/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#b06a38] ${open ? "bg-[#d59566]/20" : "bg-white"}`}
             >
               <span className="flex size-6 shrink-0 items-center justify-center">
                 {badgeFor(row)}
@@ -392,7 +392,7 @@ export default function TaskRows({
               }}
             >
               <div className="overflow-hidden">
-                <div className="mb-2.5 grid grid-cols-[24px_1fr] gap-2.5 px-2.5">
+                <div className="mb-3.5 grid grid-cols-[24px_1fr] gap-2.5 px-2.5 pt-4">
                   <span aria-hidden className="mx-auto h-full w-px bg-line" />
                   <div className="flex min-w-0 flex-col gap-2">
                     {row.details.map((d, j) => (
@@ -410,9 +410,17 @@ export default function TaskRows({
                         <span className="break-words text-[11px] text-ink-2">
                           {d.label}
                         </span>
-                        <span className={`whitespace-pre-wrap break-words text-[11px] text-zinc-600 tabular-nums [overflow-wrap:anywhere] ${d.label.toLowerCase().includes("command") ? "font-mono" : ""}`}>
-                          {d.meta}
-                        </span>
+                        {d.label.toLowerCase().includes("command") ? (
+                          <pre className="min-w-0 overflow-x-auto rounded border border-zinc-200 bg-zinc-50 px-2.5 py-1.5">
+                            <code className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-zinc-800 [overflow-wrap:anywhere]">
+                              {d.meta}
+                            </code>
+                          </pre>
+                        ) : (
+                          <span className="whitespace-pre-wrap break-words text-[11px] text-zinc-600 tabular-nums [overflow-wrap:anywhere]">
+                            {d.meta}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

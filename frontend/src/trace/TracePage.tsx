@@ -11,10 +11,20 @@ import {
   type ActivityNode,
 } from "@/components/activity-graph";
 import { eventLabel, NODE_HEIGHT, NODE_WIDTH } from "@/dashboard/graph-layout";
+
+import { useIncidentFeed } from "@/dashboard/useIncidentFeed";
 import {
-  TraceInspector,
+  ForensicsSummary,
   type ExplanationSource,
-} from "./TraceInspector";
+} from "./ForensicsSummary";
+
+/**
+ * Upper bound on a generated audit paragraph, mirroring MAX_CHARS in
+ * backend/app/runs/explanations.py. It guards against a model that ignores its
+ * limit; set below the backend's cap it silently rejects every valid response and
+ * the page falls back to recorded labels, which is how it failed before.
+ */
+const MAX_COPY_CHARS = 340;
 
 export type TraceEvent = {
   id: string;
@@ -48,6 +58,7 @@ export function TracePage({
   const [explanationSource, setExplanationSource] =
     useState<ExplanationSource | null>(null);
   const reducedMotion = useReducedMotion();
+  const incident = useIncidentFeed(runId || null);
   useEffect(() => {
     if (!runId) return;
     const controller = new AbortController();
@@ -92,7 +103,8 @@ export function TracePage({
                   typeof copy !== "object" ||
                   Array.isArray(copy) ||
                   !Object.values(copy).every(
-                    (value) => typeof value === "string" && value.length <= 160,
+                    (value) =>
+                      typeof value === "string" && value.length <= MAX_COPY_CHARS,
                   )
                 )
                   throw new Error("Invalid explanations");
@@ -145,7 +157,8 @@ export function TracePage({
             runId,
             label: `${index + 1}. ${explanations?.[event.id] ?? eventLabel({ event })}`,
             tool: [event.tool, event.target].filter(Boolean).join(" · "),
-            context: event.phase ?? "observed",
+            // "completed" is every ordinary step; only an unfinished phase is worth saying.
+            context: event.phase && event.phase !== "completed" ? event.phase : "",
             position: { x: index * (NODE_WIDTH + 80), y: 0 },
             ...(event.level === null
               ? { kind: "recorded" as const }
@@ -172,12 +185,9 @@ export function TracePage({
       })),
     [nodes],
   );
-  const index =
-    trace?.events.findIndex((event) => event.id === selectedId) ?? -1;
-  const selected = trace?.events[index];
   return (
-    <main className="min-h-dvh bg-[#fdfcf4] p-4 text-zinc-900">
-      <header className="mx-auto mb-4 flex max-w-[1920px] items-center justify-between gap-4">
+    <main className="flex h-dvh flex-col bg-[#fdfcf4] p-4 text-zinc-900">
+      <header className="mx-auto mb-4 flex w-full max-w-[1920px] shrink-0 items-center justify-between gap-4">
         <a href="/" aria-label="Back to dashboard">
           <img
             src="/angry-robot-wordmark.svg"
@@ -187,12 +197,7 @@ export function TracePage({
         </a>
         <PageTabs page="trace" runId={runId} />
       </header>
-      <section className="mx-auto max-w-[1920px] overflow-hidden rounded-md border shadow-xs">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#b06a38] bg-[#d59566] px-4 py-3">
-          <h1 className="text-sm font-semibold uppercase tracking-wider">
-            Run trace
-          </h1>
-        </header>
+      <section className="mx-auto flex w-full min-h-0 max-w-[1920px] flex-1 flex-col overflow-hidden rounded-md border shadow-xs">
         {!runId ? (
           <p className="p-6">
             Open a completed run’s “View trace” link from the dashboard.
@@ -222,11 +227,17 @@ export function TracePage({
                 {trace.warning}
               </p>
             )}
-            <div className="grid lg:grid-cols-[minmax(0,1fr)_420px]">
-              <div
-                className="h-[72vh] min-h-[420px] bg-[#fcfcfc]"
-                aria-label="Action timeline"
-              >
+            <header className="flex h-10 shrink-0 items-center border-b border-[#b06a38] bg-[#d59566] px-4">
+              <h1 className="text-sm font-semibold uppercase tracking-wider text-[#1a1614]">
+                Run trace &amp; forensics
+              </h1>
+            </header>
+            <div className="grid min-h-0 flex-1 lg:grid-cols-2">
+              <div className="flex min-h-[320px] min-w-0 flex-col border-r border-[#e2ddd4]">
+                <div
+                  className="min-h-0 flex-1 bg-[#fcfcfc]"
+                  aria-label="Action timeline"
+                >
                 <ReactFlow
                   nodes={nodes}
                   edges={edges}
@@ -248,22 +259,20 @@ export function TracePage({
                     reducedMotion={reducedMotion}
                   />
                 </ReactFlow>
+                </div>
               </div>
-              {selected && (
-                <TraceInspector
-                  selected={selected}
-                  index={index}
-                  total={trace.events.length}
-                  onPrevious={() =>
-                    setSelectedId(trace.events[index - 1].id)
-                  }
-                  onNext={() => setSelectedId(trace.events[index + 1].id)}
-                  explanation={explanations?.[selected.id]}
-                  explanationState={
-                    explanations === null ? "loading" : explanationSource ?? "unavailable"
-                  }
-                />
-              )}
+              <ForensicsSummary
+                events={trace.events}
+                explanations={explanations}
+                incident={incident}
+                state={
+                  explanations === null
+                    ? "loading"
+                    : (explanationSource ?? "unavailable")
+                }
+                selectedNodeId={selectedId}
+                onSelectNode={setSelectedId}
+              />
             </div>
           </>
         )}

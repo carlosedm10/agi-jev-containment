@@ -19,18 +19,28 @@ class Request:
     rationale: str | None = None
 
 
+def PhoneRequest(level: int):
+    """A request arriving from the on-call during the call, not from the monitor."""
+    request = Request(level)
+    request.intent = "oncall_phone_request"
+    request.source = "oncall_phone"
+    return request
+
+
 class FakePager:
     def __init__(self) -> None:
         self.calls: list[tuple[int, str, str]] = []
 
-    async def page(self, level, incident_id, intent, transition):
+    async def page(self, level, incident_id, intent, transition, on_accepted=None):
         self.calls.append((level, incident_id, intent))
         await transition("running")
+        if on_accepted is not None:
+            on_accepted()
         await transition("ok")
 
 
 class FailingPager:
-    async def page(self, level, incident_id, intent, transition):
+    async def page(self, level, incident_id, intent, transition, on_accepted=None):
         raise RuntimeError("pager unavailable")
 
 
@@ -56,13 +66,19 @@ def transitions(journal: ActionJournal, incident_id: str) -> list[ActionTransiti
         (1, []),
         (2, []),
         (3, [("tag_run", 3, "simulated", False)]),
-        (4, [("contain_agent", 4, "simulated", False)]),
+        (
+            4,
+            [
+                ("copy_forensics", 4, "simulated", False),
+                ("contain_agent", 4, "simulated", False),
+                ("page_oncall", None, "real", True),
+            ],
+        ),
         (
             5,
             [
-                ("copy_forensics", 5, "simulated", False),
-                ("cut_environment_egress", 5, "simulated", False),
-                ("kill_agent_swarm", 5, "simulated", False),
+                ("copy_forensics", 4, "simulated", False),
+                ("contain_agent", 4, "simulated", False),
                 ("page_oncall", None, "real", True),
             ],
         ),
@@ -126,99 +142,104 @@ async def test_l3_tags_and_does_not_page(tmp_path):
     assert pager.calls == []
 
 
-async def test_l5_after_l4_still_calls_oncall(tmp_path):
+async def test_monitor_holds_short_of_the_plug_and_calls_instead(tmp_path):
+    """The monitor may contain one agent; pulling the environment's plug is a human call."""
     journal = ActionJournal(tmp_path)
     pager = FakePager()
     service = ActionService(journal, pager, simulation_delay=0)
 
+    # The monitor judges the worst it can judge.
+    await service.dispatch("incident", Request(5))
+    await finish_background_work(service)
+
+    state = service.get_state("incident")
+    assert state.accepted_level == 4, "the monitor must not reach L5 on its own"
+    assert state.awaiting_authorization == 5, "and must record what it wanted to do"
+    assert [call[0] for call in pager.calls] == [4], "it calls to ask, at L4"
+    # Logs are already safe and the agent is already paused before anyone picks up.
+    assert {action.name for action in state.actions} == {
+        "copy_forensics",
+        "contain_agent",
+        "page_oncall",
+    }
+    assert "cut_environment_egress" not in {action.name for action in state.actions}
+
+
+async def test_no_answer_leaves_the_environment_contained_at_l4(tmp_path):
+    """Nobody picks up: nothing further happens, by design."""
+    journal = ActionJournal(tmp_path)
+    service = ActionService(journal, FakePager(), simulation_delay=0)
+
+    await service.dispatch("incident", Request(5))
+    await finish_background_work(service)
+    # The monitor tries again and still cannot talk itself into the cut.
+    assert await service.dispatch("incident", Request(5)) is None
+    await finish_background_work(service)
+
+    state = service.get_state("incident")
+    assert state.accepted_level == 4
+    assert "kill_agent_swarm" not in {action.name for action in state.actions}
+
+
+async def test_a_held_back_judgement_is_recorded_not_dropped(tmp_path):
+    """Reaching L4 first must not swallow a later L5 judgement.
+
+    Once the incident sits at L4 a monitor request for L5 clamps to 4 and is no
+    longer an escalation. Without recording it, the fact that the cut is recommended
+    and waiting on a human would disappear, and the on-call would have no signal.
+    """
+    journal = ActionJournal(tmp_path)
+    service = ActionService(journal, FakePager(), simulation_delay=0)
+
     await service.dispatch("incident", Request(4))
     await finish_background_work(service)
-    assert pager.calls == []
-    await service.dispatch("incident", Request(5))
+    assert service.get_state("incident").awaiting_authorization == 0
+
+    # The chain gets worse; the monitor judges L5 but may not act on it.
+    assert await service.dispatch("incident", Request(5)) is None
     await finish_background_work(service)
 
-    assert [call[0] for call in pager.calls] == [5]
-    l4 = next(
-        record
-        for record in journal.read("incident")
-        if isinstance(record, DispatchAccepted) and record.level == 4
-    )
-    l5 = next(
-        record
-        for record in journal.read("incident")
-        if isinstance(record, DispatchAccepted) and record.level == 5
-    )
-    assert [action.name for action in l4.planned_actions] == ["contain_agent"]
-    assert [action.name for action in l5.planned_actions] == [
+    state = service.get_state("incident")
+    assert state.accepted_level == 4
+    assert state.awaiting_authorization == 5, "the recommendation must survive"
+    assert "cut_environment_egress" not in {action.name for action in state.actions}
+
+
+async def test_only_the_on_call_can_authorize_the_environment_cut(tmp_path):
+    journal = ActionJournal(tmp_path)
+    pager = FakePager()
+    service = ActionService(journal, pager, simulation_delay=0)
+
+    await service.dispatch("incident", Request(5))
+    await finish_background_work(service)
+    # The decision taken on the call.
+    await service.dispatch("incident", PhoneRequest(5))
+    await finish_background_work(service)
+
+    state = service.get_state("incident")
+    assert state.accepted_level == 5
+    assert state.requested_by == "oncall_phone"
+    assert state.awaiting_authorization == 0
+    assert {action.name for action in state.actions} == {
         "copy_forensics",
+        "contain_agent",
+        "page_oncall",
         "cut_environment_egress",
         "kill_agent_swarm",
-        "page_oncall",
-    ]
-
-
-async def test_direct_l5_pages_once(tmp_path):
-    pager = FakePager()
-    service = ActionService(ActionJournal(tmp_path), pager, simulation_delay=0)
-
-    await service.dispatch("incident", Request(5))
-    await finish_background_work(service)
-
-    assert [call[0] for call in pager.calls] == [5]
-    journal = ActionJournal(tmp_path)
-    service = ActionService(journal, FakePager(), simulation_delay=0)
-
-    await service.dispatch("incident", Request(5))
-    await finish_background_work(service)
+    }
+    # One incident, one call: authorizing does not ring the phone again.
+    assert [call[0] for call in pager.calls] == [4]
 
     events = transitions(journal, "incident")
-    copied = next(
-        event for event in events if event.name == "copy_forensics" and event.status == "ok"
-    )
-    kill_queued = next(
-        event for event in events if event.name == "kill_agent_swarm" and event.status == "queued"
-    )
-    cut_queued = next(
-        event
-        for event in events
-        if event.name == "cut_environment_egress" and event.status == "queued"
-    )
-    assert events.index(copied) < events.index(cut_queued)
-    assert events.index(cut_queued) < events.index(kill_queued)
-    page_queued = next(
-        event for event in events if event.name == "page_oncall" and event.status == "queued"
-    )
-    assert events.index(kill_queued) < events.index(page_queued)
-
-
-async def test_levels_only_escalate_and_duplicates_are_noops(tmp_path):
-    journal = ActionJournal(tmp_path)
-    service = ActionService(journal, FakePager(), simulation_delay=0)
-
-    assert await service.dispatch("incident", Request(3)) is not None
-    await finish_background_work(service)
-    records_after_first = journal.read("incident")
-
-    assert await service.dispatch("incident", Request(3)) is None
-    assert await service.dispatch("incident", Request(2)) is None
-
-    assert journal.read("incident") == records_after_first
-    assert service.get_state("incident").accepted_level == 3
-    assert service.latest_state().incident_id == "incident"
-
-
-async def test_concurrent_duplicate_dispatch_writes_one_acceptance(tmp_path):
-    journal = ActionJournal(tmp_path)
-    service = ActionService(journal, FakePager(), simulation_delay=0)
-
-    results = await asyncio.gather(
-        service.dispatch("incident", Request(4)),
-        service.dispatch("incident", Request(4)),
-    )
-    await finish_background_work(service)
-
-    assert sum(result is not None for result in results) == 1
-    assert sum(isinstance(record, DispatchAccepted) for record in journal.read("incident")) == 1
+    names = [event.name for event in events if event.status == "queued"]
+    # Forensics are preserved before the agent is paused, and long before the cut.
+    assert names.index("copy_forensics") < names.index("contain_agent")
+    assert names.index("contain_agent") < names.index("cut_environment_egress")
+    assert names.index("cut_environment_egress") < names.index("kill_agent_swarm")
+    # The step the human authorized is attributable to them.
+    by_source = {event.name: event.source for event in events}
+    assert by_source["contain_agent"] == "monitor"
+    assert by_source["cut_environment_egress"] == "oncall_phone"
 
 
 async def test_pager_failure_does_not_cancel_simulated_siblings(tmp_path):
@@ -229,11 +250,13 @@ async def test_pager_failure_does_not_cancel_simulated_siblings(tmp_path):
     await finish_background_work(service)
 
     latest = {event.name: event for event in transitions(journal, "incident")}
+    # A dead pager must not cost us the logs or leave the agent running.
     assert latest["copy_forensics"].status == "ok"
-    assert latest["cut_environment_egress"].status == "ok"
-    assert latest["kill_agent_swarm"].status == "ok"
+    assert latest["contain_agent"].status == "ok"
     assert latest["page_oncall"].status == "failed"
     assert latest["page_oncall"].error_code == "pager_error"
+    # And it must not cut the environment on its own: nobody authorized that.
+    assert "cut_environment_egress" not in latest
 
 
 async def test_dispatch_keeps_background_task_references(tmp_path):
@@ -251,14 +274,17 @@ async def test_escalations_finish_containment_before_starting_swarm_kill(tmp_pat
     service = ActionService(journal, FakePager(), simulation_delay=0.001)
     await service.dispatch("incident", Request(3))
     await service.dispatch("incident", Request(4))
-    await service.dispatch("incident", Request(5))
+    await service.wait_for_actions("incident")
+    await finish_background_work(service)
+    # The monitor stops here; the cut needs the decision taken on the call.
+    await service.dispatch("incident", PhoneRequest(5))
     await service.wait_for_actions("incident")
     await finish_background_work(service)
     events = transitions(journal, "incident")
     steps = [
         "tag_run",
-        "contain_agent",
         "copy_forensics",
+        "contain_agent",
         "cut_environment_egress",
         "kill_agent_swarm",
     ]

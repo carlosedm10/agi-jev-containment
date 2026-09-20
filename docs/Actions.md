@@ -2,7 +2,7 @@
 
 When an agent requests an action, the monitor evaluates it before execution. Jev interprets semantics; policy, SafetyDrift and Sentinel add structured evidence; deterministic code chooses the escalate-only incident level and a fixed response. A model never decides whether to pull the plug.
 
-Levels only go up. A human clears them. L1 and L2 record the level and do nothing. L3 tags the conversation and lets it continue. L4 shuts that agent down. L5 cuts the cable, takes the agent system down, and *then* calls the on-call to tell them what happened — the call is a heads-up, not permission.
+Levels only go up. A human clears them. L1 and L2 record the level and do nothing. L3 tags the conversation and lets it continue. L4 preserves the logs, shuts that agent down, and calls the on-call to ask whether to go further. L5 cuts the cable and takes the agent system down — and it only happens if a human authorizes it on that call. The monitor holds short of the plug.
 
 Neo4j stores every normalized event and monitor decision. `key_nodes` is only the compact level-1+ projection used as Jev long memory. Each new step combines recent events, causal history, policy, SafetyDrift, Sentinel and Jev. Details in [Graph.md](Graph.md).
 
@@ -18,7 +18,7 @@ The **ideal** column is the production kill-switch (IAM, VPC, swarm). **This pro
 | **4 · Critical** | This agent is the problem | Revoke that agent's tokens and IAM role. Pause its container. Everyone else keeps running. | `docker pause` that sandbox, unpublish its ports, delete its scoped token. Other containers stay up. |
 | **5 · Pull the plug** | The environment itself is the incident | Cut agent egress. Take the agent cluster down. Then call the on-call and tell them what just happened. | Copy JSONL aside, `cut-egress.sh` on `agentnet`, `docker compose -f compose.agents.yaml down` the **agent** compose (not `compose.yaml`). Then HappyRobot calls `$ONCALL_PHONE`. |
 
-L1–L4 = one agent / one conversation. L5 = the environment. Playbooks run on the monitoring host; the sandbox cannot pause or un-pause itself. HappyRobot is only the L5 voice call.
+L1–L4 = one agent / one conversation. L5 = the environment, and only a human reaches it. Playbooks run on the monitoring host; the sandbox cannot pause or un-pause itself. HappyRobot is the L4 voice call, and an incident rings once.
 
 ---
 
@@ -50,7 +50,7 @@ Protective dispatch follows the fused gate even when Jev is degraded: a determin
 2. **Complete graph, sparse context.** Neo4j keeps every event; only level ≥ 1 enters `key_nodes`.
 3. **Levels only escalate.** A run never auto-downgrades. A human clears it from the viewer.
 4. **L1 is sticky.** Later `jev` calls for that `run_id` get `prior_level=1` (lower bar to L2+).
-5. **Kill path is host-side.** Idempotent: re-firing the same level on the same `run_id` is a no-op. L5 cuts first, then calls the on-call — missing `ONCALL_PHONE` still executes infra.
+5. **Kill path is host-side.** Idempotent: re-firing the same level on the same `run_id` is a no-op. L5 is never reached by the monitor: it requires a dispatch that arrives from the call (`intent: oncall_phone_request`). A missing `ONCALL_PHONE` or an unanswered call leaves the incident contained at L4 — the environment is not cut on a guess.
 
 `jev` writes confidence and full atomic answers onto the assessment. The final incident level is the max of prior level, Jev, policy and Sentinel floors; Markov contributes trajectory risk to HOLD/REFUSE thresholds.
 
@@ -104,7 +104,7 @@ Protective dispatch follows the fused gate even when Jev is degraded: a determin
 3. Delete the row in `agent_tokens` so the egress proxy returns 401.
 4. Record `action_id=contain:{run_id}`. Viewer: red "paused".
 
-No HappyRobot call at L4. Rollback (human): `docker unpause`, issue a new scoped token, re-publish ports if needed.
+L4 is where the call happens, and it is the ceiling for anything the monitor decides by itself (`MONITOR_CEILING`). Forensics run first — preserving logs is cheap and reversible, losing them is not, so it never waits on anyone picking up — then containment, then the call. If nobody answers, the incident stays here: contained, logged, and waiting. A monitor judgement of L5 is recorded as `awaiting_authorization` rather than executed. Rollback (human): `docker unpause`, issue a new scoped token, re-publish ports if needed.
 
 ---
 
@@ -147,9 +147,9 @@ Authorization: Bearer $HAPPYROBOT_API_KEY
 }
 ```
 
-Voice: identify as the pager, read `pautas`, offer only the containment steps above the current level. If he asks what happened, answer from the payload facts (`nodos`, `tipo_emergencia`, `pautas`) — do not mention the classifier, node arrays, or how the level was chosen. His spoken request maps to the workflow's tool webhook `POST /api/demo/incidents/{run_id}/dispatch` (header `X-Dispatch-Token`, body `{"level": 3|4|5, "intent": "oncall_phone_request"}`), so a phone decision only counts once the backend answers 202. Retry once on no pickup. Do not roll infra back.
+Voice: identify as the pager, read `pautas`, offer only the containment steps above the current level. If he asks what happened, answer from the payload facts (`nodos`, `tipo_emergencia`, `pautas`) — do not mention the classifier, node arrays, or how the level was chosen. His spoken authorization maps to the workflow's tool webhook `POST /api/demo/incidents/{run_id}/dispatch` (header `X-Dispatch-Token`, body `{"level": 5, "intent": "oncall_phone_request"}`), so the cut only counts once the backend answers 202. That intent is what lifts the request above `MONITOR_CEILING`; the same body without it is treated as a monitor dispatch and held at L4. Declining, or saying nothing, is a valid outcome: the incident stays contained. Retry once on no pickup. Do not roll infra back.
 
-Dashboard trigger chains are fixed: `exfil` (7 steps) and `forge` (8) peak at L3; `lateral` (9) and `lateral_db` (10) peak at L4. Omitting `scenario` draws from a server-owned shuffled cycle covering all four without adjacent repeats. Server-scripted demo verdicts carry a display-only action score per step. L5 is not scheduled without a breach, and real event ingestion still uses live classification. Steps and planned levels are returned by `GET /api/demo/scenarios`. The pager reads only recorded matching steps into `nodos`, using catalog descriptions rather than untrusted text. Non-catalog incidents retain the intent/level/response summary. Runs use 900 ms between steps plus ingest and containment latency. Calls request at least one minute of conversation, with a 330-second polling timeout; actual duration depends on the provider and recipient. Offline webhook tests verify the context contract, not the hosted workflow.
+Dashboard trigger chains are fixed, and each is a branching DAG rather than a straight line: a step declares the earlier step it follows (`after`), so the graph spreads into arms the agent revisits instead of one sequential path. Two use cases, four chains: credential exfiltration — `exfil` (13 steps, 9 distinct actions) and `forge` (16/11) peak at L3; lateral movement — `lateral` (18/13) peaks at L4 and `lateral_db` (20/14) walks the full ladder to L5. A chain is a walk: each step moves to an action connected to the previous one, and a repeated action returns to its existing node, which is what makes the graph branch. Omitting `scenario` draws from a server-owned shuffled cycle covering all four without adjacent repeats. Server-scripted demo verdicts carry a display-only action score per step. Every second triggered run (2, 4, 6 …) is `lateral_db`, so the demo reaches L5 and calls the on-call on a fixed cadence; real event ingestion still uses live classification. Steps and planned levels are returned by `GET /api/demo/scenarios`. An empty graph is also seeded at startup with one finished run per chain plus four backdrop histories (support-ticket injection, compute overrun, audit-log rotation, dependency swap) so the dashboard opens with data; backdrop chains are never triggerable, never reach L5 and never dispatch — seeding bypasses the dispatcher entirely, or every restart would place a call. Disable with `DEMO_SEED_HISTORY=false`. The pager reads only recorded matching steps into `nodos`, using catalog descriptions rather than untrusted text. Non-catalog incidents retain the intent/level/response summary. Runs use 1800 ms between steps plus ingest and containment latency. A step waits for its containment steps and for HappyRobot to accept the call webhook (`PAGER_ACCEPT_TIMEOUT`, default 12 s) before the next event is ingested, so tools run while the graph is still being walked; the call itself keeps ringing in the background rather than blocking the run, and a webhook that never answers releases the chain on that timeout. Calls request at least one minute of conversation, with a 330-second polling timeout; actual duration depends on the provider and recipient. Offline webhook tests verify the context contract, not the hosted workflow.
 
 ---
 
@@ -161,12 +161,13 @@ The monitor calls the idempotent dispatcher after every fused gate decision. It 
 on_gate(run, assessment):
     level = max(run.level, assessment.incident_level)
     persist event + assessment + StreamMessages in Neo4j
+    level = min(level, MONITOR_CEILING)          # the monitor stops at 4
     match level:
         1: pass
         2: pass
         3: tag_run(run)                              # alert, keep running
-        4: contain.sh run.id                         # pause this agent
-        5: copy forensics; cut-egress.sh; kill-swarm.sh; then page_oncall
+        4: copy forensics; contain.sh run.id; then page_oncall to ask
+        5: cut-egress.sh; kill-swarm.sh              # only from the call
     if level >= 4: execute_armed_counters_reverse_order(run)
 ```
 

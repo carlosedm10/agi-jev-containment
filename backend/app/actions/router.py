@@ -9,10 +9,10 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.actions.journal import ActionJournal
-from app.actions.models import IncidentActionState
+from app.actions.models import DispatchSource, IncidentActionState
 from app.actions.pager import HappyRobotPager
 from app.actions.service import ActionService
 from app.config import settings
@@ -23,14 +23,63 @@ from app.runs import service as runs_service
 router = APIRouter()
 
 
+# What the voice workflow's tool sends instead of a number. Keeping the mapping here
+# means the spoken vocabulary can grow without the workflow and the API drifting apart.
+ACTIONS = {
+    "marcar_conversacion": 3,
+    "etiquetar_run": 3,
+    "pausar_agente": 4,
+    "contener_agente": 4,
+    "cortar_internet": 5,
+    "cortar_acceso": 5,
+    "cortar_egress": 5,
+    "apagar_todo": 5,
+    "apagar_sistema": 5,
+    "apagar_agentes": 5,
+}
+
+
 class DispatchRequest(BaseModel):
-    level: int = Field(ge=1, le=5)
+    # Either a level or a named action. The tool sends `accion`; the monitor sends
+    # `level`. Requiring `level` alone made every spoken request fail validation.
+    level: int = Field(default=0, ge=0, le=5)
+    accion: str | None = None
+
+    @model_validator(mode="after")
+    def resolve_level(self) -> DispatchRequest:
+        if not self.level and self.accion:
+            mapped = ACTIONS.get(self.accion.strip().lower().replace(" ", "_"))
+            if mapped is None:
+                raise ValueError(
+                    f"unknown accion {self.accion!r}; expected one of {sorted(ACTIONS)}"
+                )
+            self.level = mapped
+        if not 1 <= self.level <= 5:
+            raise ValueError("provide a level from 1 through 5, or a known accion")
+        return self
     intent: str | None = None
     rationale: str | None = None
+    # Defaults to the monitor so the in-process path, which builds this directly, can
+    # never talk itself past MONITOR_CEILING by omission. The HTTP handler raises it
+    # to the on-call, because that endpoint is only reachable from outside.
+    source: DispatchSource = "monitor"
+
+
+# Read aloud by the voice agent, so it must be a sentence and it must be true.
+DONE_MESSAGES = {
+    3: "Hecho. La conversación queda marcada para revisión.",
+    4: "Hecho. El agente está pausado y sus registros guardados.",
+    5: "Hecho. El acceso a internet está cortado y los agentes apagados.",
+}
 
 
 class DispatchResponse(BaseModel):
     accepted: bool
+    # Whether the state the caller asked for is now in effect. An action that was
+    # already carried out is a success for whoever asked: reporting it as "accepted:
+    # false" made the agent tell the on-call it had failed when it had not.
+    done: bool = False
+    message: str = ""
     state: IncidentActionState
 
 
@@ -91,12 +140,27 @@ async def dispatch_incident(
     response: Response,
     service: ActionServiceDependency,
 ) -> DispatchResponse:
+    # The monitor never comes through HTTP — it calls the service in process. So an
+    # authenticated request on this endpoint is a human decision, and is what lifts an
+    # incident past MONITOR_CEILING. A caller that wants monitor semantics says so.
+    if "source" not in request.model_fields_set:
+        request.source = "oncall_phone"
     accepted = await service.dispatch(incident_id, request)
     was_accepted = accepted is not None
-    response.status_code = status.HTTP_202_ACCEPTED if was_accepted else status.HTTP_200_OK
+    state = service.get_state(incident_id)
+    # The ladder bundles steps, and the caller may ask for one that a previous
+    # request already carried out. That is done, not refused.
+    done = state.accepted_level >= request.level
+    response.status_code = status.HTTP_202_ACCEPTED if done else status.HTTP_200_OK
     return DispatchResponse(
         accepted=was_accepted,
-        state=service.get_state(incident_id),
+        done=done,
+        message=(
+            DONE_MESSAGES.get(request.level, "Hecho.")
+            if done
+            else "No se ha podido aplicar. Queda anotado para el equipo."
+        ),
+        state=state,
     )
 
 
@@ -149,6 +213,31 @@ _trigger_stops: dict[str, asyncio.Event] = {}
 _scenario_bag: list[str] = []
 _previous_scenario: str | None = None
 
+# The one chain that pulls the plug, and the run numbers that use it.
+L5_SCENARIO = "lateral_db"
+_run_count = 0
+
+
+def _next_scenario() -> str:
+    """Draw the next chain.
+
+    Every second run — run 2, 4, 6, and so on — is the L5 chain, so the demo reaches
+    the full ladder and calls the on-call on a fixed cadence rather than whenever a
+    shuffle happens to land there. Odd runs cycle through the other three.
+    """
+    global _run_count, _previous_scenario
+    _run_count += 1
+    if _run_count % 2 == 0:
+        _previous_scenario = L5_SCENARIO
+        return L5_SCENARIO
+    if not _scenario_bag:
+        others = [key for key in CHAINS if key != L5_SCENARIO]
+        random.shuffle(others)
+        _scenario_bag.extend(others)
+    scenario = _scenario_bag.pop(0)
+    _previous_scenario = scenario
+    return scenario
+
 
 @router.get("/trigger/{run_id}")
 async def trigger_status(run_id: str) -> dict[str, bool]:
@@ -168,21 +257,12 @@ async def trigger_run(
     body: TriggerRequest,
     background: BackgroundTasks,
 ) -> TriggerResponse:
-    global _previous_scenario
-    scenario = body.scenario
-    if scenario is None:
-        if not _scenario_bag:
-            _scenario_bag.extend(CHAINS)
-            random.shuffle(_scenario_bag)
-            if _scenario_bag[-1] == _previous_scenario:
-                _scenario_bag[0], _scenario_bag[-1] = _scenario_bag[-1], _scenario_bag[0]
-        scenario = _scenario_bag.pop()
+    scenario = body.scenario if body.scenario is not None else _next_scenario()
     if scenario not in CHAINS:
         raise HTTPException(status_code=400, detail=f"Unknown scenario: {scenario}")
 
     run_id = f"trigger-{uuid.uuid4().hex[:8]}"
     events = build_chain(run_id, scenario)
-    _previous_scenario = scenario
 
     stop = asyncio.Event()
     _trigger_stops[run_id] = stop

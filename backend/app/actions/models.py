@@ -9,6 +9,9 @@ from app.actions.call_status import CallStatus
 from app.actions.types import ActionStatus
 
 ActionMode = Literal["simulated", "real"]
+# Who asked for this containment: our own monitor, or the on-call over the phone.
+# Only the on-call can authorize L5 — the monitor holds short of the plug.
+DispatchSource = Literal["monitor", "oncall_phone"]
 RowStatus = Literal["idle", "running", "ok", "partial", "failed", "canceled"]
 
 
@@ -37,6 +40,9 @@ class DispatchAccepted(BaseModel):
     incident_id: str
     level: int = Field(ge=1, le=5)
     planned_actions: list[PlannedAction]
+    source: DispatchSource = "monitor"
+    # What the monitor actually wanted, before being held at L4.
+    requested_level: int = Field(default=0, ge=0, le=5)
     timestamp: datetime = Field(default_factory=utc_now)
 
 
@@ -49,6 +55,7 @@ class ActionTransition(BaseModel):
     ladder_level: int | None = Field(default=None, ge=1, le=5)
     mode: ActionMode
     status: ActionStatus
+    source: DispatchSource = "monitor"
     timestamp: datetime = Field(default_factory=utc_now)
     detail: str | None = None
     error_code: str | None = None
@@ -65,4 +72,7 @@ class IncidentActionState(BaseModel):
     actions: list[ActionTransition]
     pager_status: ActionStatus | Literal["idle"] = "idle"
     call_status: CallStatus = "idle"
+    requested_by: DispatchSource = "monitor"
+    # Set when the monitor judged L5 but held at L4 waiting for a human to authorize.
+    awaiting_authorization: int = 0
     updated_at: datetime | None = None

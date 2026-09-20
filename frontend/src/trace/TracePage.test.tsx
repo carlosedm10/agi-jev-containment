@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { TracePage } from "./TracePage";
+import { localTime } from "@/lib/time";
 
 test("trace renders repeated actions as separate nodes and advances the detail panel", async () => {
   const original = globalThis.fetch;
@@ -56,37 +57,41 @@ test("trace renders repeated actions as separate nodes and advances the detail p
     expect(container.textContent).toContain(
       "Read the file to inspect its contents.",
     );
-    const details = container.querySelector(
-      '[aria-label="Trace action details"]',
-    )!;
-    expect(details.textContent).toContain("trace:e1");
-    expect(details.textContent).toContain("Read file: same.txt");
-    expect(details.textContent).toContain("quote-review");
-    expect(details.textContent).toContain("L1 · Mild");
-    expect(details.textContent).toContain("File Read");
-    expect(details.textContent).toContain("read_file");
-    expect(details.textContent).toContain("/same.txt");
-    expect(details.textContent).toContain(
+    const forensics = container.querySelector('[aria-label="Forensics"]')!;
+    // Every call is listed, not just the selected one.
+    const written = forensics.querySelectorAll("li[data-step]");
+    expect(written).toHaveLength(3);
+    // The tool call sits in a code box, built only from fields the tape carries.
+    const code = [...forensics.querySelectorAll("pre code")].map(
+      (block) => block.textContent,
+    );
+    expect(code[0]).toBe('read_file("/same.txt")');
+    // A one-line explanation for context, the call, and the time. Nothing else.
+    expect(forensics.textContent).toContain(
       "Read the file to inspect its contents.",
     );
-    expect(details.textContent).toContain("In plain terms");
-    expect(details.textContent).toContain("DeepSeek · partial batch");
-    expect(details.textContent).not.toContain("Read the shared quote file.");
-    const next = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Next",
-    )!;
-    act(() => next.click());
-    expect(details.textContent).toContain("trace:e2");
-    expect(details.textContent).toContain("Recorded");
-    expect(details.textContent).toContain("Read file: same.txt");
-    expect(details.textContent).not.toContain(
-      "Read the file to inspect its contents.",
-    );
+    expect(forensics.textContent).not.toContain("Read file: same.txt");
+    // Rendered in the responder's timezone, not UTC.
+    expect(forensics.textContent).toContain(localTime("2026-09-19T12:00:01Z"));
+
+    // Clicking a paragraph drives the graph selection.
+    act(() => (written[1] as HTMLElement).click());
     expect(
       container
         .querySelector('.react-flow__node[data-id="trace:e2"]')
         ?.classList.contains("selected"),
     ).toBe(true);
+    // One header for the page, and none of the per-step badges.
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(container.querySelector("h1")?.textContent).toBe(
+      "Run trace & forensics",
+    );
+    expect(container.textContent).not.toContain("Recorded");
+    expect(container.textContent).not.toContain("Completed");
+    // The account carries no severity pills of its own; the rule on the left edge and
+    // a bare "L3" do that job.
+    expect(forensics.textContent).not.toContain("Mild");
+    expect(forensics.textContent).not.toContain("Severe");
     fail = true;
     await act(async () => {
       root.render(<TracePage runId="other" />);

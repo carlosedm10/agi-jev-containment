@@ -39,7 +39,8 @@ test("clearing logs rejects an in-flight old response and filters historical row
     return (
       <>
         {feed.logs?.map((log) => (
-          <p key={log.id}>{log.message}</p>
+          // The message no longer repeats the run id, so identify the row by its id.
+          <p key={log.id}>{`${log.id} ${log.message}`}</p>
         ))}
       </>
     );
@@ -92,7 +93,7 @@ test("logs refresh for every run and keep repeated visits independently of graph
     return (
       <>
         {logs?.map((log) => (
-          <p key={log.id}>{log.message}</p>
+          <p key={log.id}>{`${log.id} ${log.message}`}</p>
         ))}
       </>
     );
@@ -106,7 +107,9 @@ test("logs refresh for every run and keep repeated visits independently of graph
       await new Promise((resolve) => setTimeout(resolve, 550));
     });
     expect(container.querySelectorAll("p")).toHaveLength(3);
-    expect(container.textContent).toContain('"run_id":"second"');
+    // The run id identifies the row but is no longer repeated inside the line.
+    expect(container.textContent).toContain("second");
+    expect(container.textContent).not.toContain('"run_id"');
     expect(container.textContent).toContain("stdout F");
   } finally {
     act(() => root.unmount());

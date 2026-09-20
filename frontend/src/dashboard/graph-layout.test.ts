@@ -262,12 +262,15 @@ describe("activity graph layout", () => {
         event: kind,
         tool,
         target,
-        phase: "completed",
       });
+      // "completed" is every ordinary step, so it is not repeated on every line.
+      expect(JSON.parse(log.message.slice(9))).not.toHaveProperty("phase");
       expect(log.message).toContain(target);
-      expect(log.message).toContain("completed");
+      // A completed step says nothing about its phase; ids and level live elsewhere.
+      expect(log.message).not.toContain("completed");
+      expect(log.message).not.toContain("event_id");
       expect(log.message).not.toContain("stderr");
-      expect(log.service).toBe("api-agent · api · demo");
+      expect(log.service).toBe("api-agent · api");
       expect(log.tags).toContain("earlier");
     }
   });
@@ -321,4 +324,20 @@ describe("activity graph layout", () => {
     const invalid = layoutGraph(snapshot([action]), null).nodes[0];
     expect(invalid.kind === "classified" && invalid.actionLevel).toBeUndefined();
   });
+});
+
+test("a node that triggered a playbook names the tool it set off", () => {
+  const graph = initial();
+  const acting = graph.nodes.get("atlas:1")!;
+  acting.action_id = "trigger-8ce6f714:contain_agent";
+  const item = layoutGraph(graph, null).nodes.find((n) => n.id === "atlas:1")!;
+  expect(item.actionTool).toEqual({
+    name: "contain_agent",
+    short: "Contain agent",
+    title: "Pause the agent and revoke its proxy token",
+  });
+  // A node that triggered nothing must not claim a tool.
+  expect(
+    layoutGraph(graph, null).nodes.find((n) => n.id === "scout:1")!.actionTool,
+  ).toBeUndefined();
 });

@@ -71,7 +71,15 @@ async def test_short_explanations_are_cached_and_exclude_sensitive_fields():
 
 
 @pytest.mark.parametrize(
-    "content", ["not json", '{"explanations":[]}', json.dumps({"explanations": ["word " * 30]})]
+    "content",
+    [
+        "not json",
+        '{"explanations":[]}',
+        # Over the word cap, derived so raising the cap cannot quietly stop testing it.
+        json.dumps({"explanations": ["word " * (explanations.MAX_WORDS + 1)]}),
+        # Over the character cap, within the word cap.
+        json.dumps({"explanations": ["x" * (explanations.MAX_CHARS + 1)]}),
+    ],
 )
 async def test_invalid_llm_copy_falls_back_without_losing_the_trace(content):
     def respond(request):

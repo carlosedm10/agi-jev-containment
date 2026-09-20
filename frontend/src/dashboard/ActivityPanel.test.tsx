@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/interactive-logs-table";
 import { ActivityPanel } from "@/dashboard/ActivityPanel";
 import type { SafeAction } from "@/dashboard/demo";
+import { localTime } from "@/lib/time";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -46,7 +47,6 @@ const logs: Log[] = [
     level: "warning",
     service: "sandbox",
     message: "Unexpected outbound request",
-    duration: "20ms",
     status: "blocked",
     tags: ["node-1"],
   },
@@ -56,7 +56,6 @@ const logs: Log[] = [
     level: "info",
     service: "monitor",
     message: "Capture started",
-    duration: "1ms",
     status: "ok",
     tags: ["node-2"],
   },
@@ -130,11 +129,11 @@ test("unfinished protective actions never display Completed", () => {
   }
 });
 
-test("logs show all entries with UTC timestamps and expandable details without search or filters", () => {
+test("logs show all entries with local timestamps and expandable details without search or filters", () => {
   act(() => root.render(<InteractiveLogsTable logs={logs} />));
   expect(container.textContent).toContain("Container logs");
   expect(button("Unexpected outbound request").textContent).toContain(
-    "12:00:00",
+    localTime("2026-09-19T12:00:00Z"),
   );
   act(() => button("Unexpected outbound request").click());
   expect(

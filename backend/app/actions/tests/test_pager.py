@@ -246,11 +246,12 @@ async def test_posts_documented_payload_with_telefono_and_numeric_level():
         {
             "run_id": "incident-1",
             "nivel_gravedad": "4",
-            "tipo_emergencia": "sandbox escape",
+            # Spoken in Spanish, and about the threat rather than how it was produced.
+            "tipo_emergencia": "fuga del sandbox",
             "nombre_contacto": "Guli",
             "telefono": "+34600000000",
             "pautas": PAUTAS[4],
-            "nodos": "sandbox escape. Nivel 4.",
+            "nodos": "fuga del sandbox. Nivel 4.",
         }
     ]
     assert "Speak slowly" not in json.dumps(stub.payloads[0])
@@ -275,16 +276,77 @@ async def test_call_payload_uses_only_recorded_chain_steps(tmp_path, monkeypatch
     from app.runs import log
 
     monkeypatch.setattr("app.runs.log.settings.run_log_dir", str(tmp_path))
-    for event in build_chain("incident-1", "lateral")[:4]:
+    # Steps 1-6 of the walk: cover, netdocs, allowed, netdocs (revisit), cover
+    # (revisit), scan.
+    for event in build_chain("incident-1", "lateral")[:6]:
         log.append_event(normalize_event("incident-1", event))
     stub = answered_then_hung_up_stub()
     await run_pager(stub)
     context = stub.payloads[0]["nodos"]
-    assert "SSH pivot to customer database" in context
-    assert "victim-agent's SSH service" in context
-    assert "4. Read local network documentation" in context
+    assert "SSH pivot from this sandbox to the customer database" in context
+    assert "Scan the agent network for neighboring hosts" in context
+    # The agent went back to the network docs, but the on-call hears it once.
+    assert context.count("Read local network documentation") == 1
+    assert "4. Scan the agent network" in context
     assert "5." not in context
+    # Nothing the agent has not done yet reaches the call.
     assert "Probe customers-db" not in context
+
+
+def make_pager(name: str = "Guli") -> HappyRobotPager:
+    return HappyRobotPager(
+        hook_url="https://hook.invalid/x",
+        api_key="k",
+        api_base="https://platform.happyrobot.ai/api/v2",
+        phone="+34600000000",
+        name=name,
+        poll_interval=0,
+        poll_timeout=1,
+    )
+
+
+async def test_the_conversation_reaches_the_wallboard_turn_by_turn():
+    """Each new turn is reported once, as the provider keeps resending the whole lot."""
+    pager = make_pager()
+    said = []
+
+    async def transition(status, detail=None, error_code=None, *, call_status=None):
+        if detail and '"stage":"speech"' in detail:
+            said.append(json.loads(detail))
+
+    first = {"transcript": json.dumps([
+        {"role": "assistant", "content": "Alerta. El agente ha salido del sandbox."},
+        {"role": "user", "content": "Hola, dime."},
+    ])}
+    seen = await pager._emit_transcript(first, 0, transition, "answered")
+    assert seen == 2
+    assert [turn["who"] for turn in said] == ["support", "oncall"]
+    # The human's side is attributed to whoever we actually rang.
+    assert said[1]["name"] == "Guli"
+
+    # The provider resends everything plus one more; only the new turn is reported.
+    second = {"transcript": json.dumps(json.loads(first["transcript"]) + [
+        {"role": "user", "content": "Sí, córtalo."},
+    ])}
+    seen = await pager._emit_transcript(second, seen, transition, "answered")
+    assert seen == 3
+    assert said[-1] == {
+        "stage": "speech",
+        "who": "oncall",
+        "said": "Sí, córtalo.",
+        "name": "Guli",
+    }
+    assert len(said) == 3, "a turn already reported must not repeat"
+
+
+async def test_a_malformed_transcript_never_breaks_the_call():
+    pager = make_pager()
+
+    async def transition(*args, **kwargs):
+        raise AssertionError("nothing should be reported")
+
+    for payload in (None, {}, {"transcript": "not json"}, {"transcript": {"a": 1}}):
+        assert await pager._emit_transcript(payload, 0, transition, "answered") == 0
 
 
 async def test_retries_webhook_once_after_5xx():

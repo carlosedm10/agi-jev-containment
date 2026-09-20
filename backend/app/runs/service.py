@@ -9,6 +9,7 @@ from app.actions.models import DispatchAccepted
 from app.classification import pipeline
 from app.classification.models import Level, Verdict
 from app.dispatch import dispatcher
+from app.evals.demo_chains import scenario_intent
 from app.events import EventPhase, MonitorEvent, normalize_event, redact_event
 from app.graph import graph
 from app.graph.neo4j import neo4j_graph
@@ -93,8 +94,8 @@ async def ingest(
             Verdict(
                 level=Level(demo_level),
                 confidence=1.0,
-                intent="scripted_demo",
-                model="scripted-demo",
+                intent=scenario_intent((event.get("metadata") or {}).get("scenario")),
+                model="replay",
             )
             if demo_level is not None
             else await pipeline.evaluate(

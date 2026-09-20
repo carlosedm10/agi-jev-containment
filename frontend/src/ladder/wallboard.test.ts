@@ -11,6 +11,7 @@ function action(
 ): ActionTransition {
   return {
     kind: "action_transition",
+    source: "monitor",
     incident_id: "incident-42",
     level: 4,
     action_id: `action-${index}`,

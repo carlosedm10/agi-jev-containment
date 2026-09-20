@@ -143,7 +143,13 @@ def populate(
             try:
                 _post(
                     f"{backend}/api/demo/incidents/{run_id}/dispatch",
-                    {"level": final_level, "intent": final_intent or "critical agent activity"},
+                    {
+                        "level": final_level,
+                        "intent": final_intent or "critical agent activity",
+                        # Generated data must behave like the monitor, holding at L4;
+                        # only a real on-call decision authorizes the environment cut.
+                        "source": "monitor",
+                    },
                     token=dispatch_token,
                 )
                 dispatched += 1
