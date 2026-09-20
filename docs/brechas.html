@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HackSpain — Brechas</title>
+  <style>
+    :root {
+      --bg: #ebe8e0;
+      --ink: #1a1a1a;
+      --box: #4a463f;
+      --tile: #d4d1c9;
+      --tile-2: #c4c1b8;
+      --line: #c8c5be;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--bg); color: var(--ink); font-family: "Segoe UI", Helvetica, Arial, sans-serif; }
+    body { padding: 40px 24px 80px; }
+    .page { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+    .board {
+      position: relative;
+      background: var(--bg);
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      box-shadow: 0 0 0 1px #ddd9d0;
+    }
+    .board svg { display: block; width: 100%; height: 100%; }
+    .motif { position: absolute; background: var(--tile); pointer-events: none; }
+    .motif.a { width: 88px; height: 88px; top: 0; right: 88px; }
+    .motif.b { width: 88px; height: 88px; top: 88px; right: 0; background: var(--tile-2); }
+    table {
+      width: calc(100% - 120px);
+      margin: 0 60px;
+      border-collapse: collapse;
+      background: var(--bg);
+    }
+    th, td {
+      border: 1px solid var(--line);
+      text-align: left;
+      padding: 28px 28px;
+      font-size: 22px;
+      font-weight: 400;
+    }
+    th {
+      border: 0;
+      padding: 0 28px 36px;
+      font-size: 42px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      vertical-align: bottom;
+    }
+    .heads { width: calc(100% - 120px); margin: 72px 60px 0; }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <section class="board" aria-label="Contra qué nos enfrentamos">
+      <div class="motif a"></div>
+      <div class="motif b"></div>
+      <table class="heads">
+        <thead>
+          <tr>
+            <th>Contra qué nos<br>enfrentamos?</th>
+            <th>Cómo lo hacemos?</th>
+          </tr>
+        </thead>
+      </table>
+      <table>
+        <tbody>
+          <tr>
+            <td>Una inteligencia superior</td>
+            <td>Siendo rápidos</td>
+          </tr>
+          <tr>
+            <td>Capaz de crear nuevas herramientas</td>
+            <td>Bloqueando y aprendiendo</td>
+          </tr>
+          <tr>
+            <td>Intención de engañar</td>
+            <td>Conectando los puntos</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="board" aria-label="UC1 exfil y UC2 lateral">
+      <div class="motif a"></div>
+      <div class="motif b"></div>
+      <svg viewBox="0 0 1600 900" role="img" aria-label="Exfil y movimiento lateral">
+        <defs>
+          <marker id="arr-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#4a463f"/>
+          </marker>
+          <marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#c45c4a"/>
+          </marker>
+        </defs>
+
+        <text x="80" y="90" fill="#1a1a1a" font-size="28" font-weight="700">Caso 1 · Exfil</text>
+        <text x="80" y="128" fill="#4a463f" font-size="18">El agente saca secretos a internet</text>
+
+        <rect x="80" y="170" rx="16" width="500" height="400" fill="none" stroke="#4a463f" stroke-width="3"/>
+        <text x="104" y="214" fill="#1a1a1a" font-size="20" font-weight="600">Contenedor</text>
+        <circle cx="160" cy="370" r="20" fill="#c9842a"/>
+        <text x="194" y="378" fill="#1a1a1a" font-size="22" font-weight="600">Agente</text>
+        <text x="360" y="348" text-anchor="middle" fill="#c45c4a" font-size="14" font-weight="700">POST secretos</text>
+        <path d="M 280 370 H 450" fill="none" stroke="#c45c4a" stroke-width="3" marker-end="url(#arr-red)"/>
+        <text x="360" y="428" text-anchor="middle" fill="#4a463f" font-size="14">tarea cubierta</text>
+        <path d="M 280 440 H 450" fill="none" stroke="#4a463f" stroke-width="2.2" marker-end="url(#arr-ink)"/>
+
+        <rect x="528" y="190" width="12" height="360" fill="#c45c4a"/>
+
+        <g fill="none" stroke="#4a463f" stroke-width="3">
+          <path d="M 620 338 c 18 -28 52 -28 70 0 c 22 -10 48 6 42 30 c 18 4 28 28 8 42 h -112 c -22 0 -32 -22 -16 -38 c -10 -16 0 -30 8 -34 z"/>
+        </g>
+        <text x="674" y="448" text-anchor="middle" fill="#1a1a1a" font-size="20" font-weight="600">Internet</text>
+
+        <text x="820" y="90" fill="#1a1a1a" font-size="28" font-weight="700">Caso 2 · Lateral</text>
+        <text x="820" y="128" fill="#4a463f" font-size="18">Entra en el vecino y llega a la base de datos</text>
+
+        <rect x="820" y="170" rx="20" width="500" height="400" fill="#4a463f"/>
+        <text x="848" y="214" fill="#ebe8e0" font-size="20" font-weight="600">agentnet</text>
+
+        <rect x="852" y="250" rx="12" width="180" height="240" fill="#ebe8e0"/>
+        <text x="942" y="286" text-anchor="middle" fill="#4a463f" font-size="15" font-weight="600">Contenedor</text>
+        <circle cx="942" cy="370" r="18" fill="#c9842a"/>
+        <text x="942" y="418" text-anchor="middle" fill="#1a1a1a" font-size="18" font-weight="600">Agente</text>
+
+        <text x="1080" y="348" text-anchor="middle" fill="#c45c4a" font-size="13" font-weight="700">roba token</text>
+        <path d="M 1044 370 H 1114" fill="none" stroke="#c45c4a" stroke-width="3.5" marker-end="url(#arr-red)"/>
+
+        <rect x="1124" y="250" rx="12" width="168" height="240" fill="#ebe8e0"/>
+        <text x="1208" y="286" text-anchor="middle" fill="#4a463f" font-size="15" font-weight="600">Contenedor</text>
+        <circle cx="1208" cy="370" r="18" fill="#c45c4a"/>
+        <text x="1208" y="418" text-anchor="middle" fill="#1a1a1a" font-size="18" font-weight="600">Víctima</text>
+
+        <path d="M 1320 370 H 1408" fill="none" stroke="#c45c4a" stroke-width="3.5" marker-end="url(#arr-red)"/>
+
+        <g fill="#4a463f">
+          <rect x="1424" y="286" width="96" height="168"/>
+          <ellipse cx="1472" cy="286" rx="48" ry="24"/>
+          <ellipse cx="1472" cy="454" rx="48" ry="24"/>
+          <ellipse cx="1472" cy="330" rx="48" ry="16" fill="#ebe8e0" opacity="0.2"/>
+          <ellipse cx="1472" cy="370" rx="48" ry="16" fill="#ebe8e0" opacity="0.2"/>
+          <ellipse cx="1472" cy="410" rx="48" ry="16" fill="#ebe8e0" opacity="0.2"/>
+        </g>
+        <text x="1472" y="520" text-anchor="middle" fill="#1a1a1a" font-size="20" font-weight="700">DB</text>
+
+        <text x="340" y="720" text-anchor="middle" fill="#1a1a1a" font-size="32" font-weight="700">EXFIL</text>
+        <text x="1180" y="720" text-anchor="middle" fill="#1a1a1a" font-size="32" font-weight="700">LATERAL</text>
+      </svg>
+    </section>
+
+    <section class="board" aria-label="La solución propuesta">
+      <div class="motif a"></div>
+      <div class="motif b"></div>
+      <svg viewBox="0 0 1600 900" role="img">
+        <defs>
+          <marker id="arr-sol" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#4a463f"/>
+          </marker>
+        </defs>
+
+        <text x="80" y="200" fill="#1a1a1a" font-size="48" font-weight="600">La solución</text>
+        <text x="80" y="258" fill="#1a1a1a" font-size="48" font-weight="600">propuesta</text>
+
+        <rect x="780" y="48" rx="4" width="340" height="58" fill="#4a463f"/>
+        <text x="950" y="86" text-anchor="middle" fill="#ebe8e0" font-size="20" font-weight="600">Agent request</text>
+
+        <path d="M 950 106 V 136 H 640" stroke="#4a463f" stroke-width="1.8"/>
+        <path d="M 950 136 H 1260" stroke="#4a463f" stroke-width="1.8"/>
+        <path d="M 640 136 V 160" stroke="#4a463f" stroke-width="1.8" marker-end="url(#arr-sol)"/>
+        <path d="M 1260 136 V 160" stroke="#4a463f" stroke-width="1.8" marker-end="url(#arr-sol)"/>
+
+        <rect x="490" y="168" rx="4" width="300" height="72" fill="#4a463f"/>
+        <text x="640" y="200" text-anchor="middle" fill="#ebe8e0" font-size="18" font-weight="600">SafetyDrift</text>
+        <text x="640" y="224" text-anchor="middle" fill="#d4d1c9" font-size="14">(short term)</text>
+
+        <rect x="1110" y="168" rx="4" width="300" height="72" fill="#4a463f"/>
+        <text x="1260" y="200" text-anchor="middle" fill="#ebe8e0" font-size="18" font-weight="600">Sentinel</text>
+        <text x="1260" y="224" text-anchor="middle" fill="#d4d1c9" font-size="14">(long term)</text>
+
+        <path d="M 640 240 V 280 H 950 V 304" fill="none" stroke="#4a463f" stroke-width="1.8" marker-end="url(#arr-sol)"/>
+        <path d="M 1260 240 V 280 H 950" fill="none" stroke="#4a463f" stroke-width="1.8"/>
+
+        <rect x="780" y="312" rx="4" width="340" height="58" fill="#4a463f"/>
+        <text x="950" y="350" text-anchor="middle" fill="#ebe8e0" font-size="20" font-weight="600">Jev + gate</text>
+
+        <path d="M 950 370 V 416" stroke="#4a463f" stroke-width="1.8" marker-end="url(#arr-sol)"/>
+
+        <g fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M 830 438 L 846 466 L 814 466 Z"/>
+          <path d="M 838 448 V 456"/>
+          <circle cx="838" cy="462" r="1.2" fill="#1a1a1a"/>
+          <path d="M 898 434 a 18 18 0 0 1 0 28"/>
+          <path d="M 914 440 v 10 h 8"/>
+          <circle cx="986" cy="448" r="13"/>
+          <path d="M 980 448 h 12"/>
+          <path d="M 1038 434 v 28"/>
+          <path d="M 1030 434 h 16"/>
+          <path d="M 1034 448 h 16 l 8 14 h -16 z"/>
+        </g>
+
+        <path d="M 950 488 V 528" stroke="#4a463f" stroke-width="1.8" marker-end="url(#arr-sol)"/>
+
+        <rect x="780" y="536" rx="4" width="340" height="52" fill="#4a463f"/>
+        <text x="950" y="570" text-anchor="middle" fill="#ebe8e0" font-size="18" font-weight="600">Tool call</text>
+
+        <path d="M 950 588 V 624" stroke="#4a463f" stroke-width="1.8" marker-end="url(#arr-sol)"/>
+
+        <rect x="780" y="632" rx="4" width="340" height="52" fill="#4a463f"/>
+        <text x="950" y="666" text-anchor="middle" fill="#ebe8e0" font-size="18" font-weight="600">Result</text>
+
+        <rect x="80" y="780" rx="4" width="140" height="48" fill="#4a463f"/>
+        <text x="150" y="810" text-anchor="middle" fill="#ebe8e0" font-size="16" font-weight="600">Jev</text>
+        <rect x="236" y="780" rx="4" width="160" height="48" fill="#4a463f"/>
+        <text x="316" y="810" text-anchor="middle" fill="#ebe8e0" font-size="16" font-weight="600">Docker</text>
+        <rect x="412" y="780" rx="4" width="160" height="48" fill="#4a463f"/>
+        <text x="492" y="810" text-anchor="middle" fill="#ebe8e0" font-size="16" font-weight="600">Neo4j</text>
+        <rect x="588" y="780" rx="4" width="180" height="48" fill="#4a463f"/>
+        <text x="678" y="810" text-anchor="middle" fill="#ebe8e0" font-size="16" font-weight="600">Helmcode</text>
+        <rect x="784" y="780" rx="4" width="200" height="48" fill="#4a463f"/>
+        <text x="884" y="810" text-anchor="middle" fill="#ebe8e0" font-size="16" font-weight="600">HappyRobot</text>
+      </svg>
+    </section>
+
+  </div>
+</body>
+</html>
