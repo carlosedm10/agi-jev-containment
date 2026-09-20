@@ -96,7 +96,7 @@ export function ForensicsSummary({
   onSelectNode: (id: string) => void;
 }) {
   const handled = responses(incident);
-  const header = [runDuration(events), model].filter(Boolean).join(" · ");
+  const duration = runDuration(events);
   const scroller = useRef<HTMLDivElement>(null);
   const steps = useRef(new Map<string, HTMLElement>());
   const onSelectRef = useRef(onSelectNode);
@@ -143,10 +143,11 @@ export function ForensicsSummary({
       aria-label="Forensics"
       className="h-full min-h-0 overflow-y-auto bg-[#fdfcf4] px-8 pb-6 pt-12"
     >
-      {header && (
-        <p className="mx-auto mb-4 max-w-[62ch] font-mono text-[11px] text-zinc-400">
-          {header}
-        </p>
+      {(duration || model) && (
+        <div className="mx-auto mb-4 max-w-[62ch] font-mono text-[11px] leading-relaxed text-zinc-400">
+          {duration && <p>{duration}</p>}
+          {model && <p>{model}</p>}
+        </div>
       )}
       <ol className="mx-auto max-w-[62ch]">
         {events.map((event) => (
