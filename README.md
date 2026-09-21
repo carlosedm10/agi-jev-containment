@@ -19,18 +19,6 @@ Use it when you are looking for:
 
 How the system is built, taxonomy, data flows, and decisions: [docs/README.md](docs/README.md). Agent coding rules: [AGENTS.md](AGENTS.md). Known gaps vs the ideal kill-switch: [INCONSISTENCIES.md](INCONSISTENCIES.md).
 
-## Repo name (proposal)
-
-GitHub cannot be renamed from this PR. Pick one and rename the remote when you want search traffic to match the README title.
-
-| Candidate | Why it ranks |
-|---|---|
-| **`agi-jev-detection`** (recommended) | Unique entity **Jev** (TypeSafe System One) + AGI/agent-safety queries; closest to “AGI Jeff Detection” |
-| **`angryrobot-agent-monitor`** | Matches the dashboard brand people see at `:3000` |
-| **`jev-sentinel-ladder`** | The three nouns in the pipeline: classifier, rules, L1–L5 |
-| **`malicious-agent-containment`** | Plain-language SEO for “contain a rogue LLM agent” |
-| **`hackspain-agi-jev`** | Keeps the hackathon token for local discovery |
-
 ## Running it
 
 Requires Docker Compose v2 and GNU make. Everything runs in containers.
