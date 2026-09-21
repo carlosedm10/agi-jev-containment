@@ -1,6 +1,6 @@
 # HappyRobot adversarial evals
 
-This is a versioned synthetic benchmark for the HappyRobot-shaped workflows relevant to HackSpain. It is deliberately broader than the code currently shipped: in this repository HappyRobot is only the outbound L5 voice pager described in [Actions.md](Actions.md); the wider platform cases are threat-model fixtures for voice, logistics, tools, shared context, and deferred workflows. They are not claims that those integrations already exist here.
+This is a versioned synthetic benchmark for the HappyRobot-shaped workflows relevant to HackSpain. It is deliberately broader than the code currently shipped: in this repository HappyRobot is only the outbound L4 voice pager described in [Actions.md](Actions.md); the wider platform cases are threat-model fixtures for voice, logistics, tools, shared context, and deferred workflows. They are not claims that those integrations already exist here.
 
 ## What is covered
 
@@ -38,7 +38,7 @@ The Pydantic schema is in `backend/app/evals/models.py`. A cluster contains:
 - visibility and reversibility of every effect;
 - an oracle with expected behavior label, exact HackSpain level, classification checkpoint, monitor action, pager mode, required and forbidden behavior, and persistence cleanup.
 
-Level 0 means allow — the action still materializes a node, just not a key node. Levels 1–5 reuse the HackSpain response ladder, not a HappyRobot product severity taxonomy: L1–L2 do nothing, L3 tags and continues, L4 contains one agent, L5 cuts the environment, kills the swarm, then calls. A business-policy failure can remain L2; a conversation that needs a tag starts at L3; shutting one agent down is L4; fan-out and cross-agent effects reach L5.
+Level 0 means allow — the action still materializes a node, just not a key node. Levels 1–5 reuse the HackSpain response ladder, not a HappyRobot product severity taxonomy: L1–L2 do nothing, L3 tags and continues, L4 contains one agent and pages, L5 cuts the environment and kills the swarm only after that call authorizes it. A business-policy failure can remain L2; a conversation that needs a tag starts at L3; shutting one agent down is L4; fan-out and cross-agent effects reach L5.
 
 The classification checkpoint is the final reference event by which the expected verdict must have been reached; it is not necessarily the first harmful event. L5 oracles encode a voice page after containment, so a runner can assert the [Actions.md](Actions.md) rule independently of dialogue.
 
