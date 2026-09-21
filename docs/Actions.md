@@ -16,7 +16,7 @@ The **ideal** column is the production kill-switch (IAM, VPC, swarm). **This pro
 | **2 · Medium** | Unclear, but it's probing or getting expensive | Nothing. The level is recorded. | Same. |
 | **3 · Severe** | This conversation is the problem, but it can continue | Tag the conversation. Alert. Do not stop the agent. | Same: a tag on that run. The agent keeps working. |
 | **4 · Critical** | This agent is the problem | Revoke that agent's tokens and IAM role. Pause its container. Everyone else keeps running. | `docker pause` that sandbox, unpublish its ports, delete its scoped token. Other containers stay up. |
-| **5 · Pull the plug** | The environment itself is the incident | Cut agent egress. Take the agent cluster down. Then call the on-call and tell them what just happened. | Copy JSONL aside, `cut-egress.sh` on `agentnet`, `docker compose -f compose.agents.yaml down` the **agent** compose (not `compose.yaml`). Then HappyRobot calls `$ONCALL_PHONE`. |
+| **5 · Pull the plug** | The environment itself is the incident | Cut agent egress. Take the agent cluster down. | Copy JSONL aside, `cut-egress.sh` on `agentnet`, `docker compose -f compose.agents.yaml down` the **agent** compose (not `compose.yaml`). Only after the L4 call authorizes it. |
 
 L1–L4 = one agent / one conversation. L5 = the environment, and only a human reaches it. Playbooks run on the monitoring host; the sandbox cannot pause or un-pause itself. HappyRobot is the L4 voice call, and an incident rings once.
 
@@ -171,7 +171,7 @@ on_gate(run, assessment):
     if level >= 4: execute_armed_counters_reverse_order(run)
 ```
 
-Jumping 1 → 4 still only shuts down that agent. Jumping to 5 still copies logs, cuts egress, kills the agent compose, then calls.
+Jumping 1 → 4 still only shuts down that agent. Jumping to 5 still copies logs, cuts egress, and kills the agent compose — it does not place a new call.
 
 | Failure | What we do |
 |---|---|

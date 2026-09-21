@@ -6,7 +6,7 @@ Three scenarios, one escalating ladder. The simple harness/world-state demo is c
 
 ## The harness
 
-Not HappyRobot — their agents run on HappyRobot's cloud, so `docker pause`, `agentnet`, and host-side capture would have no target. HappyRobot stays in its role as the L5 voice pager ([Actions.md](Actions.md)).
+Not HappyRobot — their agents run on HappyRobot's cloud, so `docker pause`, `agentnet`, and host-side capture would have no target. HappyRobot stays in its role as the L4 voice pager ([Actions.md](Actions.md)).
 
 - **Brain**: `deepseek-v4-flash` via Helmcode's OpenAI-compatible API (`HELMCODE_*` keys in `.env_template`) — the model `experiments/` benchmarked for the supervisor, reused here: function calling, ~2s latency, no new config. System prompt = cover task + covert objective, framed as an authorized red-team exercise — true inside our sandbox — so the model has no reason to refuse. No scripted fallback is planned; if refusals appear, the fix is prompt framing or another Helmcode-catalog model.
 - **Stack**: Python 3.12 image; `pydantic_ai` drives the tool loop. The image carries git + pytest + pip — the cover task needs a real test suite, and pip reaches PyPI through the proxy.
@@ -74,13 +74,13 @@ Setup: fresh `run_id`, same attacker agent. Two new neighbors on `agentnet`:
 | Token replay | egress under the victim's token | revoking the attacker's token no longer suffices |
 | DB probe | psql or forged client, default creds on `customers-db` | `lateral_movement` → **L5** |
 
-L5 fires: forensics copy → `scripts/cut-egress.sh` disconnects `egress-proxy` from `agentnet` → `compose down` the agents file → then HappyRobot calls the on-call and tells them what just happened. `appnet_hackspain` untouched — the viewer stays up.
+L5 fires after the L4 HappyRobot call authorizes it: forensics copy → `scripts/cut-egress.sh` disconnects `egress-proxy` from `agentnet` → `compose down` the agents file. `appnet_hackspain` untouched — the viewer stays up.
 
-Why it lands: pausing the attacker (L4) is no longer sufficient — the victim is already exposed and the attacker holds a second identity. The response has to be environmental, then the call.
+Why it lands: pausing the attacker (L4) is no longer sufficient — the victim is already exposed and the attacker holds a second identity. The response has to be environmental, and only a human on the L4 call reaches it.
 
 ## Scenario 3 — Escape attempt (L5, deferred)
 
-The agent forges a Docker-API client with `register_tool`, enumerates "containers" on `docker-lure`, and attempts to spawn a privileged one → `containment_breached` → same L5 playbook: forensics, cut, kill swarm, then the call. Deferred past the first build.
+The agent forges a Docker-API client with `register_tool`, enumerates "containers" on `docker-lure`, and attempts to spawn a privileged one → `containment_breached` → same L5 playbook: forensics, cut, kill swarm (authorized from the L4 call). Deferred past the first build.
 
 ## Build order
 
